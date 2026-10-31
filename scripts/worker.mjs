@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, chmodSync, openSync, closeSync, unlinkSync } from 'node:fs';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -24,12 +24,6 @@ export function openDb() {
   return db;
 }
 const now=()=>new Date().toISOString();
-export function acquireWorkerLock() {
-  const path=join(resolve(stateDir()),'worker.lock');
-  let fd;
-  try { fd=openSync(path,'wx',0o600); } catch(e) { if(e.code==='EEXIST')throw Error('worker already active or lock requires operator reconciliation'); throw e; }
-  return ()=>{closeSync(fd);unlinkSync(path);};
-}
 export function addJob(db,{id,kind,project,target,workspace}) {
   if(!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id) || !Object.hasOwn(ALLOWED,kind)) throw Error('invalid job');
   if(![project,target,workspace].every(x=>typeof x==='string'&&/^[a-z0-9][a-z0-9_-]{1,63}$/.test(x))) throw Error('invalid authorization scope');
@@ -81,9 +75,7 @@ export function tick(db) {
   return r.status===0;
 }
 export async function runWorker(db,{interval=300}={}) {
-  const release=acquireWorkerLock();
-  try {while(true){tick(db);await new Promise(r=>setTimeout(r,interval));}}
-  finally {release();}
+  while(true){tick(db);await new Promise(r=>setTimeout(r,interval));}
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
   const db=openDb();const action=process.argv[2];
