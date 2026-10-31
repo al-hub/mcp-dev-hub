@@ -4,7 +4,7 @@ import {join,resolve} from 'node:path';
 import {homedir} from 'node:os';
 const attempt=Number(process.env.MCP_DEV_HUB_REVIEW_ATTEMPT || '1');
 const provider=attempt%2===0?'codex':'agy';
-const executable=provider==='agy'?(process.env.MCP_DEV_HUB_AGY_BIN || join(homedir(),'.local','bin','agy')):(process.env.MCP_DEV_HUB_CODEX_BIN || 'codex');
+const executable=provider==='agy'?(process.env.MCP_DEV_HUB_AGY_BIN || join(homedir(),'.local','bin','agy')):(process.env.MCP_DEV_HUB_CODEX_BIN || join(homedir(),'.nvm','versions','node','v24.15.0','bin','codex'));
 const jobId=process.env.MCP_DEV_HUB_REVIEW_JOB_ID;
 const resultDir=process.env.MCP_DEV_HUB_REVIEW_RESULT_DIR;
 if(!jobId || !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(jobId) || !resultDir || !Number.isInteger(attempt) || attempt<1 || attempt>4) {
