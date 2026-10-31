@@ -150,7 +150,9 @@ export function reconcile(db) {
     const match=nonce && pane?.split('\n').some(line=>line===('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=0') || line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
     const exitLine=match && pane.split('\n').find(line=>line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
     if(match && exitLine) {
-      const code=Number(exitLine.slice(exitLine.lastIndexOf('=')+1));
+      const rawCode=exitLine.slice(exitLine.lastIndexOf('=')+1);
+      if(!/^(0|[1-9][0-9]{0,2})$/.test(rawCode)||Number(rawCode)>255)continue;
+      const code=Number(rawCode);
       const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
       db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state='running'").run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
       // Persist terminal result before attempting pane retirement for every job.
@@ -160,6 +162,15 @@ export function reconcile(db) {
       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
     }
   }
+}
+export function retireTerminalWindows(db){
+ let retired=0;
+ for(const job of jobs(db).filter(j=>['succeeded','failed','blocked'].includes(j.state)&&j.window)){
+  if(!windowAlive(job.window))continue;
+  const r=tmux(['kill-window','-t','='+SESSION+':'+job.window]);
+  if(r.status===0)retired++;
+ }
+ return retired;
 }
 export function reconcileManagedWorktrees(db) {
   const root=process.env.MCP_DEV_HUB_WORKTREE_ROOT;
@@ -184,7 +195,7 @@ export function reconcileStarting(db,{at=Date.now()}={}) {
   }
 }
 export function tick(db) {
-  ensureSession();reconcileStarting(db);reconcile(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
+  ensureSession();reconcileStarting(db);reconcile(db);retireTerminalWindows(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
   reconcileManagedWorktrees(db);
   if(jobs(db).some(j=>j.state==='starting'||j.state==='running'||j.state==='unknown'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
