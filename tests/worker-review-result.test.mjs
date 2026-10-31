@@ -20,7 +20,7 @@ test('review results require matching job id and are durably stored',()=>{
   assert.equal(collectReviewResult(db,'review-003'),false);
   writeFileSync(file,JSON.stringify({jobId:'review-003',status:'completed',summary:'review findings'}));
   assert.equal(collectReviewResult(db,'review-003'),true);
-  assert.deepEqual(db.prepare('SELECT status,summary FROM review_results WHERE job_id=?').get('review-003'),{status:'completed',summary:'review findings'});
+  assert.deepEqual({...db.prepare('SELECT status,summary FROM review_results WHERE job_id=?').get('review-003')},{status:'completed',summary:'review findings'});
   db.close();
   const reopened=openDb();
   assert.equal(reopened.prepare('SELECT status FROM review_results').get().status,'completed');
