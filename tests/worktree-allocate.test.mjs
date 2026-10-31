@@ -9,7 +9,7 @@ test('allocates unique registered worktree and rejects duplicates',()=>{
  const root=mkdtempSync(join(tmpdir(),'wt-root-')),repo=mkdtempSync(join(tmpdir(),'wt-repo-'));
  const db=new DatabaseSync(':memory:');
  try {
-  const gitRunner=(args)=>{mkdirSync(args[3]);return {status:0,stdout:''};};
+  const gitRunner=(args)=>{mkdirSync(args[4]);return {status:0,stdout:''};};
   const args={taskId:'task-101',root,repoDir:repo,baseSha:'a'.repeat(40),branch:'task/task-101',gitRunner};
   assert.equal(allocateWorktree(db,args).state,'active');
   assert.equal(listManagedWorktrees(db).length,1);
