@@ -30,3 +30,13 @@ known_hosts*
 .gemini/
 .codex/
 .DS_Store
+
+# Local third-party AI skills and installer lock
+.agents/
+skills-lock.json
+# Agent-specific local workspaces and caches
+.opencode/
+.antigravity/
+.aider*
+.cache/
+.tmp/
