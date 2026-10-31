@@ -163,7 +163,8 @@ export function reconcile(db) {
       const rawCode=exitLine.slice(exitLine.lastIndexOf('=')+1);
       if(!/^(0|[1-9][0-9]{0,2})$/.test(rawCode)||Number(rawCode)>255)continue;
       const code=Number(rawCode);
-      const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
+      const reviewCollected=job.kind==='review-opencode' ? collectReviewResult(db,job.id) : true;
+      const validReview=job.kind!=='review-opencode' || (code===0 && reviewCollected);
       db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state='running'").run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
       // Persist terminal result before attempting pane retirement for every job.
       if(db.prepare('SELECT state FROM jobs WHERE id=?').get(job.id)?.state!=='running')
@@ -230,7 +231,7 @@ export function tick(db) {
     ? db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY||'')?.head_sha : null;
   const baseSha=trackedSha && job.id==='review-pr-'+trackedSha.slice(0,12)
     ? trackedSha : (job.id.startsWith('review-pr-') ? null : process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA);
-  if(job.id.startsWith('review-pr-')&&!baseSha){
+  if(job.id.startsWith('review-pr-')&&(!baseSha||!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)){
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false;
   }
