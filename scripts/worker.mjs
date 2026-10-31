@@ -205,7 +205,8 @@ export function tick(db) {
   // Results of earlier attempts remain immutable; a new attempt uses a different result file.
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
-  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_ATTEMPT='+attempt+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
+  const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
+  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+' ' : '';
   const nonce=randomBytes(16).toString('hex');
   const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc"; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
