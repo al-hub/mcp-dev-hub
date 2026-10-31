@@ -1,5 +1,5 @@
 const el=id=>document.getElementById(id);
-let token='',abort;
+let token='',abort,refreshTimer;
 const show=(parent,items,mapper)=>{parent.replaceChildren(...items.map(mapper));};
 const card=(title,details,url)=>{const a=document.createElement('article'),b=document.createElement('strong'),p=document.createElement('p');b.textContent=title;p.textContent=details;a.append(b,p);if(typeof url==='string' && /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/(?:issues|pull|actions\/runs)\/[0-9]+(?:\/files)?$/.test(url)){const l=document.createElement('a');l.href=url;l.target='_blank';l.rel='noopener noreferrer';l.textContent='GitHub';a.append(l);}return a;};
 async function read(path,signal){
@@ -44,7 +44,7 @@ async function stream(signal){
  }
 }
 el('connect').onclick=async()=>{
- if(abort)abort.abort();abort=new AbortController();token=el('token').value || token;el('token').value='';
- try{await refresh(abort.signal);el('status').textContent='Connected';stream(abort.signal);}
+ if(abort)abort.abort();if(refreshTimer)clearInterval(refreshTimer);refreshTimer=undefined;abort=new AbortController();token=el('token').value || token;el('token').value='';
+ try{await refresh(abort.signal);el('status').textContent='Connected';refreshTimer=setInterval(()=>{if(abort.signal.aborted){clearInterval(refreshTimer);return;}refresh(abort.signal).catch(()=>{if(!abort.signal.aborted)el('status').textContent='Status refresh unavailable';});},30000);stream(abort.signal);}
  catch{el('status').textContent='Authentication or service error';token='';}
 };
