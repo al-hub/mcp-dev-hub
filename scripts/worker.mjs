@@ -60,7 +60,16 @@ export function openDb() {
       INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) VALUES(NEW.id,NEW.kind,NEW.project,NEW.state,NEW.exit_code,NEW.updated_at);
     END;`);
   // One-time snapshot for jobs created by older Worker versions; never double backfill.
-  db.exec('INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) SELECT j.id,j.kind,j.project,j.state,j.exit_code,j.updated_at FROM jobs j WHERE NOT EXISTS (SELECT 1 FROM job_events e WHERE e.job_id=j.id)');
+  db.exec(`CREATE TABLE IF NOT EXISTS worker_schema_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)`);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const migrated=db.prepare("SELECT value FROM worker_schema_meta WHERE key='event_backfill_v1'").get();
+    if(!migrated){
+      db.exec('INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) SELECT j.id,j.kind,j.project,j.state,j.exit_code,j.updated_at FROM jobs j WHERE NOT EXISTS (SELECT 1 FROM job_events e WHERE e.job_id=j.id)');
+      db.prepare("INSERT INTO worker_schema_meta(key,value) VALUES('event_backfill_v1','done')").run();
+    }
+    db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
   return db;
 }
 const now=()=>new Date().toISOString();
@@ -162,6 +171,16 @@ export function reconcile(db) {
       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
     }
   }
+}
+export function quarantineUnknownJob(db,{id,confirmedNoLiveProcess=false,evidenceId}){
+ if(!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id)||
+    !confirmedNoLiveProcess||!/^verified-[a-z0-9_-]{4,90}$/.test(evidenceId||''))
+  throw Error('operator reconciliation evidence required');
+ const row=db.prepare('SELECT state,window FROM jobs WHERE id=?').get(id);
+ if(!row||row.state!=='unknown')return false;
+ if(row.window&&windowAlive(row.window))throw Error('live window still exists');
+ return db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='unknown'")
+  .run(now(),id).changes===1;
 }
 export function retireTerminalWindows(db){
  let retired=0;
