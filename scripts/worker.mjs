@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, chmodSync } from 'node:fs';
+import { mkdirSync, chmodSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -37,6 +37,7 @@ export function openDb() {
   const db=new DatabaseSync(join(dir,'worker.sqlite'));
   db.exec(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, project TEXT NOT NULL, target TEXT NOT NULL, workspace TEXT NOT NULL, state TEXT NOT NULL, window TEXT, exit_code INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS review_attempts (job_id TEXT PRIMARY KEY REFERENCES jobs(id), attempt INTEGER NOT NULL DEFAULT 1 CHECK(attempt BETWEEN 1 AND 4), retry_at TEXT, last_reason TEXT, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS review_results (job_id TEXT PRIMARY KEY REFERENCES jobs(id), status TEXT NOT NULL, summary TEXT NOT NULL, recorded_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS review_attempt_log (job_id TEXT NOT NULL, attempt INTEGER NOT NULL, reason TEXT NOT NULL, recorded_at TEXT NOT NULL, PRIMARY KEY(job_id,attempt));
     CREATE TABLE IF NOT EXISTS job_events (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT NOT NULL, kind TEXT NOT NULL, project TEXT NOT NULL, state TEXT NOT NULL, exit_code INTEGER, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_job_events_project_id ON job_events(project,id);
@@ -114,13 +115,27 @@ function windowAlive(window) {
   const r=tmux(['list-windows','-t','='+SESSION,'-F','#{window_name}']);
   return r.status===0 && r.stdout.split('\n').includes(window);
 }
+export function collectReviewResult(db,id) {
+  if(!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id)) throw Error('invalid job id');
+  const job=db.prepare('SELECT kind,state FROM jobs WHERE id=?').get(id);
+  if(!job || job.kind!=='review-opencode') throw Error('not a review job');
+  const path=join(resolve(stateDir()),'review-results',id+'.json');
+  let result;
+  try { result=JSON.parse(readFileSync(path,'utf8')); } catch { return false; }
+  if(result.jobId!==id || !['completed','failed','timed_out'].includes(result.status) ||
+      typeof result.summary!=='string' || result.summary.length>12000) return false;
+  db.prepare('INSERT INTO review_results(job_id,status,summary,recorded_at) VALUES(?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET status=excluded.status,summary=excluded.summary,recorded_at=excluded.recorded_at')
+    .run(id,result.status,result.summary,new Date().toISOString());
+  return result.status==='completed';
+}
 export function reconcile(db) {
   for(const job of jobs(db).filter(j=>j.state==='running')) {
     const pane=readPane(job.window);
     const match=pane?.match(new RegExp('END '+job.id+' exit=([0-9]+)'));
     if(match) {
       const code=Number(match[1]);
-      db.prepare('UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=?').run(code===0?'succeeded':'failed',code,now(),job.id);
+      const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
+      db.prepare('UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=?').run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
     } else if(!windowAlive(job.window)) {
       db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
     }
