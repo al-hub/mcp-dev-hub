@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 export const SESSION = 'mcp-dev-hub-14';
 export const ALLOWED = Object.freeze({
@@ -77,7 +78,7 @@ export function tick(db) {
 export async function runWorker(db,{interval=300}={}) {
   while(true){tick(db);await new Promise(r=>setTimeout(r,interval));}
 }
-if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const db=openDb();const action=process.argv[2];
   if(action==='enqueue') {
     const [id,kind,project,target,workspace]=process.argv.slice(3);
