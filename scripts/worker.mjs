@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {randomBytes} from 'node:crypto';
 import {trackPr,recordPrGate,prNextAction} from '../src/jobs/pr-automation.mjs';
 import {pollPrGithub} from '../src/jobs/pr-github-poll.mjs';
+import {pollPrWithGh} from '../src/jobs/pr-gh-cli.mjs';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
@@ -305,7 +306,7 @@ export async function runWorker(db,{interval=300}={}) {
     try{await dispatchDueCiRetries(db);}catch{console.error('CI_RETRY_DISPATCH_ERROR');}
     const prKey=process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY;
     const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
-    if(prKey&&token&&Date.now()-lastPrPoll>=30000){
+    if(prKey&&Date.now()-lastPrPoll>=30000){
       lastPrPoll=Date.now();
       try{enqueuePrReviewIfReady(db,await pollPrGithub({db,prKey,token}));reconcilePrReviewEvidence(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
@@ -324,7 +325,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   } else if(action==='pr-poll'){
     const prKey=process.argv[3];
     const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
-    const result=await pollPrGithub({db,prKey,token});
+    const result=token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey});
     const reviewQueued=enqueuePrReviewIfReady(db,result);
     console.log(JSON.stringify({...result,reviewQueued}));
   } else if(action==='pr-track'){
