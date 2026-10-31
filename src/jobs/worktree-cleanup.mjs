@@ -14,13 +14,14 @@ export function ensureWorktreeTable(db){
   state TEXT NOT NULL,updated_at TEXT NOT NULL
  )`);
 }
-export function registerWorktree(db,{taskId,path,branch,root}){
+export function registerWorktree(db,{taskId,path,branch,root,state='active'}){
+ if(!['active','allocating'].includes(state))throw Error('invalid registration state');
  if(!validId.test(taskId)||!branch||!root)throw Error('invalid worktree registry');
  const base=realpathSync(root),target=resolve(path);
  if(!within(base,target))throw Error('worktree outside approved root');
  ensureWorktreeTable(db);
- db.prepare("INSERT INTO managed_worktrees(task_id,path,branch,state,updated_at) VALUES(?,?,?,'active',?)")
-   .run(taskId,target,branch,new Date().toISOString());
+ db.prepare('INSERT INTO managed_worktrees(task_id,path,branch,state,updated_at) VALUES(?,?,?,?,?)')
+   .run(taskId,target,branch,state,new Date().toISOString());
 }
 export function cleanupWorktree(db,{taskId,root,repoDir=root,taskTerminal=false,leaseAlive=true,resultsPreserved=false,gitRunner=git}){
  ensureWorktreeTable(db);
