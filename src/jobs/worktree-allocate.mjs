@@ -12,7 +12,7 @@ export function allocateWorktree(db,{taskId,root,repoDir,baseSha,branch,gitRunne
  ensureWorktreeTable(db);
  const prior=db.prepare('SELECT task_id,state FROM managed_worktrees WHERE task_id=? OR path=?').get(taskId,target);
  if(prior)throw Error('worktree already registered');
- const result=gitRunner(['worktree','add','--detach',target,baseSha],repo);
+ const result=gitRunner(['worktree','add','-b',branch,target,baseSha],repo);
  if(result.status!==0)throw Error('worktree create failed');
  try{registerWorktree(db,{taskId,path:target,branch,root:base});}
  catch(e){throw Error('worktree created but registry uncertain; manual reconciliation required',{cause:e});}
