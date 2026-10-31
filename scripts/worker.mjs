@@ -140,6 +140,13 @@ export function reconcile(db) {
       const code=Number(match[1]);
       const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
       db.prepare('UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=?').run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
+      // Only managed worktree windows are retired, after the terminal result has been persisted.
+      if(process.env.MCP_DEV_HUB_WORKTREE_ROOT){
+        ensureWorktreeTable(db);
+        if(db.prepare('SELECT 1 FROM managed_worktrees WHERE task_id=?').get(job.id)){
+          tmux(['kill-window','-t','='+SESSION+':'+job.window]);
+        }
+      }
     } else if(!windowAlive(job.window)) {
       db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
     }
