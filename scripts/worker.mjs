@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, chmodSync, readFileSync } from 'node:fs';
+import { mkdirSync, chmodSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -150,6 +150,7 @@ export function tick(db) {
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }
   const win='job-'+job.id;
+  if(job.kind==='review-opencode') rmSync(join(resolve(stateDir()),'review-results',job.id+'.json'),{force:true});
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
