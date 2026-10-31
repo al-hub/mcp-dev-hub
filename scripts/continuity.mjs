@@ -42,7 +42,7 @@ if(action==='check'){
  const id=randomUUID();
  const data={id,session,kind:'npm-check',status:'running',startedAt:new Date().toISOString()};
  save(data);
- const inner=`printf '%s\\n' 'RUN ${id} npm run check'; npm run check; code=$?; printf 'END ${id} exit=%s\\n' "$code"; exec bash`;
+ const inner=`printf '%s\\n' 'RUN ${id} npm run check'; source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; npm run check; code=$?; printf 'END ${id} exit=%s\\n' "$code"; exec bash`;
  const exists=run(['list-windows','-t','='+session,'-F','#{window_name}']).stdout.split('\n').includes('check');
  if(exists)run(['kill-window','-t','='+session+':check']);
  const result=run(['new-window','-d','-t','='+session,'-n','check','bash','-lc',inner]);
