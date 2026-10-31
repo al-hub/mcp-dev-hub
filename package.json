@@ -1,0 +1,15 @@
+{
+  "name": "mcp-dev-hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Common local and SSH development hub for MCP clients",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.*",
+    "check:privacy": "node scripts/check-privacy.mjs",
+    "check": "npm test && npm run check:privacy"
+  }
+}

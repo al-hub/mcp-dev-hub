@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "id": "local",
+      "kind": "local",
+      "enabled": false,
+      "workspaces": [
+        {
+          "id": "demo",
+          "root": "<ABSOLUTE_WORKSPACE_PATH>"
+        }
+      ]
+    },
+    {
+      "id": "remote-demo",
+      "kind": "ssh",
+      "enabled": false,
+      "sshAlias": "<LOCAL_SSH_CONFIG_ALIAS>",
+      "workspaces": [
+        {
+          "id": "demo",
+          "root": "<REMOTE_ABSOLUTE_WORKSPACE_PATH>"
+        }
+      ]
+    }
+  ]
+}
