@@ -40,7 +40,7 @@ test('cleanup uses owning repository rather than storage root for git commands',
   const gitRunner=(args,cwd)=>{
    if(args[0]==='status'){assert.equal(cwd,p);return {status:0,stdout:''};}
    assert.equal(cwd,repoDir);
-   if(args[1]==='list')return {status:0,stdout:'worktree '+p+'\\n'};
+   if(args[1]==='list')return {status:0,stdout:'worktree '+p+'\n'};
    if(args[1]==='remove')return {status:0,stdout:''};
    return {status:1,stdout:''};
   };
