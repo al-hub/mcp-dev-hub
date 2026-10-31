@@ -20,7 +20,7 @@ test('PR reviewer dispatch is idempotent, scoped and pinned to exact SHA',()=>{
   trackPr(db,{prKey:'al-hub/mcp-dev-hub#17',headSha:sha});
   assert.equal(enqueuePrReviewIfReady(db,{gate:'ci',state:'verifying',headSha:sha}),false);
   assert.equal(enqueuePrReviewIfReady(db,{gate:'independent_review',state:'verifying',headSha:'b'.repeat(40)}),false);
-  assert.equal(enqueuePrReviewIfReady(db,{gate:'independent_review',state:'verifying',headSha:sha}),true);
+  assert.equal(enqueuePrReviewIfReady(db,{gate:'independent_review',state:'blocked',headSha:sha}),true);
   assert.equal(enqueuePrReviewIfReady(db,{gate:'independent_review',state:'verifying',headSha:sha}),false);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM jobs').get().n,1);
   assert.equal(db.prepare('SELECT attempt FROM review_attempts').get().attempt,1);
