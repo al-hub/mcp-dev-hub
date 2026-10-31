@@ -11,6 +11,11 @@ export const ALLOWED = Object.freeze({
   'repo-check': ['npm', 'run', 'check']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
+export function publicEvents(db) {
+  return jobs(db).map(({id,kind,project,state,exit_code,created_at,updated_at})=>({
+    id,kind,project,state,exitCode:exit_code,createdAt:created_at,updatedAt:updated_at
+  }));
+}
 const stateDir = () => process.env.MCP_DEV_HUB_STATE_DIR || join(homedir(), '.local','state','mcp-dev-hub');
 export function openDb() {
   const dir=resolve(stateDir()); mkdirSync(dir,{recursive:true,mode:0o700}); chmodSync(dir,0o700);
@@ -79,6 +84,7 @@ if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1])
     addJob(db,{id,kind,project,target,workspace});console.log('queued',id);
   } else if(action==='status'){reconcile(db);console.log(JSON.stringify(jobs(db),null,2));}
   else if(action==='once'){tick(db);console.log(JSON.stringify(jobs(db),null,2));}
+  else if(action==='events'){reconcile(db);console.log(JSON.stringify(publicEvents(db)));}
   else if(action==='run'){await runWorker(db);}
   else throw Error('usage: enqueue <id> <allowlisted-kind> <project> <target> <workspace> | status | once | run');
 }
