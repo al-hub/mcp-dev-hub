@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
+import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
+import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, chmodSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -143,8 +145,23 @@ export function reconcile(db) {
     }
   }
 }
+export function reconcileManagedWorktrees(db) {
+  const root=process.env.MCP_DEV_HUB_WORKTREE_ROOT;
+  if(!root)return 0;
+  ensureWorktreeTable(db);
+  let processed=0;
+  for(const row of db.prepare("SELECT w.task_id,j.state,j.window FROM managed_worktrees w JOIN jobs j ON j.id=w.task_id WHERE w.state='active'").all()) {
+    if(!['succeeded','failed','blocked'].includes(row.state))continue;
+    const alive=Boolean(row.window && windowAlive(row.window));
+    const preserved=row.state==='succeeded' && (db.prepare('SELECT 1 FROM review_results WHERE job_id=?').get(row.task_id)!==undefined || db.prepare("SELECT kind FROM jobs WHERE id=?").get(row.task_id)?.kind!=='review-opencode');
+    const outcome=cleanupWorktree(db,{taskId:row.task_id,root,taskTerminal:true,leaseAlive:alive,resultsPreserved:preserved});
+    if(outcome.removed)processed++;
+  }
+  return processed;
+}
 export function tick(db) {
   ensureSession();reconcile(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
+  reconcileManagedWorktrees(db);
   if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'||j.state==='failed'||j.state==='blocked'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
@@ -152,6 +169,14 @@ export function tick(db) {
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }
   const win='job-'+job.id;
+  let executionDir=process.cwd();
+  if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA){
+    try {
+      const existing=db.prepare("SELECT path FROM managed_worktrees WHERE task_id=?").get(job.id);
+      if(existing)executionDir=existing.path;
+      else executionDir=allocateWorktree(db,{taskId:job.id,root:process.env.MCP_DEV_HUB_WORKTREE_ROOT,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,baseSha:process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA,branch:'task/'+job.id}).path;
+    }catch(e){db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);return false;}
+  }
   if(job.kind==='review-opencode') rmSync(join(resolve(stateDir()),'review-results',job.id+'.json'),{force:true});
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
@@ -159,7 +184,7 @@ export function tick(db) {
   const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
-  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',process.cwd(),'-n',win,'bash','-lc',script]);
+  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
   if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
   return r.status===0;
 }
