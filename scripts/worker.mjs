@@ -10,7 +10,9 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
-export const SESSION = 'mcp-dev-hub-14';
+const configuredSession = process.env.MCP_DEV_HUB_TMUX_SESSION || 'mcp-dev-hub-14';
+if(!/^[a-z][a-z0-9-]{2,63}$/.test(configuredSession))throw Error('invalid tmux session');
+export const SESSION = configuredSession;
 export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
