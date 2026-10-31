@@ -264,6 +264,12 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     if(kind==='review-opencode')registerReviewJob(db,job);
     else addJob(db,job);
     console.log('queued',id);
+  } else if(action==='pr-poll'){
+    const prKey=process.argv[3];
+    const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
+    const result=await pollPrGithub({db,prKey,token});
+    const reviewQueued=enqueuePrReviewIfReady(db,result);
+    console.log(JSON.stringify({...result,reviewQueued}));
   } else if(action==='pr-track'){
     const [prKey,headSha]=process.argv.slice(3);
     console.log(JSON.stringify(trackPr(db,{prKey,headSha})));
