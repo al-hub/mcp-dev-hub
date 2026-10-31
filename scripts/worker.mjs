@@ -9,7 +9,8 @@ export const SESSION = 'mcp-dev-hub-14';
 export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
-  'repo-check': ['npm', 'run', 'check']
+  'repo-check': ['npm', 'run', 'check'],
+  'cli-smoke': ['node', 'scripts/cli-smoke.mjs']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
 export function publicEvents(db, project) {
