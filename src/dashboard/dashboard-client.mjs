@@ -1,7 +1,7 @@
 const el=id=>document.getElementById(id);
 let token='',abort;
 const show=(parent,items,mapper)=>{parent.replaceChildren(...items.map(mapper));};
-const card=(title,details)=>{const a=document.createElement('article'),b=document.createElement('strong'),p=document.createElement('p');b.textContent=title;p.textContent=details;a.append(b,p);return a;};
+const card=(title,details,url)=>{const a=document.createElement('article'),b=document.createElement('strong'),p=document.createElement('p');b.textContent=title;p.textContent=details;a.append(b,p);if(typeof url==='string' && /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\//.test(url)){const l=document.createElement('a');l.href=url;l.target='_blank';l.rel='noopener noreferrer';l.textContent='GitHub';a.append(l);}return a;};
 async function read(path,signal){
  const r=await fetch(path,{headers:{Authorization:'Bearer '+token},signal,cache:'no-store'});
  if(!r.ok)throw Error('Status unavailable ('+r.status+')');return r.json();
@@ -9,8 +9,8 @@ async function read(path,signal){
 async function refresh(signal){
  const [jobs,github]=await Promise.all([read('/api/jobs',signal),read('/api/github',signal)]);
  show(el('jobs'),jobs.jobs,j=>card(j.kind+' · '+j.state,j.id+' · '+j.updatedAt));
- const items=[...github.issues.map(x=>({...x,type:'Issue'})),...github.pullRequests.map(x=>({...x,type:'PR'})),...github.ci.map(x=>({type:'CI',title:x.name,state:x.conclusion||x.status}))];
- show(el('github'),items.slice(0,60),x=>card(x.type+' · '+x.title,x.state||'unknown'));
+ const items=[...github.issues.map(x=>({...x,type:'Issue'})),...github.pullRequests.map(x=>({...x,type:'PR'})),...github.ci.map(x=>({type:'CI',title:x.name,state:x.conclusion||x.status,url:x.url}))];
+ show(el('github'),items.slice(0,60),x=>card(x.type+' · '+x.title,x.state||'unknown',x.type==='PR' && x.url?x.url+'/files':x.url));
 }
 async function stream(signal){
  let cursor=0,lastRefresh=0,reconnects=0;
