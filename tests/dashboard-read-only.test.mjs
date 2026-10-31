@@ -27,7 +27,7 @@ test('authenticated dashboard projects Worker jobs and GitHub independently',asy
   assert.doesNotMatch(JSON.stringify(jobs),/job-beta|workspace|target/);
   const stream=await fetch(base+'/api/stream',{headers});
   assert.equal(stream.status,200);
-  assert.match(stream.headers.get('content-type'),/text\\/event-stream/);
+  assert.ok(stream.headers.get('content-type').includes('text/event-stream'));
   const reader=stream.body.getReader();
   const first=await reader.read();
   assert.match(new TextDecoder().decode(first.value),/job-alpha/);
