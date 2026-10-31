@@ -9,7 +9,7 @@ test('reads verified GitHub issue, PR and CI state without copying bodies or sec
     [{number:21,title:'Fix',state:'open',html_url:'https://github.com/example/app/pull/21',merged_at:null,head:{sha:'abc'},body:'secret=private'}],
     [{id:33,name:'CI',status:'completed',conclusion:'success',html_url:'https://github.com/example/app/actions/runs/33'}]
   ];
-  const fetchImpl=async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>({items:responses[calls.length-1],workflow_runs:responses[calls.length-1]})};};
+  const fetchImpl=async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>calls.length===3?{workflow_runs:responses[2]}:responses[calls.length-1]};};
   const read=createGithubStatusReader({fetchImpl,token:'synthetic-token'});
   const result=await read({owner:'example',repo:'app'});
   assert.equal(result.issues[0].state,'open');
