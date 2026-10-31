@@ -146,9 +146,10 @@ export function reconcile(db) {
     const pane=readPane(job.window);
     const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
     const nonce=db.prepare('SELECT nonce FROM job_run_nonces WHERE job_id=? AND attempt=?').get(job.id,attempt)?.nonce;
-    const match=nonce&&pane?.match(new RegExp('^END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=([0-9]+)
-    if(match) {
-      const code=Number(match[1]);
+    const match=nonce && pane?.split('\n').some(line=>line===('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=0') || line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
+    const exitLine=match && pane.split('\n').find(line=>line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
+    if(match && exitLine) {
+      const code=Number(exitLine.slice(exitLine.lastIndexOf('=')+1));
       const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
       db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state='running'").run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
       // Only managed worktree windows are retired, after the terminal result has been persisted.
@@ -205,112 +206,6 @@ export function tick(db) {
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
-  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
-  if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
-  return r.status===0;
-}
-export async function dispatchDueCiRetries(db,{at=Date.now(),dispatch=dispatchScheduledCiRetry}={}) {
-  const repo=process.env.MCP_DEV_HUB_GITHUB_REPOSITORY;
-  const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
-  // Fail closed unless both the exact repository and an Actions-write token are configured.
-  if(!repo || !token)return 0;
-  ensureCiRetryTable(db);
-  const due=db.prepare("SELECT run_id FROM ci_retry_runs WHERE state='retry_scheduled' AND retry_at<=? ORDER BY retry_at LIMIT 10").all(new Date(at).toISOString());
-  let attempted=0;
-  for(const row of due){
-    await dispatch(db,{runId:row.run_id,repo,token,now:at});
-    attempted++;
-  }
-  return attempted;
-}
-export async function runWorker(db,{interval=300}={}) {
-  while(true){
-    tick(db);
-    try{await dispatchDueCiRetries(db);}catch(e){console.error('CI_RETRY_DISPATCH_ERROR',e?.message??'unknown');}
-    await new Promise(r=>setTimeout(r,interval));
-  }
-}
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  const db=openDb();const action=process.argv[2];
-  if(action==='enqueue') {
-    const [id,kind,project,target,workspace]=process.argv.slice(3);
-    const job={id,kind,project,target,workspace};
-    if(kind==='review-opencode')registerReviewJob(db,job);
-    else addJob(db,job);
-    console.log('queued',id);
-  } else if(action==='pr-track'){
-    const [prKey,headSha]=process.argv.slice(3);
-    console.log(JSON.stringify(trackPr(db,{prKey,headSha})));
-  } else if(action==='pr-gate'){
-    const [prKey,headSha,gate,verdict,evidenceId]=process.argv.slice(3);
-    recordPrGate(db,{prKey,headSha,gate,verdict,evidenceId});
-    console.log(JSON.stringify(prNextAction(db,{prKey,observedSha:headSha})));
-  } else if(action==='pr-next'){
-    const [prKey,observedSha]=process.argv.slice(3);
-    console.log(JSON.stringify(prNextAction(db,{prKey,observedSha})));
-  } else if(action==='status'){reconcile(db);console.log(JSON.stringify(jobs(db),null,2));}
-  else if(action==='once'){tick(db);console.log(JSON.stringify(jobs(db),null,2));}
-  else if(action==='events'){reconcile(db);console.log(JSON.stringify(publicEvents(db)));}
-  else if(action==='run'){await runWorker(db);}
-  else throw Error('usage: enqueue <id> <allowlisted-kind> <project> <target> <workspace> | status | once | run');
-}
-,'m'));
-    if(match) {
-      const code=Number(match[1]);
-      const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
-      db.prepare('UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=?').run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
-      // Only managed worktree windows are retired, after the terminal result has been persisted.
-      if(process.env.MCP_DEV_HUB_WORKTREE_ROOT){
-        ensureWorktreeTable(db);
-        if(db.prepare('SELECT 1 FROM managed_worktrees WHERE task_id=?').get(job.id)){
-          tmux(['kill-window','-t','='+SESSION+':'+job.window]);
-        }
-      }
-    } else if(!windowAlive(job.window)) {
-      db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
-    }
-  }
-}
-export function reconcileManagedWorktrees(db) {
-  const root=process.env.MCP_DEV_HUB_WORKTREE_ROOT;
-  if(!root)return 0;
-  ensureWorktreeTable(db);
-  let processed=0;
-  for(const row of db.prepare("SELECT w.task_id,j.state,j.window FROM managed_worktrees w JOIN jobs j ON j.id=w.task_id WHERE w.state='active'").all()) {
-    if(!['succeeded','failed','blocked'].includes(row.state))continue;
-    const alive=Boolean(row.window && windowAlive(row.window));
-    const preserved=row.state==='succeeded' && (db.prepare('SELECT 1 FROM review_results WHERE job_id=?').get(row.task_id)!==undefined || db.prepare("SELECT kind FROM jobs WHERE id=?").get(row.task_id)?.kind!=='review-opencode');
-    const outcome=cleanupWorktree(db,{taskId:row.task_id,root,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO||root,taskTerminal:true,leaseAlive:alive,resultsPreserved:preserved});
-    if(outcome.removed)processed++;
-  }
-  return processed;
-}
-export function tick(db) {
-  ensureSession();reconcile(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
-  reconcileManagedWorktrees(db);
-  if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'))return false;
-  const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
-  if(!job)return false;
-  if(job.target!=='local' || process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
-    db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
-  }
-  const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
-  const win='job-'+job.id+'-a'+attempt;
-  let executionDir=process.cwd();
-  if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA){
-    try {
-      const existing=db.prepare("SELECT path FROM managed_worktrees WHERE task_id=?").get(job.id);
-      if(existing)executionDir=existing.path;
-      else executionDir=allocateWorktree(db,{taskId:job.id,root:process.env.MCP_DEV_HUB_WORKTREE_ROOT,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,baseSha:process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA,branch:'task/'+job.id}).path;
-    }catch(e){db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);return false;}
-  }
-  // Results of earlier attempts remain immutable; a new attempt uses a different result file.
-  // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
-  const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
-  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_ATTEMPT='+attempt+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' exit=%s\\n" "$rc"; exec bash';
-  const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
-  if(claimed.changes!==1)return false;
   const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
   if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
   return r.status===0;
