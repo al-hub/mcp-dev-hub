@@ -17,7 +17,7 @@ function save(data){
 }
 function load(){return existsSync(statePath)?JSON.parse(readFileSync(statePath,'utf8')):null;}
 function checkTmux(){return run(['has-session','-t','='+session]).status===0;}
-function capture(){return run(['capture-pane','-p','-S','-200','-t','='+session+':check']).stdout;}
+function capture(){return run(['capture-pane','-p','-S','-','-t','='+session+':check']).stdout;}
 function resultFromPane(state){
  if(!state||state.status!=='running'||!checkTmux())return state;
  const output=capture();
@@ -38,7 +38,7 @@ if(action==='start'){
 if(action==='check'){
  if(!checkTmux())throw Error('tmux session missing; run start first');
  const previous=resultFromPane(load());
- if(previous?.status==='running')throw Error('previous execution unresolved: inspect tmux and reconcile manually');
+ if(previous && !['succeeded'].includes(previous.status))throw Error('previous execution not safely completed: inspect and reconcile manually');
  const id=randomUUID();
  const data={id,session,kind:'npm-check',status:'running',startedAt:new Date().toISOString()};
  save(data);
@@ -51,7 +51,7 @@ if(action==='check'){
 }
 if(action==='reconcile'){
  const state=resultFromPane(load());if(!state||state.status!=='running')throw Error('no unresolved run');
- if(checkTmux()&&run(['list-windows','-t','='+session,'-F','#{window_name}']).stdout.split('\\n').includes('check'))throw Error('tmux check window still exists: cannot mark unknown or allow replay until execution is independently resolved');
+ if(checkTmux()&&run(['list-windows','-t','='+session,'-F','#{window_name}']).stdout.split('\n').includes('check'))throw Error('tmux check window still exists: cannot mark unknown or allow replay until execution is independently resolved');
  save({...state,status:'unknown',reconciledAt:new Date().toISOString()});
  console.log('marked unknown; review tmux output and test evidence before retry');process.exit(0);
 }
