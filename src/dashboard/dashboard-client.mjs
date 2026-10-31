@@ -13,11 +13,12 @@ async function refresh(signal){
  show(el('github'),items.slice(0,60),x=>card(x.type+' · '+x.title,x.state||'unknown'));
 }
 async function stream(signal){
- let cursor=0,lastRefresh=0;
+ let cursor=0,lastRefresh=0,reconnects=0;
  while(!signal.aborted){
   try{
    const r=await fetch('/api/stream',{headers:{Authorization:'Bearer '+token,...(cursor?{'Last-Event-ID':String(cursor)}:{})},signal,cache:'no-store'});
    if(!r.ok)throw Error('stream unavailable');
+   reconnects=0;
    const reader=r.body.getReader();const decoder=new TextDecoder();let buffer='';
    while(!signal.aborted){
     const part=await reader.read();if(part.done)break;
@@ -36,7 +37,10 @@ async function stream(signal){
     }
 
    }
-  }catch(e){if(!signal.aborted)el('status').textContent='Disconnected; retry with Connect';return;}
+  }catch(e){if(!signal.aborted)el('status').textContent='Reconnecting live stream';}
+  if(signal.aborted)break;
+  reconnects=Math.min(reconnects+1,6);
+  await new Promise(resolve=>setTimeout(resolve,Math.min(1000*2**(reconnects-1),30000)));
  }
 }
 el('connect').onclick=async()=>{
