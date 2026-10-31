@@ -1,7 +1,9 @@
 import {timingSafeEqual} from 'node:crypto';
 import http from 'node:http';
+import {readFileSync} from 'node:fs';
 import {publicEvents,eventHistory,eventBounds} from '../../scripts/worker.mjs';
 
+const assets = Object.freeze({'/':['index.html','text/html; charset=utf-8'],'/dashboard-client.mjs':['dashboard-client.mjs','text/javascript; charset=utf-8'],'/dashboard.css':['dashboard.css','text/css; charset=utf-8']});
 const isProject = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{1,63}$/.test(value);
 export function safeBearer(value,expected) {
   if (typeof expected !== 'string' || expected.length < 24 || typeof value !== 'string' || !value.startsWith('Bearer ')) return false;
@@ -13,9 +15,14 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
   if (!repository || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw Error('invalid repository');
   if (typeof readGithub !== 'function' || !db) throw Error('missing read-only dependencies');
   const [owner,repo]=repository.split('/');
-  const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'",'Access-Control-Allow-Origin':'null'};
+  const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'",'Access-Control-Allow-Origin':'null'};
   const server=http.createServer(async (req,res)=>{
     for(const [key,val] of Object.entries(headers)) if(key!=='Access-Control-Allow-Origin') res.setHeader(key,val);
+    if(req.method==='GET' && Object.hasOwn(assets,req.url)){
+      const [filename,type]=assets[req.url];
+      res.writeHead(200,{'Content-Type':type});
+      res.end(readFileSync(new URL(filename,import.meta.url)));return;
+    }
     if (!safeBearer(req.headers.authorization,token)) {res.writeHead(401);res.end('Unauthorized');return;}
     if (req.method!=='GET') {res.writeHead(405);res.end();return;}
     try {
