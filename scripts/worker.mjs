@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import {randomBytes} from 'node:crypto';
 import {trackPr,recordPrGate,prNextAction} from '../src/jobs/pr-automation.mjs';
+import {pollPrGithub} from '../src/jobs/pr-github-poll.mjs';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
@@ -229,10 +230,29 @@ export async function dispatchDueCiRetries(db,{at=Date.now(),dispatch=dispatchSc
   }
   return attempted;
 }
+export function enqueuePrReviewIfReady(db,result){
+ if(result?.gate!=='independent_review'||result?.state!=='verifying'||!result.headSha)return false;
+ // Require a separately approved local execution scope and an exact pinned checkout.
+ if(process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA!==result.headSha)return false;
+ const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE?.split(':');
+ if(!scope||scope.length!==3||scope[1]!=='local')return false;
+ const id='review-pr-'+result.headSha.slice(0,12);
+ if(db.prepare('SELECT 1 FROM jobs WHERE id=?').get(id))return false;
+ registerReviewJob(db,{id,kind:'review-opencode',project:scope[0],target:scope[1],workspace:scope[2]});
+ return true;
+}
 export async function runWorker(db,{interval=300}={}) {
-  while(true){
+ let lastPrPoll=0;
+ while(true){
     tick(db);
-    try{await dispatchDueCiRetries(db);}catch(e){console.error('CI_RETRY_DISPATCH_ERROR',e?.message??'unknown');}
+    try{await dispatchDueCiRetries(db);}catch{console.error('CI_RETRY_DISPATCH_ERROR');}
+    const prKey=process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY;
+    const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
+    if(prKey&&token&&Date.now()-lastPrPoll>=30000){
+      lastPrPoll=Date.now();
+      try{enqueuePrReviewIfReady(db,await pollPrGithub({db,prKey,token}));}
+      catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
+    }
     await new Promise(r=>setTimeout(r,interval));
   }
 }
