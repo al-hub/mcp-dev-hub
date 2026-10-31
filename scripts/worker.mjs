@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import {trackPr,recordPrGate,prNextAction} from '../src/jobs/pr-automation.mjs';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
@@ -226,6 +227,16 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     if(kind==='review-opencode')registerReviewJob(db,job);
     else addJob(db,job);
     console.log('queued',id);
+  } else if(action==='pr-track'){
+    const [prKey,headSha]=process.argv.slice(3);
+    console.log(JSON.stringify(trackPr(db,{prKey,headSha})));
+  } else if(action==='pr-gate'){
+    const [prKey,headSha,gate,verdict,evidenceId]=process.argv.slice(3);
+    recordPrGate(db,{prKey,headSha,gate,verdict,evidenceId});
+    console.log(JSON.stringify(prNextAction(db,{prKey,observedSha:headSha})));
+  } else if(action==='pr-next'){
+    const [prKey,observedSha]=process.argv.slice(3);
+    console.log(JSON.stringify(prNextAction(db,{prKey,observedSha})));
   } else if(action==='status'){reconcile(db);console.log(JSON.stringify(jobs(db),null,2));}
   else if(action==='once'){tick(db);console.log(JSON.stringify(jobs(db),null,2));}
   else if(action==='events'){reconcile(db);console.log(JSON.stringify(publicEvents(db)));}
