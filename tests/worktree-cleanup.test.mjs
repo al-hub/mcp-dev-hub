@@ -31,3 +31,19 @@ test('dirty worktree is preserved for recovery',()=>{
   assert.equal(removeCalls,0);
  }finally{db.close();rmSync(root,{recursive:true,force:true});}
 });
+
+test('cleanup uses owning repository rather than storage root for git commands',()=>{
+ const root=mkdtempSync(join(tmpdir(),'managed-wt-')),repoDir=mkdtempSync(join(tmpdir(),'managed-repo-')),p=join(root,'work-three');
+ mkdirSync(p);const db=new DatabaseSync(':memory:');
+ try{
+  registerWorktree(db,{taskId:'task-three',path:p,branch:'feature-three',root});
+  const gitRunner=(args,cwd)=>{
+   if(args[0]==='status'){assert.equal(cwd,p);return {status:0,stdout:''};}
+   assert.equal(cwd,repoDir);
+   if(args[1]==='list')return {status:0,stdout:'worktree '+p+'\\n'};
+   if(args[1]==='remove')return {status:0,stdout:''};
+   return {status:1,stdout:''};
+  };
+  assert.equal(cleanupWorktree(db,{taskId:'task-three',root,repoDir,taskTerminal:true,leaseAlive:false,resultsPreserved:true,gitRunner}).state,'removed');
+ }finally{db.close();rmSync(root,{recursive:true,force:true});rmSync(repoDir,{recursive:true,force:true});}
+});
