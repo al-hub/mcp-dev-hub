@@ -157,8 +157,10 @@ export function reconcile(db) {
     const pane=readPane(job.window);
     const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
     const nonce=db.prepare('SELECT nonce FROM job_run_nonces WHERE job_id=? AND attempt=?').get(job.id,attempt)?.nonce;
-    const match=nonce && pane?.split('\n').some(line=>line===('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=0') || line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
-    const exitLine=match && pane.split('\n').find(line=>line.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit='));
+    // Durable nonce-bound completion proof, independent of tmux pane wrapping.
+    let exitLine=null;
+    try { exitLine=readFileSync(join(resolve(stateDir()),'run-proofs',job.id+'-attempt-'+attempt+'.txt'),'utf8').trim(); } catch {}
+    const match=nonce && exitLine?.startsWith('END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=');
     if(match && exitLine) {
       const rawCode=exitLine.slice(exitLine.lastIndexOf('=')+1);
       if(!/^(0|[1-9][0-9]{0,2})$/.test(rawCode)||Number(rawCode)>255)continue;
@@ -248,7 +250,10 @@ export function tick(db) {
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+' ' : '';
   const nonce=randomBytes(16).toString('hex');
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc"; exec bash';
+  const proofDir=join(stateDir(),'run-proofs');
+  mkdirSync(proofDir,{recursive:true,mode:0o700});
+  const proofFile=join(proofDir,job.id+'-attempt-'+attempt+'.txt');
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
