@@ -1,0 +1,11 @@
+import {spawn} from 'node:child_process';
+const executable='opencode';
+const args=['run','--model','opencode/deepseek-v4.1-flash-free','Reply with exactly READY'];
+const child=spawn(executable,args,{shell:false,stdio:['ignore','pipe','pipe'],env:{...process.env,CI:'1'}});
+let done=false;
+const timeout=setTimeout(()=>{if(!done){child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),1500).unref();}},45000);
+let output='';
+const scrub=(value)=>String(value).replace(/(Bearer\s+)[^\s]+/gi,'$1[REDACTED]').replace(/((?:token|password|secret|api[_-]?key)\s*[=:]\s*)[^\s&]+/gi,'$1[REDACTED]');
+for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{output+=chunk.toString().slice(0,2048);if(output.length>8192)output=output.slice(-8192);});
+child.on('error',()=>{done=true;clearTimeout(timeout);process.stderr.write('CLI_UNAVAILABLE\n');process.exitCode=2;});
+child.on('close',code=>{if(done)return;done=true;clearTimeout(timeout);const valid=code===0&&/\bREADY\b/.test(output);process.stdout.write(valid?'CLI_READY\n':'CLI_FAILED\n');process.exitCode=valid?0:1;});
