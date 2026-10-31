@@ -25,9 +25,9 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
  const required=runs.workflow_runs.filter(x=>x.head_sha===sha && x.event==='pull_request' && x.name==='CI' && Number.isSafeInteger(x.id));
  const newest=required.sort((a,b)=>b.id-a.id)[0];
  const passed=newest?.status==='completed' && newest.conclusion==='success' ? newest : null;
- if(passed)recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:'passed',evidenceId:'github-actions-'+passed.id});
+ recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:passed?'passed':'blocked',evidenceId:passed?'github-actions-'+passed.id:'github-ci-not-current'});
  let next=prNextAction(db,{prKey,observedSha:sha});
- if(next.gate==='independent_review'){
+ if(next.gate==='independent_review' || next.action==='request_guarded_merge' || next.gate==='security' || next.gate==='private_sse' || next.gate==='pc' || next.gate==='galaxy'){
   const reviews=await get('/pulls/'+number+'/reviews?per_page=100');
   if(!Array.isArray(reviews))throw Error('unverifiable PR review state');
   // Only the latest review per independent reviewer counts; stale SHA or dismissed reviews do not.
@@ -40,10 +40,8 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
    }
   }
   const approved=[...latestByReviewer.values()].find(x=>x.state==='APPROVED' && x.commit_id===sha);
-  if(approved){
-   recordPrGate(db,{prKey,headSha:sha,gate:'independent_review',verdict:'passed',evidenceId:'github-review-'+approved.id});
-   next=prNextAction(db,{prKey,observedSha:sha});
-  }
+  recordPrGate(db,{prKey,headSha:sha,gate:'independent_review',verdict:approved?'passed':'blocked',evidenceId:approved?'github-review-'+approved.id:'github-review-not-current'});
+  next=prNextAction(db,{prKey,observedSha:sha});
  }
  return {changed,headSha:sha,...next};
 }
