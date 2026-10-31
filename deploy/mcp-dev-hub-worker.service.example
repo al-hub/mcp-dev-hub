@@ -1,0 +1,16 @@
+[Unit]
+Description=MCP Dev Hub bounded development worker
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/<authorized-checkout>
+EnvironmentFile=%h/.config/mcp-dev-hub/worker.env
+ExecStart=%h/.nvm/versions/node/<node-version>/bin/node scripts/worker.mjs run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
