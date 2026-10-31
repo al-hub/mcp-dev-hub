@@ -9,7 +9,14 @@ if(!jobId || !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(jobId) || !resultDir) {
  process.stderr.write('REVIEW_CONFIGURATION_MISSING\n');process.exit(78);
 }
 try{accessSync(executable,constants.X_OK);}catch{process.stderr.write('REVIEW_CLI_UNAVAILABLE\n');process.exit(78);}
-const prompt='Independently review the current source tree for correctness, security and regression risks. Do not edit files or run commands. Respond with findings, paths and suggested tests. If no findings, explain the evidence and limitations. Do not claim GitHub PR approval.';
+const areas=Object.freeze({
+ dashboard:'src/dashboard/read-only-server.mjs, src/dashboard/dashboard-client.mjs: authentication, SSE cursor validation, error handling and project isolation',
+ worker:'scripts/worker.mjs: state transitions, tmux cleanup, data integrity and safe replay',
+ worktree:'src/jobs/worktree-allocate.mjs, src/jobs/worktree-cleanup.mjs: path safety and lifecycle'
+});
+const area=process.env.MCP_DEV_HUB_REVIEW_AREA || 'dashboard';
+if(!Object.hasOwn(areas,area)){process.stderr.write('INVALID_REVIEW_AREA\\n');process.exit(78);}
+const prompt='Independently audit ONLY '+areas[area]+'. Identify at most three specific correctness or security issues with file/function and reproduction suggestion. Do not edit files or execute shell commands. If unable to inspect the files, explicitly say review incomplete. Keep response under 500 words. Do not claim GitHub PR approval.';
 const args=['run','--model','opencode/deepseek-v4.1-flash-free',prompt];
 let output='',finished=false,timedOut=false;
 const child=spawn(executable,args,{shell:false,stdio:['ignore','pipe','pipe'],env:{...process.env,CI:'1'}});
