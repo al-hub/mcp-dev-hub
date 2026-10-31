@@ -17,11 +17,12 @@ test('allocates unique registered worktree and rejects duplicates',()=>{
   assert.throws(()=>allocateWorktree(db,{...args,taskId:'../escape'}),/invalid/);
  }finally{db.close();rmSync(root,{recursive:true,force:true});rmSync(repo,{recursive:true,force:true});}
 });
-test('does not register failed git creation',()=>{
+test('records failed git creation for manual reconciliation',()=>{
  const root=mkdtempSync(join(tmpdir(),'wt-root-')),repo=mkdtempSync(join(tmpdir(),'wt-repo-'));
  const db=new DatabaseSync(':memory:');
  try {
-  assert.throws(()=>allocateWorktree(db,{taskId:'task-102',root,repoDir:repo,baseSha:'a'.repeat(40),branch:'task/task-102',gitRunner:()=>({status:1})}),/create failed/);
-  assert.equal(listManagedWorktrees(db).length,0);
+  assert.throws(()=>allocateWorktree(db,{taskId:'task-102',root,repoDir:repo,baseSha:'a'.repeat(40),branch:'task/task-102',gitRunner:()=>({status:1})}),/allocation uncertain/);
+  assert.equal(listManagedWorktrees(db).length,1);
+  assert.equal(listManagedWorktrees(db)[0].state,'recovery_required');
  }finally{db.close();rmSync(root,{recursive:true,force:true});rmSync(repo,{recursive:true,force:true});}
 });
