@@ -15,10 +15,12 @@ test('review results require matching job id and are durably stored',()=>{
   registerReviewJob(db,{id:'review-003',kind:'review-opencode',project:'demo',target:'local',workspace:'workspace'});
   assert.equal(collectReviewResult(db,'review-003'),false);
   const output=join(dir,'review-results');mkdirSync(output);
-  const file=join(output,'review-003.json');
-  writeFileSync(file,JSON.stringify({jobId:'other-job',status:'completed',summary:'not ours'}));
+  const file=join(output,'review-003-attempt-1.json');
+  writeFileSync(file,JSON.stringify({jobId:'other-job',attempt:1,status:'completed',summary:'not ours'}));
   assert.equal(collectReviewResult(db,'review-003'),false);
-  writeFileSync(file,JSON.stringify({jobId:'review-003',status:'completed',summary:'review findings'}));
+  writeFileSync(file,JSON.stringify({jobId:'review-003',attempt:2,status:'completed',summary:'stale attempt'}));
+  assert.equal(collectReviewResult(db,'review-003'),false);
+  writeFileSync(file,JSON.stringify({jobId:'review-003',attempt:1,status:'completed',summary:'review findings'}));
   assert.equal(collectReviewResult(db,'review-003'),true);
   assert.deepEqual({...db.prepare('SELECT status,summary FROM review_results WHERE job_id=?').get('review-003')},{status:'completed',summary:'review findings'});
   db.close();
