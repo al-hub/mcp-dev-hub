@@ -6,7 +6,7 @@ const prKey='al-hub/mcp-dev-hub#17',sha='a'.repeat(40),sha2='b'.repeat(40),token
 test('trusted PR head and exact-SHA successful CI advance to review only',async()=>{
  const db=new DatabaseSync(':memory:');
  const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/pulls/')?
-  {number:17,state:'open',head:{sha}}:{workflow_runs:[{id:123,status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
+  {number:17,state:'open',head:{sha}}:{workflow_runs:[{id:123,name:'CI',status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
  const r=await pollPrGithub({db,prKey,token,fetchImpl});
  assert.equal(r.gate,'independent_review');
  assert.equal(r.state,'verifying');
@@ -17,7 +17,7 @@ test('stale CI on another SHA never advances and moving head invalidates prior e
  const db=new DatabaseSync(':memory:');
  let current=sha;
  const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/pulls/')?
-  {number:17,state:'open',head:{sha:current}}:{workflow_runs:[{id:5,status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
+  {number:17,state:'open',head:{sha:current}}:{workflow_runs:[{id:5,name:'CI',status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
  assert.equal((await pollPrGithub({db,prKey,token,fetchImpl})).gate,'independent_review');
  current=sha2;
  const result=await pollPrGithub({db,prKey,token,fetchImpl});
