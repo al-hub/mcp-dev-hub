@@ -3,7 +3,7 @@ import http from 'node:http';
 import {readFileSync} from 'node:fs';
 import {publicEvents,eventHistory,eventBounds} from '../../scripts/worker.mjs';
 
-const assets = Object.freeze({'/':['index.html','text/html; charset=utf-8'],'/dashboard-client.mjs':['dashboard-client.mjs','text/javascript; charset=utf-8'],'/dashboard.css':['dashboard.css','text/css; charset=utf-8']});
+const assets = Object.freeze(Object.fromEntries(Object.entries({'/':['index.html','text/html; charset=utf-8'],'/dashboard-client.mjs':['dashboard-client.mjs','text/javascript; charset=utf-8'],'/dashboard.css':['dashboard.css','text/css; charset=utf-8']}).map(([route,[file,type]])=>[route,{type,body:readFileSync(new URL(file,import.meta.url))}])));
 const isProject = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{1,63}$/.test(value);
 export function safeBearer(value,expected) {
   if (typeof expected !== 'string' || expected.length < 24 || typeof value !== 'string' || !value.startsWith('Bearer ')) return false;
@@ -21,10 +21,9 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
     for(const [key,val] of Object.entries(headers)) if(key!=='Access-Control-Allow-Origin') res.setHeader(key,val);
     try {
     if(req.method==='GET' && Object.hasOwn(assets,req.url)){
-      const [filename,type]=assets[req.url];
-      const content=readFileSync(new URL(filename,import.meta.url));
+      const {type,body}=assets[req.url];
       res.writeHead(200,{'Content-Type':type});
-      res.end(content);return;
+      res.end(body);return;
     }
     if (!safeBearer(req.headers.authorization,token)) {res.writeHead(401);res.end('Unauthorized');return;}
     if (req.method!=='GET') {res.writeHead(405);res.end();return;}
@@ -40,26 +39,28 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
         let cursor=raw===undefined?0:Number(raw);
         let active=true;
         let timer;
+        const safeWrite=chunk=>{if(!active||res.destroyed)return false;if(res.writableLength>262144){active=false;clearInterval(timer);res.destroy();return false;}return res.write(chunk);};
         const send=()=>{
           if(!active)return;
           try {
             const bounds=eventBounds(db,project);
             if((bounds.last===null && cursor>0) || (bounds.last!==null && cursor>bounds.last)) {
-              res.write('event: reset\ndata: {"reason":"cursor-ahead"}\n\n');
+              if(!safeWrite('event: reset\ndata: {"reason":"cursor-ahead"}\n\n'))return;
               cursor=0;
             }
             // Read in bounded batches, while preserving the last globally unique ID.
             for(let n=0;n<10;n++){
               const rows=eventHistory(db,project,cursor,100);
               for(const e of rows){
-                res.write('id: '+e.id+'\nevent: job\ndata: '+JSON.stringify(e)+'\n\n');
+                const sent=safeWrite('id: '+e.id+'\nevent: job\ndata: '+JSON.stringify(e)+'\n\n');
                 cursor=e.id;
+                if(!sent)return;
               }
               if(rows.length<100)break;
             }
           }catch {active=false;clearInterval(timer);res.end();}
         };
-        timer=setInterval(()=>{send();if(active)res.write(': heartbeat\n\n');},1000);
+        timer=setInterval(()=>{send();if(active)try{safeWrite(': heartbeat\n\n');}catch{active=false;clearInterval(timer);res.destroy();}},1000);
         req.on('close',()=>{active=false;clearInterval(timer);});
         send();return;
       }
