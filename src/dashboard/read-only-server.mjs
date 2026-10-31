@@ -32,9 +32,9 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
         res.end(JSON.stringify({project,jobs:publicEvents(db,project)}));return;
       }
       if(req.url==='/api/stream') {
-        res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
         const raw=req.headers['last-event-id'];
-        if(raw!==undefined && (typeof raw!=='string'|| !/^(0|[1-9][0-9]*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))){res.end();return;}
+        if(raw!==undefined && (typeof raw!=='string'|| !/^(0|[1-9][0-9]*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))){res.writeHead(400);res.end('Invalid event cursor');return;}
+        res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
         let cursor=raw===undefined?0:Number(raw);
         let active=true;
         let timer;
