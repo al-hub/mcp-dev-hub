@@ -12,8 +12,9 @@ export const ALLOWED = Object.freeze({
   'repo-check': ['npm', 'run', 'check']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
-export function publicEvents(db) {
-  return jobs(db).map(({id,kind,project,state,exit_code,created_at,updated_at})=>({
+export function publicEvents(db, project) {
+  if (project !== undefined && !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(project)) throw Error('invalid project');
+  return jobs(db).filter(job => project === undefined || job.project === project).map(({id,kind,project,state,exit_code,created_at,updated_at})=>({
     id,kind,project,state,exitCode:exit_code,createdAt:created_at,updatedAt:updated_at
   }));
 }
