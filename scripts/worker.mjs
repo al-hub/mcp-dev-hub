@@ -308,7 +308,7 @@ export async function runWorker(db,{interval=300}={}) {
     const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
     if(prKey&&Date.now()-lastPrPoll>=30000){
       lastPrPoll=Date.now();
-      try{enqueuePrReviewIfReady(db,await pollPrGithub({db,prKey,token}));reconcilePrReviewEvidence(db,{prKey});}
+      try{enqueuePrReviewIfReady(db,token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey}));reconcilePrReviewEvidence(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
