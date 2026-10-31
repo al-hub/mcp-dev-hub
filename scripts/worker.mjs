@@ -126,10 +126,12 @@ export function collectReviewResult(db,id) {
   if(!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id)) throw Error('invalid job id');
   const job=db.prepare('SELECT kind,state FROM jobs WHERE id=?').get(id);
   if(!job || job.kind!=='review-opencode') throw Error('not a review job');
-  const path=join(resolve(stateDir()),'review-results',id+'.json');
+  const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(id)?.attempt;
+  if(!attempt)return false;
+  const path=join(resolve(stateDir()),'review-results',id+'-attempt-'+attempt+'.json');
   let result;
   try { result=JSON.parse(readFileSync(path,'utf8')); } catch { return false; }
-  if(result.jobId!==id || !['completed','failed','timed_out'].includes(result.status) ||
+  if(result.jobId!==id || result.attempt!==attempt || !['completed','failed','timed_out'].includes(result.status) ||
       typeof result.summary!=='string' || result.summary.length>12000) return false;
   db.prepare('INSERT INTO review_results(job_id,status,summary,recorded_at) VALUES(?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET status=excluded.status,summary=excluded.summary,recorded_at=excluded.recorded_at')
     .run(id,result.status,result.summary,new Date().toISOString());
@@ -138,7 +140,8 @@ export function collectReviewResult(db,id) {
 export function reconcile(db) {
   for(const job of jobs(db).filter(j=>j.state==='running')) {
     const pane=readPane(job.window);
-    const match=pane?.match(new RegExp('END '+job.id+' exit=([0-9]+)'));
+    const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
+    const match=pane?.match(new RegExp('END '+job.id+' attempt='+attempt+' exit=([0-9]+)'));
     if(match) {
       const code=Number(match[1]);
       const validReview=job.kind!=='review-opencode' || (code===0 && collectReviewResult(db,job.id));
@@ -172,13 +175,14 @@ export function reconcileManagedWorktrees(db) {
 export function tick(db) {
   ensureSession();reconcile(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
   reconcileManagedWorktrees(db);
-  if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'||j.state==='failed'||j.state==='blocked'))return false;
+  if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
   if(job.target!=='local' || process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }
-  const win='job-'+job.id;
+  const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
+  const win='job-'+job.id+'-a'+attempt;
   let executionDir=process.cwd();
   if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA){
     try {
@@ -187,11 +191,11 @@ export function tick(db) {
       else executionDir=allocateWorktree(db,{taskId:job.id,root:process.env.MCP_DEV_HUB_WORKTREE_ROOT,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,baseSha:process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA,branch:'task/'+job.id}).path;
     }catch(e){db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);return false;}
   }
-  if(job.kind==='review-opencode') rmSync(join(resolve(stateDir()),'review-results',job.id+'.json'),{force:true});
+  // Results of earlier attempts remain immutable; a new attempt uses a different result file.
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
-  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
+  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_ATTEMPT='+attempt+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' exit=%s\\n" "$rc"; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
