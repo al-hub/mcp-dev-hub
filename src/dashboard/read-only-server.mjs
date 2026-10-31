@@ -23,6 +23,24 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
         res.writeHead(200,{'Content-Type':'application/json'});
         res.end(JSON.stringify({project,jobs:publicEvents(db,project)}));return;
       }
+      if(req.url==='/api/stream') {
+        res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
+        let cursor=Number(req.headers['last-event-id']||0);
+        if(!Number.isSafeInteger(cursor)||cursor<0) {res.end();return;}
+        let active=true;
+        const send=()=>{
+          if(!active)return;
+          try {
+            const rows=publicEvents(db,project);
+            if(cursor>rows.length){res.write('event: reset\\ndata: {}\\n\\n');cursor=0;}
+            for(let i=cursor;i<rows.length;i++)res.write('id: '+(i+1)+'\\nevent: job\\ndata: '+JSON.stringify(rows[i])+'\\n\\n');
+            cursor=rows.length;
+          }catch {active=false;clearInterval(timer);res.end();}
+        };
+        const timer=setInterval(()=>{send();if(active)res.write(': heartbeat\\n\\n');},1000);
+        req.on('close',()=>{active=false;clearInterval(timer);});
+        send();return;
+      }
       if(req.url==='/api/github') {
         const snapshot=await readGithub({owner,repo});
         res.writeHead(200,{'Content-Type':'application/json'});
