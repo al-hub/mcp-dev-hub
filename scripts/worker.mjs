@@ -271,7 +271,7 @@ export async function dispatchDueCiRetries(db,{at=Date.now(),dispatch=dispatchSc
   return attempted;
 }
 export function enqueuePrReviewIfReady(db,result){
- if(result?.gate!=='independent_review'||result?.state!=='verifying'||!result.headSha)return false;
+ if(result?.gate!=='independent_review'||!['verifying','blocked'].includes(result?.state)||!result.headSha)return false;
  // Require a separately approved local execution scope and an exact pinned checkout.
  if(!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)return false;
  if(!/^[0-9a-f]{40}$/.test(result.headSha))return false;
