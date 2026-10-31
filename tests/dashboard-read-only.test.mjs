@@ -35,6 +35,16 @@ test('authenticated dashboard projects Worker jobs and GitHub independently',asy
   assert.match(payload,/id: [0-9]+/);
   assert.doesNotMatch(payload,/job-beta/);
   await reader.cancel();
+  const firstId=Number(payload.match(/id: ([0-9]+)/)[1]);
+  db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('running',new Date().toISOString(),'job-alpha');
+  const reconnect=await fetch(base+'/api/stream',{headers:{...headers,'Last-Event-ID':String(firstId)}});
+  const reconnectReader=reconnect.body.getReader();
+  const next=await reconnectReader.read();
+  const resumed=new TextDecoder().decode(next.value);
+  assert.match(resumed,/"state":"running"/);
+  assert.doesNotMatch(resumed,/job-beta|"state":"queued"/);
+  assert.ok(Number(resumed.match(/id: ([0-9]+)/)[1])>firstId);
+  await reconnectReader.cancel();
   const github=await (await fetch(base+'/api/github',{headers})).json();
   assert.equal(github.repository,'example/app');
   assert.equal((await fetch(base+'/api/jobs',{method:'POST',headers})).status,405);
