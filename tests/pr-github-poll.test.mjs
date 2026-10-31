@@ -32,3 +32,16 @@ test('untrusted responses and missing auth fail closed',async()=>{
  await assert.rejects(()=>pollPrGithub({db,prKey,token,fetchImpl:async()=>({ok:false})}));
  db.close();
 });
+test('external GitHub approval advances review only for current SHA and independent reviewer',async()=>{
+ const db=new DatabaseSync(':memory:');
+ const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?[
+  {id:41,state:'APPROVED',commit_id:sha,user:{login:'independent-reviewer'}},
+  {id:42,state:'APPROVED',commit_id:sha2,user:{login:'author'}}
+ ]:url.includes('/pulls/')?
+  {number:17,state:'open',head:{sha},user:{login:'author'}}:
+  {workflow_runs:[{id:123,name:'CI',status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
+ const result=await pollPrGithub({db,prKey,token,fetchImpl});
+ assert.equal(result.gate,'security');
+ assert.equal(db.prepare("SELECT evidence_id FROM pr_gate_evidence WHERE gate='independent_review'").get().evidence_id,'github-review-41');
+ db.close();
+});
