@@ -19,6 +19,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
   const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'",'Access-Control-Allow-Origin':'null'};
   const server=http.createServer(async (req,res)=>{
     for(const [key,val] of Object.entries(headers)) if(key!=='Access-Control-Allow-Origin') res.setHeader(key,val);
+    try {
     if(req.method==='GET' && Object.hasOwn(assets,req.url)){
       const [filename,type]=assets[req.url];
       res.writeHead(200,{'Content-Type':type});
@@ -26,7 +27,6 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
     }
     if (!safeBearer(req.headers.authorization,token)) {res.writeHead(401);res.end('Unauthorized');return;}
     if (req.method!=='GET') {res.writeHead(405);res.end();return;}
-    try {
       if(req.url==='/api/jobs') {
         res.writeHead(200,{'Content-Type':'application/json'});
         res.end(JSON.stringify({project,jobs:publicEvents(db,project)}));return;
@@ -42,7 +42,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
           if(!active)return;
           try {
             const bounds=eventBounds(db,project);
-            if(bounds.last!==null && cursor>bounds.last) {
+            if((bounds.last===null && cursor>0) || (bounds.last!==null && cursor>bounds.last)) {
               res.write('event: reset\ndata: {"reason":"cursor-ahead"}\n\n');
               cursor=0;
             }
@@ -68,7 +68,8 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
       }
       res.writeHead(404);res.end('Not found');
     } catch {
-      res.writeHead(503);res.end('Read-only status unavailable');
+      if(res.headersSent){res.destroy();}
+      else {res.writeHead(503);res.end('Read-only status unavailable');}
     }
   });
   return {server,listen:()=>new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,host,()=>resolve(server.address()));})};
