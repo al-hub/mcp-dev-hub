@@ -64,7 +64,7 @@ export function tick(db) {
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
   db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=?').run('running',win,now(),job.id);
-  const r=tmux(['new-window','-d','-t','='+SESSION,'-n',win,'bash','-lc',script]);
+  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',process.cwd(),'-n',win,'bash','-lc',script]);
   if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
   return r.status===0;
 }
