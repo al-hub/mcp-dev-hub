@@ -33,7 +33,7 @@ test('durable queue accepts only approved fixed tasks and rejects duplicate IDs'
   rmSync(dir,{recursive:true,force:true});
  }
 });
-test('command allowlist is closed',()=>assert.deepEqual(Object.keys(ALLOWED).sort(),['cli-smoke','repo-check','synthetic-one','synthetic-two']));
+test('command allowlist is closed',()=>assert.deepEqual(Object.keys(ALLOWED).sort(),['cli-smoke','repo-check','review-opencode','synthetic-one','synthetic-two']));
 
 test('missing tmux evidence becomes unknown and prevents queued replay',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-unknown-'));
