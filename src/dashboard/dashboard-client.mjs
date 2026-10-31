@@ -30,14 +30,17 @@ async function stream(signal){
      if(frame.includes('event: job'))changed=true;
     }
     if(buffer.length>65536)throw Error('stream frame overflow');
-    if(changed && Date.now()-lastRefresh>=1000){lastRefresh=Date.now();await refresh(signal);}
+    if(changed && Date.now()-lastRefresh>=1000){
+     lastRefresh=Date.now();
+     try{await refresh(signal);}catch{if(!signal.aborted)el('status').textContent='Live stream connected; status refresh unavailable';}
+    }
 
    }
   }catch(e){if(!signal.aborted)el('status').textContent='Disconnected; retry with Connect';return;}
  }
 }
 el('connect').onclick=async()=>{
- if(abort)abort.abort();abort=new AbortController();token=el('token').value;el('token').value='';
+ if(abort)abort.abort();abort=new AbortController();token=el('token').value || token;el('token').value='';
  try{await refresh(abort.signal);el('status').textContent='Connected';stream(abort.signal);}
  catch{el('status').textContent='Authentication or service error';token='';}
 };
