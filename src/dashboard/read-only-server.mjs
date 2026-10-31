@@ -1,4 +1,4 @@
-import {timingSafeEqual} from 'node:crypto';
+import {timingSafeEqual,createHash} from 'node:crypto';
 import http from 'node:http';
 import {readFileSync} from 'node:fs';
 import {publicEvents,eventHistory,eventBounds} from '../../scripts/worker.mjs';
@@ -7,8 +7,8 @@ const assets = Object.freeze(Object.fromEntries(Object.entries({'/':['index.html
 const isProject = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{1,63}$/.test(value);
 export function safeBearer(value,expected) {
   if (typeof expected !== 'string' || expected.length < 24 || typeof value !== 'string' || !value.startsWith('Bearer ')) return false;
-  const a=Buffer.from(value.slice(7));const b=Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a,b);
+  const a=createHash('sha256').update(value.slice(7)).digest();const b=createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a,b);
 }
 export function createReadOnlyDashboard({token,project,repository,db,readGithub,host='localhost',port=0}={}) {
   if (host !== 'localhost') throw Error('dashboard must bind to localhost');
@@ -16,6 +16,13 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
   if (!repository || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw Error('invalid repository');
   if (typeof readGithub !== 'function' || !db) throw Error('missing read-only dependencies');
   const [owner,repo]=repository.split('/');
+  let activeStreams=0;
+  let githubCache=null,githubCacheAt=0,githubPending=null;
+  const cachedGithub=async()=>{
+    if(githubCache && Date.now()-githubCacheAt<30000)return githubCache;
+    if(!githubPending)githubPending=Promise.resolve().then(()=>readGithub({owner,repo})).then(data=>{githubCache=data;githubCacheAt=Date.now();return data;}).finally(()=>{githubPending=null;});
+    return githubPending;
+  };
   const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'",'Access-Control-Allow-Origin':'null'};
   const server=http.createServer(async (req,res)=>{
     for(const [key,val] of Object.entries(headers)) if(key!=='Access-Control-Allow-Origin') res.setHeader(key,val);
@@ -33,8 +40,10 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
         res.end(body);return;
       }
       if(req.url==='/api/stream') {
+        if(activeStreams>=8){res.writeHead(429);res.end('Too many streams');return;}
         const raw=req.headers['last-event-id'];
         if(raw!==undefined && (typeof raw!=='string'|| !/^(0|[1-9][0-9]*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))){res.writeHead(400);res.end('Invalid event cursor');return;}
+        activeStreams++;
         res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
         let cursor=raw===undefined?0:Number(raw);
         let active=true;
@@ -61,11 +70,11 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
           }catch {active=false;clearInterval(timer);res.end();}
         };
         timer=setInterval(()=>{send();if(active)try{safeWrite(': heartbeat\n\n');}catch{active=false;clearInterval(timer);res.destroy();}},1000);
-        req.on('close',()=>{active=false;clearInterval(timer);});
+        req.on('close',()=>{if(activeStreams>0)activeStreams--;active=false;clearInterval(timer);});
         send();return;
       }
       if(req.url==='/api/github') {
-        const snapshot=await readGithub({owner,repo});
+        const snapshot=await cachedGithub();
         const body=JSON.stringify(snapshot);
         res.writeHead(200,{'Content-Type':'application/json'});
         res.end(body);return;
@@ -76,5 +85,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
       else {res.writeHead(503);res.end('Read-only status unavailable');}
     }
   });
+  server.requestTimeout=15000;
+  server.headersTimeout=10000;
   return {server,listen:()=>new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,host,()=>resolve(server.address()));})};
 }
