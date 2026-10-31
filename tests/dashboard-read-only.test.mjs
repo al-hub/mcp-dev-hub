@@ -25,6 +25,13 @@ test('authenticated dashboard projects Worker jobs and GitHub independently',asy
   assert.equal(jobs.project,'alpha');assert.equal(jobs.jobs.length,1);
   assert.equal(jobs.jobs[0].id,'job-alpha');
   assert.doesNotMatch(JSON.stringify(jobs),/job-beta|workspace|target/);
+  const stream=await fetch(base+'/api/stream',{headers});
+  assert.equal(stream.status,200);
+  assert.match(stream.headers.get('content-type'),/text\\/event-stream/);
+  const reader=stream.body.getReader();
+  const first=await reader.read();
+  assert.match(new TextDecoder().decode(first.value),/job-alpha/);
+  await reader.cancel();
   const github=await (await fetch(base+'/api/github',{headers})).json();
   assert.equal(github.repository,'example/app');
   assert.equal((await fetch(base+'/api/jobs',{method:'POST',headers})).status,405);
