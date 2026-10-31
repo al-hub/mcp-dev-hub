@@ -1,6 +1,6 @@
 import {timingSafeEqual} from 'node:crypto';
 import http from 'node:http';
-import {publicEvents} from '../../scripts/worker.mjs';
+import {publicEvents,eventHistory,eventBounds} from '../../scripts/worker.mjs';
 
 const isProject = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{1,63}$/.test(value);
 export function safeBearer(value,expected) {
@@ -25,19 +25,31 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
       }
       if(req.url==='/api/stream') {
         res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Connection':'keep-alive','X-Accel-Buffering':'no'});
-        let cursor=Number(req.headers['last-event-id']||0);
-        if(!Number.isSafeInteger(cursor)||cursor<0) {res.end();return;}
+        const raw=req.headers['last-event-id'];
+        if(raw!==undefined && (typeof raw!=='string'|| !/^(0|[1-9][0-9]*)$/.test(raw)||!Number.isSafeInteger(Number(raw)))){res.end();return;}
+        let cursor=raw===undefined?0:Number(raw);
         let active=true;
+        let timer;
         const send=()=>{
           if(!active)return;
           try {
-            const rows=publicEvents(db,project);
-            if(cursor>rows.length){res.write('event: reset\ndata: {}\n\n');cursor=0;}
-            for(let i=cursor;i<rows.length;i++)res.write('id: '+(i+1)+'\nevent: job\ndata: '+JSON.stringify(rows[i])+'\n\n');
-            cursor=rows.length;
+            const bounds=eventBounds(db,project);
+            if(bounds.last!==null && cursor>bounds.last) {
+              res.write('event: reset\ndata: {"reason":"cursor-ahead"}\n\n');
+              cursor=0;
+            }
+            // Read in bounded batches, while preserving the last globally unique ID.
+            for(let n=0;n<10;n++){
+              const rows=eventHistory(db,project,cursor,100);
+              for(const e of rows){
+                res.write('id: '+e.id+'\nevent: job\ndata: '+JSON.stringify(e)+'\n\n');
+                cursor=e.id;
+              }
+              if(rows.length<100)break;
+            }
           }catch {active=false;clearInterval(timer);res.end();}
         };
-        const timer=setInterval(()=>{send();if(active)res.write(': heartbeat\n\n');},1000);
+        timer=setInterval(()=>{send();if(active)res.write(': heartbeat\n\n');},1000);
         req.on('close',()=>{active=false;clearInterval(timer);});
         send();return;
       }
