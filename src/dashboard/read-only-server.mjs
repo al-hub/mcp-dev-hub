@@ -48,7 +48,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
         let cursor=raw===undefined?0:Number(raw);
         let active=true;
         let timer;
-        const safeWrite=chunk=>{if(!active||res.destroyed)return false;if(res.writableLength>262144){active=false;clearInterval(timer);res.destroy();return false;}return res.write(chunk);};
+        const safeWrite=chunk=>{if(!active||res.destroyed)return false;if(res.writableLength>262144){active=false;clearInterval(timer);res.destroy();return false;}res.write(chunk);return true;};
         const send=()=>{
           if(!active)return;
           try {
@@ -70,7 +70,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
           }catch {active=false;clearInterval(timer);res.end();}
         };
         timer=setInterval(()=>{send();if(active)try{safeWrite(': heartbeat\n\n');}catch{active=false;clearInterval(timer);res.destroy();}},1000);
-        req.on('close',()=>{if(activeStreams>0)activeStreams--;active=false;clearInterval(timer);});
+        res.once('close',()=>{if(activeStreams>0)activeStreams--;active=false;clearInterval(timer);});
         send();return;
       }
       if(req.url==='/api/github') {
