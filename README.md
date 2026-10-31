@@ -32,5 +32,5 @@ npm run check
 - `scripts/check-privacy.mjs`: 커밋 대상의 금지 경로·민감정보 후보 검사
 - `docs/`: 아키텍처, 단계별 완료 기준, 다음 작업
 
-AI CLI는 먼저 [AGENTS.md](AGENTS.md)를 읽습니다. Claude와 Gemini용 진입 문서도 같은 지침을 가리킵니다.
+AI CLI는 작업을 시작하기 전에 [AGENTS.md](AGENTS.md)를 먼저 읽습니다. Claude와 Gemini용 진입 문서도 같은 지침을 가리킵니다.
 개인정보 관리 기준은 [SECURITY.md](SECURITY.md)에 있습니다.
