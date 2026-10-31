@@ -222,7 +222,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   const db=openDb();const action=process.argv[2];
   if(action==='enqueue') {
     const [id,kind,project,target,workspace]=process.argv.slice(3);
-    addJob(db,{id,kind,project,target,workspace});console.log('queued',id);
+    const job={id,kind,project,target,workspace};
+    if(kind==='review-opencode')registerReviewJob(db,job);
+    else addJob(db,job);
+    console.log('queued',id);
   } else if(action==='status'){reconcile(db);console.log(JSON.stringify(jobs(db),null,2));}
   else if(action==='once'){tick(db);console.log(JSON.stringify(jobs(db),null,2));}
   else if(action==='events'){reconcile(db);console.log(JSON.stringify(publicEvents(db)));}
