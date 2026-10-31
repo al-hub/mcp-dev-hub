@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openDb,addJob,jobs,ALLOWED} from '../scripts/worker.mjs';
+import {openDb,addJob,jobs,ALLOWED,publicEvents} from '../scripts/worker.mjs';
 
 test('durable queue accepts only approved fixed tasks and rejects duplicate IDs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-test-'));
@@ -14,6 +14,9 @@ test('durable queue accepts only approved fixed tasks and rejects duplicate IDs'
   const job={id:'job-001',kind:'synthetic-one',project:'demo',target:'local',workspace:'workspace'};
   addJob(db,job);
   assert.equal(jobs(db)[0].state,'queued');
+  assert.equal(publicEvents(db)[0].state,'queued');
+  assert.equal(Object.hasOwn(publicEvents(db)[0],'workspace'),false);
+  assert.equal(Object.hasOwn(publicEvents(db)[0],'target'),false);
   assert.throws(()=>addJob(db,job));
   assert.throws(()=>addJob(db,{...job,id:'job-002',kind:'shell'}));
   assert.throws(()=>addJob(db,{...job,id:'job-003',target:'remote'}));
