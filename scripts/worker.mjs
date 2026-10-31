@@ -161,7 +161,7 @@ export function reconcileManagedWorktrees(db) {
     if(!['succeeded','failed','blocked'].includes(row.state))continue;
     const alive=Boolean(row.window && windowAlive(row.window));
     const preserved=row.state==='succeeded' && (db.prepare('SELECT 1 FROM review_results WHERE job_id=?').get(row.task_id)!==undefined || db.prepare("SELECT kind FROM jobs WHERE id=?").get(row.task_id)?.kind!=='review-opencode');
-    const outcome=cleanupWorktree(db,{taskId:row.task_id,root,taskTerminal:true,leaseAlive:alive,resultsPreserved:preserved});
+    const outcome=cleanupWorktree(db,{taskId:row.task_id,root,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO||root,taskTerminal:true,leaseAlive:alive,resultsPreserved:preserved});
     if(outcome.removed)processed++;
   }
   return processed;
