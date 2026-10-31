@@ -19,11 +19,32 @@ export function publicEvents(db, project) {
     id,kind,project,state,exitCode:exit_code,createdAt:created_at,updatedAt:updated_at
   }));
 }
+// Immutable, monotonic database event IDs survive process restarts and job state updates.
+export function eventHistory(db,project,since=0,limit=100) {
+  if(typeof project!=='string'|| !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(project))throw Error('invalid project');
+  if(!Number.isSafeInteger(since)||since<0||!Number.isSafeInteger(limit)||limit<1||limit>200)throw Error('invalid cursor');
+  return db.prepare('SELECT id,job_id AS jobId,kind,project,state,exit_code AS exitCode,created_at AS at FROM job_events WHERE project=? AND id>? ORDER BY id LIMIT ?').all(project,since,limit);
+}
+export function eventBounds(db,project){
+  if(typeof project!=='string'|| !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(project))throw Error('invalid project');
+  return db.prepare('SELECT MIN(id) AS first, MAX(id) AS last FROM job_events WHERE project=?').get(project);
+}
 const stateDir = () => process.env.MCP_DEV_HUB_STATE_DIR || join(homedir(), '.local','state','mcp-dev-hub');
 export function openDb() {
   const dir=resolve(stateDir()); mkdirSync(dir,{recursive:true,mode:0o700}); chmodSync(dir,0o700);
   const db=new DatabaseSync(join(dir,'worker.sqlite'));
-  db.exec('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, project TEXT NOT NULL, target TEXT NOT NULL, workspace TEXT NOT NULL, state TEXT NOT NULL, window TEXT, exit_code INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
+  db.exec(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, project TEXT NOT NULL, target TEXT NOT NULL, workspace TEXT NOT NULL, state TEXT NOT NULL, window TEXT, exit_code INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS job_events (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT NOT NULL, kind TEXT NOT NULL, project TEXT NOT NULL, state TEXT NOT NULL, exit_code INTEGER, created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_job_events_project_id ON job_events(project,id);
+    CREATE TRIGGER IF NOT EXISTS job_event_insert AFTER INSERT ON jobs BEGIN
+      INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) VALUES(NEW.id,NEW.kind,NEW.project,NEW.state,NEW.exit_code,NEW.updated_at);
+    END;
+    CREATE TRIGGER IF NOT EXISTS job_event_state AFTER UPDATE OF state,exit_code ON jobs
+    WHEN NEW.state IS NOT OLD.state OR NEW.exit_code IS NOT OLD.exit_code BEGIN
+      INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) VALUES(NEW.id,NEW.kind,NEW.project,NEW.state,NEW.exit_code,NEW.updated_at);
+    END;`);
+  // One-time snapshot for jobs created by older Worker versions; never double backfill.
+  db.exec('INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) SELECT j.id,j.kind,j.project,j.state,j.exit_code,j.updated_at FROM jobs j WHERE NOT EXISTS (SELECT 1 FROM job_events e WHERE e.job_id=j.id)');
   return db;
 }
 const now=()=>new Date().toISOString();
