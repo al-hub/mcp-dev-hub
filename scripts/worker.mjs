@@ -11,7 +11,8 @@ export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
   'repo-check': ['npm', 'run', 'check'],
-  'cli-smoke': ['node', 'scripts/cli-smoke.mjs']
+  'cli-smoke': ['node', 'scripts/cli-smoke.mjs'],
+  'review-opencode': ['node', 'scripts/review-opencode.mjs']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
 export function publicEvents(db, project) {
@@ -59,7 +60,7 @@ export function addJob(db,{id,kind,project,target,workspace}) {
   db.prepare('INSERT INTO jobs(id,kind,project,target,workspace,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(id,kind,project,target,workspace,'queued',now(),now());
 }
 export function registerReviewJob(db,job) {
-  if(job.kind !== 'cli-smoke') throw Error('review execution adapter not approved');
+  if(job.kind !== 'review-opencode') throw Error('review execution adapter not approved');
   addJob(db,job);
   db.prepare('INSERT INTO review_attempts(job_id,attempt,updated_at) VALUES(?,1,?)').run(job.id,now());
 }
@@ -136,7 +137,8 @@ export function tick(db) {
   const win='job-'+job.id;
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
+  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+job.id+' MCP_DEV_HUB_REVIEW_RESULT_DIR="'+join(stateDir(),'review-results')+'" ' : '';
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   const r=tmux(['new-window','-d','-t','='+SESSION,'-c',process.cwd(),'-n',win,'bash','-lc',script]);
