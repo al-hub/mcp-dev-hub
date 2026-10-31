@@ -32,12 +32,12 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
           if(!active)return;
           try {
             const rows=publicEvents(db,project);
-            if(cursor>rows.length){res.write('event: reset\\ndata: {}\\n\\n');cursor=0;}
-            for(let i=cursor;i<rows.length;i++)res.write('id: '+(i+1)+'\\nevent: job\\ndata: '+JSON.stringify(rows[i])+'\\n\\n');
+            if(cursor>rows.length){res.write('event: reset\ndata: {}\n\n');cursor=0;}
+            for(let i=cursor;i<rows.length;i++)res.write('id: '+(i+1)+'\nevent: job\ndata: '+JSON.stringify(rows[i])+'\n\n');
             cursor=rows.length;
           }catch {active=false;clearInterval(timer);res.end();}
         };
-        const timer=setInterval(()=>{send();if(active)res.write(': heartbeat\\n\\n');},1000);
+        const timer=setInterval(()=>{send();if(active)res.write(': heartbeat\n\n');},1000);
         req.on('close',()=>{active=false;clearInterval(timer);});
         send();return;
       }
