@@ -13,3 +13,17 @@ Goal: one requested PR advances through review, findings remediation, CI, privat
 9. Provide a dashboard progress view and optional manual retry/resume control. Manual controls never reset the max-retry safety limit.
 
 Current status: OpenCode retry and result-collection helpers have been added to the Worker, but live WSL review and end-to-end orchestration are unverified. CI retry dispatch helper is now called by the Worker source loop for pre-scheduled jobs. Live failure classification, live AI fix dispatch, production deployment, end-to-end orchestration, release gates and device acceptance remain unverified. This document must not be interpreted as deployment authorization.
+
+## CI wait-time utilization scheduler — Issue #10 acceptance scope
+
+- When CI starts, pin the PR head SHA and leave an event-driven monitor active; never block a Worker or AI CLI merely waiting for CI completion.
+- Schedule **independent review and security analysis of that exact SHA** in parallel with CI, and prepare next-issue specs, tests and deployment/PC/Galaxy acceptance checklists when resources permit. Do not treat speculative or synthetic work as verified acceptance.
+- Use separate Git worktrees/branches for mutable tasks. Never modify the CI-tested tree from a concurrent worker or merge an unrelated follow-up into the active PR while its gates run.
+- Budget concurrent AI CLI slots based on CPU, memory and token quota; prioritize active PR critical-path work. A pending CI result does not imply idle AI resources are free.
+- On CI failure, classify cause and preempt/deprioritize lower-priority tasks; use bounded infrastructure retry or bounded AI correction with fresh-SHA validation. On success, join with the independent-review gate, then proceed only if all acceptance checks match the target SHA.
+- Persist task state, source SHA, dependency and scheduling decision in SQLite; after restart reconcile running tasks before any replay. Prevent duplicate dispatch and cap retry attempts as agreed.
+- Expose CI state, parallel work, resource occupancy, blockers and SHA-specific evidence on the read-only dashboard, including PC/mobile views.
+
+**Acceptance tests:** CI-running event starts at least two nonconflicting tasks (monitor + independent review), resource saturation defers a third; two writers never share a worktree; failure preempts low-priority work without losing it; restart recovers scheduling state without duplicate actions; CI and independent review both pass on the same immutable SHA before release/merge. Real WSL validation remains mandatory.
+
+**Implementation status:** requirements added; scheduling and live end-to-end acceptance have not been implemented or verified yet.
