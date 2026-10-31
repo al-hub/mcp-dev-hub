@@ -23,3 +23,19 @@ test('live HTTP: unauthorized 401, authorized 200, project-scoped job data',asyn
   assert.equal(body.jobs[0].id,'job-one');
  }finally { await new Promise(resolve=>dashboard.server.close(resolve));db.close(); }
 });
+test('repeated authenticated GitHub reads reuse one bounded upstream snapshot',async()=>{
+ const db=new DatabaseSync(':memory:');
+ let calls=0;
+ const token='synthetic-dashboard-auth-token-123456';
+ const dashboard=createReadOnlyDashboard({token,project:'example',repository:'sample/repository',db,readGithub:async()=>{calls++;return {issues:[],pullRequests:[],ci:[]};}});
+ try{
+  const address=await dashboard.listen();
+  const url='http://localhost:'+address.port+'/api/github';
+  const headers={authorization:'Bearer '+token};
+  const results=await Promise.all(Array.from({length:6},()=>fetch(url,{headers})));
+  assert.ok(results.every(r=>r.status===200));
+  assert.equal(calls,1);
+  const unauthorized=await fetch(url);
+  assert.equal(unauthorized.status,401);
+ }finally{await new Promise(resolve=>dashboard.server.close(resolve));db.close();}
+});
