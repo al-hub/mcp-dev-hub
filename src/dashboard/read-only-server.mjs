@@ -22,14 +22,16 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
     try {
     if(req.method==='GET' && Object.hasOwn(assets,req.url)){
       const [filename,type]=assets[req.url];
+      const content=readFileSync(new URL(filename,import.meta.url));
       res.writeHead(200,{'Content-Type':type});
-      res.end(readFileSync(new URL(filename,import.meta.url)));return;
+      res.end(content);return;
     }
     if (!safeBearer(req.headers.authorization,token)) {res.writeHead(401);res.end('Unauthorized');return;}
     if (req.method!=='GET') {res.writeHead(405);res.end();return;}
       if(req.url==='/api/jobs') {
+        const body=JSON.stringify({project,jobs:publicEvents(db,project)});
         res.writeHead(200,{'Content-Type':'application/json'});
-        res.end(JSON.stringify({project,jobs:publicEvents(db,project)}));return;
+        res.end(body);return;
       }
       if(req.url==='/api/stream') {
         const raw=req.headers['last-event-id'];
@@ -63,8 +65,9 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
       }
       if(req.url==='/api/github') {
         const snapshot=await readGithub({owner,repo});
+        const body=JSON.stringify(snapshot);
         res.writeHead(200,{'Content-Type':'application/json'});
-        res.end(JSON.stringify(snapshot));return;
+        res.end(body);return;
       }
       res.writeHead(404);res.end('Not found');
     } catch {
