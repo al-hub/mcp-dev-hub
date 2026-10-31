@@ -63,7 +63,8 @@ export function tick(db) {
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+cmd+'; rc=$?; printf "END '+job.id+' exit=%s\\n" "$rc"; exec bash';
-  db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=?').run('running',win,now(),job.id);
+  const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('running',win,now(),job.id,'queued');
+  if(claimed.changes!==1)return false;
   const r=tmux(['new-window','-d','-t','='+SESSION,'-c',process.cwd(),'-n',win,'bash','-lc',script]);
   if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
   return r.status===0;
