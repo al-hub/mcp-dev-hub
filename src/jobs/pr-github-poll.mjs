@@ -21,8 +21,10 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
  const changed=trackPr(db,{prKey,headSha:sha}).changed;
  const runs=await get('/actions/runs?head_sha='+sha+'&per_page=30');
  if(!Array.isArray(runs.workflow_runs))throw Error('unverifiable CI runs');
- const completed=runs.workflow_runs.filter(x=>x.head_sha===sha && x.event==='pull_request' && x.status==='completed' && Number.isSafeInteger(x.id));
- const passed=completed.find(x=>x.conclusion==='success');
+ // CI is the required workflow for this repository. Do not accept an unrelated success.
+ const required=runs.workflow_runs.filter(x=>x.head_sha===sha && x.event==='pull_request' && x.name==='CI' && Number.isSafeInteger(x.id));
+ const newest=required.sort((a,b)=>b.id-a.id)[0];
+ const passed=newest?.status==='completed' && newest.conclusion==='success' ? newest : null;
  if(passed)recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:'passed',evidenceId:'github-actions-'+passed.id});
  return {changed,headSha:sha,...prNextAction(db,{prKey,observedSha:sha})};
 }
