@@ -10,7 +10,7 @@ test('review retry durable across restarts and bounded to three additional attem
  process.env.MCP_DEV_HUB_STATE_DIR=dir;process.env.MCP_DEV_HUB_APPROVED_SCOPE='demo:local:workspace';
  try {
   let db=openDb();
-  registerReviewJob(db,{id:'review-001',kind:'cli-smoke',project:'demo',target:'local',workspace:'workspace'});
+  registerReviewJob(db,{id:'review-001',kind:'review-opencode',project:'demo',target:'local',workspace:'workspace'});
   assert.equal(db.prepare('SELECT attempt FROM review_attempts').get().attempt,1);
   const start=Date.parse('2026-10-31T00:00:00.000Z');
   for(let attempt=1;attempt<=4;attempt++){
@@ -38,7 +38,7 @@ test('uncertain outcomes and nontransient failures never replay',()=>{
  const dir=mkdtempSync(join(tmpdir(),'review-worker-'));const a=process.env.MCP_DEV_HUB_STATE_DIR,b=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
  process.env.MCP_DEV_HUB_STATE_DIR=dir;process.env.MCP_DEV_HUB_APPROVED_SCOPE='demo:local:workspace';
  try{
-  const db=openDb();registerReviewJob(db,{id:'review-002',kind:'cli-smoke',project:'demo',target:'local',workspace:'workspace'});
+  const db=openDb();registerReviewJob(db,{id:'review-002',kind:'review-opencode',project:'demo',target:'local',workspace:'workspace'});
   db.prepare("UPDATE jobs SET state='failed'").run();
   assert.equal(recordReviewFailure(db,'review-002','timeout',{outcomeKnown:false}).state,'recovering');
   assert.equal(releaseDueReviewRetries(db),0);
