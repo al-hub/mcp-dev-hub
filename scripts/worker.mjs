@@ -27,7 +27,7 @@ export function openDb() {
 const now=()=>new Date().toISOString();
 export function addJob(db,{id,kind,project,target,workspace}) {
   if(!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id) || !Object.hasOwn(ALLOWED,kind)) throw Error('invalid job');
-  if(![project,target,workspace].every(x=>typeof x==='string'&&/^[a-z0-9][a-z0-9_-]{1,63}$/.test(x))) throw Error('invalid authorization scope');
+  if(![project,target,workspace].every(x=>typeof x==='string'&&/^[a-z0-9][a-z0-9_-]{1,63}$/.test(x)) || target!=='local') throw Error('invalid authorization scope');
   const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
   if(!scope || scope!==[project,target,workspace].join(':')) throw Error('unapproved scope');
   db.prepare('INSERT INTO jobs(id,kind,project,target,workspace,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(id,kind,project,target,workspace,'queued',now(),now());
@@ -38,7 +38,7 @@ export function ensureSession() {
   if(tmux(['new-session','-d','-s',SESSION,'-n','observer']).status!==0)throw Error('tmux unavailable');
 }
 function readPane(window) {
-  const r=tmux(['capture-pane','-p','-S','-200','-t','='+SESSION+':'+window]);
+  const r=tmux(['capture-pane','-p','-S','-','-t','='+SESSION+':'+window]);
   return r.status===0?r.stdout:null;
 }
 function windowAlive(window) {
@@ -62,7 +62,7 @@ export function tick(db) {
   if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'||j.state==='failed'||j.state==='blocked'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
-  if(process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
+  if(job.target!=='local' || process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }
   const win='job-'+job.id;
