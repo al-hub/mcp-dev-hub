@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openDb,addJob,jobs,ALLOWED,publicEvents} from '../scripts/worker.mjs';
+import {openDb,addJob,jobs,ALLOWED,publicEvents,reconcile,tick} from '../scripts/worker.mjs';
 
 test('durable queue accepts only approved fixed tasks and rejects duplicate IDs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-test-'));
@@ -31,3 +31,25 @@ test('durable queue accepts only approved fixed tasks and rejects duplicate IDs'
  }
 });
 test('command allowlist is closed',()=>assert.deepEqual(Object.keys(ALLOWED).sort(),['repo-check','synthetic-one','synthetic-two']));
+
+test('missing tmux evidence becomes unknown and prevents queued replay',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'worker-unknown-'));
+ const oldDir=process.env.MCP_DEV_HUB_STATE_DIR,oldScope=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
+ process.env.MCP_DEV_HUB_STATE_DIR=dir;process.env.MCP_DEV_HUB_APPROVED_SCOPE='demo:local:workspace';
+ try {
+  const db=openDb();
+  addJob(db,{id:'missing-one',kind:'synthetic-one',project:'demo',target:'local',workspace:'workspace'});
+  addJob(db,{id:'waiting-two',kind:'synthetic-two',project:'demo',target:'local',workspace:'workspace'});
+  db.prepare('UPDATE jobs SET state=?,window=? WHERE id=?').run('running','nonexistent-window-for-test','missing-one');
+  reconcile(db);
+  assert.equal(jobs(db)[0].state,'unknown');
+  assert.equal(jobs(db)[1].state,'queued');
+  assert.equal(tick(db),false);
+  assert.equal(jobs(db)[1].state,'queued');
+  db.close();
+ } finally {
+  if(oldDir===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;else process.env.MCP_DEV_HUB_STATE_DIR=oldDir;
+  if(oldScope===undefined)delete process.env.MCP_DEV_HUB_APPROVED_SCOPE;else process.env.MCP_DEV_HUB_APPROVED_SCOPE=oldScope;
+  rmSync(dir,{recursive:true,force:true});
+ }
+});
