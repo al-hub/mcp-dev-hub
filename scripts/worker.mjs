@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
+import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
+import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, chmodSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -161,8 +163,26 @@ export function tick(db) {
   if(r.status!==0)db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('unknown',now(),job.id);
   return r.status===0;
 }
+export async function dispatchDueCiRetries(db,{at=Date.now(),dispatch=dispatchScheduledCiRetry}={}) {
+  const repo=process.env.MCP_DEV_HUB_GITHUB_REPOSITORY;
+  const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
+  // Fail closed unless both the exact repository and an Actions-write token are configured.
+  if(!repo || !token)return 0;
+  ensureCiRetryTable(db);
+  const due=db.prepare("SELECT run_id FROM ci_retry_runs WHERE state='retry_scheduled' AND retry_at<=? ORDER BY retry_at LIMIT 10").all(new Date(at).toISOString());
+  let attempted=0;
+  for(const row of due){
+    await dispatch(db,{runId:row.run_id,repo,token,now:at});
+    attempted++;
+  }
+  return attempted;
+}
 export async function runWorker(db,{interval=300}={}) {
-  while(true){tick(db);await new Promise(r=>setTimeout(r,interval));}
+  while(true){
+    tick(db);
+    try{await dispatchDueCiRetries(db);}catch(e){console.error('CI_RETRY_DISPATCH_ERROR',e?.message??'unknown');}
+    await new Promise(r=>setTimeout(r,interval));
+  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   const db=openDb();const action=process.argv[2];
