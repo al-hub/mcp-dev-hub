@@ -51,6 +51,7 @@ if(action==='check'){
 }
 if(action==='reconcile'){
  const state=resultFromPane(load());if(!state||state.status!=='running')throw Error('no unresolved run');
+ if(checkTmux()&&run(['list-windows','-t','='+session,'-F','#{window_name}']).stdout.split('\\n').includes('check'))throw Error('tmux check window still exists: cannot mark unknown or allow replay until execution is independently resolved');
  save({...state,status:'unknown',reconciledAt:new Date().toISOString()});
  console.log('marked unknown; review tmux output and test evidence before retry');process.exit(0);
 }
