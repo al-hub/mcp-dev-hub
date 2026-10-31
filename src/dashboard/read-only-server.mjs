@@ -8,7 +8,7 @@ export function safeBearer(value,expected) {
   const a=Buffer.from(value.slice(7));const b=Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a,b);
 }
-export function createReadOnlyDashboard({token,project,repository,db,readGithub,host='127.0.0.1',port=0}={}) {
+export function createReadOnlyDashboard({token,project,repository,db,readGithub,host='localhost',port=0}={}) {
   if (!isProject(project) || typeof token !== 'string' || token.length < 24) throw Error('invalid dashboard configuration');
   if (!repository || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw Error('invalid repository');
   if (typeof readGithub !== 'function' || !db) throw Error('missing read-only dependencies');
