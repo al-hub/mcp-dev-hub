@@ -6,8 +6,8 @@ import {join} from 'node:path';
 import {openDb,addJob,reconcile} from '../scripts/worker.mjs';
 
 test('durable completion proof reconciles after DB restart and rejects wrong nonce',()=>{
- const dir=mkdtempSync(join(tmpdir(),'proof-')); const prior=process.env.MCP_DEV_HUB_STATE_DIR;
- process.env.MCP_DEV_HUB_STATE_DIR=dir;
+ const dir=mkdtempSync(join(tmpdir(),'proof-')); const prior=process.env.MCP_DEV_HUB_STATE_DIR; const priorScope=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
+ process.env.MCP_DEV_HUB_STATE_DIR=dir; process.env.MCP_DEV_HUB_APPROVED_SCOPE='demo:local:workspace';
  try{
   const db=openDb();
   addJob(db,{id:'proof-test-1',kind:'synthetic-one',project:'demo',target:'local',workspace:'workspace'});
@@ -27,5 +27,5 @@ test('durable completion proof reconciles after DB restart and rejects wrong non
   assert.equal(record.state,'succeeded');assert.equal(record.exit_code,0);
   reconcile(reopened);assert.equal(reopened.prepare("SELECT COUNT(*) AS n FROM job_events WHERE job_id='proof-test-1' AND state='succeeded'").get().n,1);
   reopened.close();
- }finally{if(prior===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;else process.env.MCP_DEV_HUB_STATE_DIR=prior;rmSync(dir,{recursive:true,force:true});}
+ }finally{if(prior===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;else process.env.MCP_DEV_HUB_STATE_DIR=prior;if(priorScope===undefined)delete process.env.MCP_DEV_HUB_APPROVED_SCOPE;else process.env.MCP_DEV_HUB_APPROVED_SCOPE=priorScope;rmSync(dir,{recursive:true,force:true});}
 });
