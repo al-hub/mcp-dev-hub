@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -34,6 +35,8 @@ export function openDb() {
   const dir=resolve(stateDir()); mkdirSync(dir,{recursive:true,mode:0o700}); chmodSync(dir,0o700);
   const db=new DatabaseSync(join(dir,'worker.sqlite'));
   db.exec(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, project TEXT NOT NULL, target TEXT NOT NULL, workspace TEXT NOT NULL, state TEXT NOT NULL, window TEXT, exit_code INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS review_attempts (job_id TEXT PRIMARY KEY REFERENCES jobs(id), attempt INTEGER NOT NULL DEFAULT 1 CHECK(attempt BETWEEN 1 AND 4), retry_at TEXT, last_reason TEXT, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS review_attempt_log (job_id TEXT NOT NULL, attempt INTEGER NOT NULL, reason TEXT NOT NULL, recorded_at TEXT NOT NULL, PRIMARY KEY(job_id,attempt));
     CREATE TABLE IF NOT EXISTS job_events (id INTEGER PRIMARY KEY AUTOINCREMENT,job_id TEXT NOT NULL, kind TEXT NOT NULL, project TEXT NOT NULL, state TEXT NOT NULL, exit_code INTEGER, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_job_events_project_id ON job_events(project,id);
     CREATE TRIGGER IF NOT EXISTS job_event_insert AFTER INSERT ON jobs BEGIN
@@ -54,6 +57,39 @@ export function addJob(db,{id,kind,project,target,workspace}) {
   const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
   if(!scope || scope!==[project,target,workspace].join(':')) throw Error('unapproved scope');
   db.prepare('INSERT INTO jobs(id,kind,project,target,workspace,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(id,kind,project,target,workspace,'queued',now(),now());
+}
+export function registerReviewJob(db,job) {
+  if(job.kind !== 'cli-smoke') throw Error('review execution adapter not approved');
+  addJob(db,job);
+  db.prepare('INSERT INTO review_attempts(job_id,attempt,updated_at) VALUES(?,1,?)').run(job.id,now());
+}
+export function recordReviewFailure(db,id,reason,{outcomeKnown=true,processAlive=false,at=Date.now()}={}) {
+  if(!Number.isFinite(at)) throw Error('invalid time');
+  const job=db.prepare('SELECT j.state,j.project,j.target,j.workspace,r.attempt FROM jobs j JOIN review_attempts r ON j.id=r.job_id WHERE j.id=?').get(id);
+  if(!job)throw Error('unknown review job');
+  if(job.state!=='failed')return {state:job.state,retry:false};
+  const decision=decideReviewRetry({attempt:job.attempt,reason,outcomeKnown,processAlive});
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const current=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(id);
+    const state=db.prepare('SELECT state FROM jobs WHERE id=?').get(id);
+    if(current.attempt!==job.attempt || state.state!=='failed'){db.exec('ROLLBACK');return {state:state.state,retry:false};}
+    db.prepare('INSERT OR IGNORE INTO review_attempt_log(job_id,attempt,reason,recorded_at) VALUES(?,?,?,?)').run(id,job.attempt,reason,new Date(at).toISOString());
+    const nextState=decision.retry?'retry_scheduled':decision.state;
+    db.prepare('UPDATE review_attempts SET attempt=?,retry_at=?,last_reason=?,updated_at=? WHERE job_id=?').run(decision.retry?decision.nextAttempt:job.attempt,decision.retry?new Date(at+decision.delayMs).toISOString():null,reason,new Date(at).toISOString(),id);
+    db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run(nextState,new Date(at).toISOString(),id);
+    db.exec('COMMIT');return {...decision,state:nextState};
+  }catch(e){db.exec('ROLLBACK');throw e;}
+}
+export function releaseDueReviewRetries(db,{at=Date.now()}={}) {
+  const approved=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
+  const rows=db.prepare("SELECT j.id,j.project,j.target,j.workspace FROM jobs j JOIN review_attempts r ON j.id=r.job_id WHERE j.state='retry_scheduled' AND r.retry_at <= ? ORDER BY r.retry_at").all(new Date(at).toISOString());
+  let released=0;
+  for(const row of rows){
+    if(approved!==[row.project,row.target,row.workspace].join(':'))continue;
+    released+=db.prepare("UPDATE jobs SET state='queued',exit_code=NULL,window=NULL,updated_at=? WHERE id=? AND state='retry_scheduled'").run(new Date(at).toISOString(),row.id).changes;
+  }
+  return released;
 }
 export function jobs(db){return db.prepare('SELECT * FROM jobs ORDER BY created_at,id').all();}
 export function ensureSession() {
@@ -81,7 +117,7 @@ export function reconcile(db) {
   }
 }
 export function tick(db) {
-  ensureSession();reconcile(db);
+  ensureSession();reconcile(db);releaseDueReviewRetries(db);
   if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'||j.state==='failed'||j.state==='blocked'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
