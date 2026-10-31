@@ -274,6 +274,8 @@ export function enqueuePrReviewIfReady(db,result){
  // Require a separately approved local execution scope and an exact pinned checkout.
  if(!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)return false;
  if(!/^[0-9a-f]{40}$/.test(result.headSha))return false;
+ const prKey=process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY;
+ if(!prKey||db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(prKey)?.head_sha!==result.headSha)return false;
  const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE?.split(':');
  if(!scope||scope.length!==3||scope[1]!=='local')return false;
  const id='review-pr-'+result.headSha.slice(0,12);
