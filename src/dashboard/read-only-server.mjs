@@ -11,6 +11,7 @@ export function safeBearer(value,expected) {
   return a.length === b.length && timingSafeEqual(a,b);
 }
 export function createReadOnlyDashboard({token,project,repository,db,readGithub,host='localhost',port=0}={}) {
+  if (host !== 'localhost') throw Error('dashboard must bind to localhost');
   if (!isProject(project) || typeof token !== 'string' || token.length < 24) throw Error('invalid dashboard configuration');
   if (!repository || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw Error('invalid repository');
   if (typeof readGithub !== 'function' || !db) throw Error('missing read-only dependencies');
