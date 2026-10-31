@@ -27,3 +27,16 @@ Current status: OpenCode retry and result-collection helpers have been added to 
 **Acceptance tests:** CI-running event starts at least two nonconflicting tasks (monitor + independent review), resource saturation defers a third; two writers never share a worktree; failure preempts low-priority work without losing it; restart recovers scheduling state without duplicate actions; CI and independent review both pass on the same immutable SHA before release/merge. Real WSL validation remains mandatory.
 
 **Implementation status:** requirements added; scheduling and live end-to-end acceptance have not been implemented or verified yet.
+
+## Worktree lifecycle and automatic cleanup (Issue #10 mandatory)
+
+- Allocate a dedicated registered Git worktree per PR/AI writer, with a unique task ID, branch, pinned base SHA, approved root directory and owner lease tracked in SQLite. Read-only reviewers must not modify the checkout. Never share writable trees between concurrent AI workers.
+- Lifecycle: ALLOCATED -> ACTIVE -> VERIFYING -> CLEANUP_ELIGIBLE -> REMOVED; UNKNOWN/BLOCKED/RECOVERY_REQUIRED cannot be automatically deleted. Retain logs and evidence independently of worktrees.
+- Cleanup eligibility requires a terminal task, no live process/lease, completed result collection, all relevant changes safely committed and pushed or otherwise explicitly preserved, and PR merge/closure or an approved terminal cancellation. For an open PR, keep any tree needed for ongoing remediation; idle review-only trees may be removed after confirmed completion.
+- Check repository identity, exact canonical path under the managed root, clean Git status, no untracked content, and no linked running task before `git worktree remove` **without --force**. Use `git worktree prune` only to clean stale metadata after validating the registry; never delete arbitrary directories or branches.
+- On dirty/untracked changes, uncertain execution status, or failed removal: mark RECOVERY_REQUIRED, record reason and reclaim size, retain data for manual resolution. Do not use `rm -rf`, `git worktree remove --force`, or automatic branch deletion to overcome failures.
+- At startup and periodically, reconcile SQLite registry against `git worktree list --porcelain`, recover interrupted cleanup idempotently, and flag orphaned/overdue managed worktrees for safe inspection. Expose cleanup state, active count and disk consumption on the dashboard.
+
+**Acceptance tests:** concurrent writers get distinct trees; failed tasks preserve dirty files; active/unknown tasks are not removed; clean completed review worktrees are removed once; restart does not double-delete; stale metadata is reconciled safely; only approved-root paths are eligible; cleanup errors remain visible without blocking unrelated work.
+
+**Implementation status:** lifecycle/cleanup policy and acceptance criteria recorded; automatic creation, lease management and deletion are not yet implemented or verified in WSL.
