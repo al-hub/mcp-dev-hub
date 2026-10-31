@@ -31,7 +31,7 @@ async function stream(signal){
      if(frame.includes('event: job'))changed=true;
     }
     if(buffer.length>65536)throw Error('stream frame overflow');
-    if(changed && Date.now()-lastRefresh>=1000){
+    if(changed){
      lastRefresh=Date.now();
      try{await refresh(signal);}catch{if(!signal.aborted)el('status').textContent='Live stream connected; status refresh unavailable';}
     }
