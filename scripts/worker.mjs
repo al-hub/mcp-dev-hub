@@ -81,6 +81,15 @@ export function recordReviewFailure(db,id,reason,{outcomeKnown=true,processAlive
     db.exec('COMMIT');return {...decision,state:nextState};
   }catch(e){db.exec('ROLLBACK');throw e;}
 }
+export function autoScheduleReviewFailures(db,{at=Date.now()}={}) {
+  const failures=db.prepare("SELECT j.id,j.exit_code FROM jobs j JOIN review_attempts r ON j.id=r.job_id WHERE j.state='failed'").all();
+  let handled=0;
+  for(const failure of failures){
+    const reason=failure.exit_code===124?'timeout':failure.exit_code===75?'service_unavailable':null;
+    if(reason){recordReviewFailure(db,failure.id,reason,{at});handled++;}
+  }
+  return handled;
+}
 export function releaseDueReviewRetries(db,{at=Date.now()}={}) {
   const approved=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
   const rows=db.prepare("SELECT j.id,j.project,j.target,j.workspace FROM jobs j JOIN review_attempts r ON j.id=r.job_id WHERE j.state='retry_scheduled' AND r.retry_at <= ? ORDER BY r.retry_at").all(new Date(at).toISOString());
@@ -117,7 +126,7 @@ export function reconcile(db) {
   }
 }
 export function tick(db) {
-  ensureSession();reconcile(db);releaseDueReviewRetries(db);
+  ensureSession();reconcile(db);autoScheduleReviewFailures(db);releaseDueReviewRetries(db);
   if(jobs(db).some(j=>j.state==='running'||j.state==='unknown'||j.state==='failed'||j.state==='blocked'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
