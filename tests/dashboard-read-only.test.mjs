@@ -63,4 +63,5 @@ test('authenticated dashboard projects Worker jobs and GitHub independently',asy
 });
 test('fail closed for insufficient token or invalid scope',()=>{
  assert.throws(()=>createReadOnlyDashboard({token:'short',project:'alpha'}),/invalid dashboard/);
+ assert.throws(()=>createReadOnlyDashboard({host:'0.0.0.0',token:'x'.repeat(32),project:'alpha'}),/localhost/);
 });
