@@ -13,14 +13,22 @@ export function allocateWorktree(db,{taskId,root,repoDir,baseSha,branch,gitRunne
  ensureWorktreeTable(db);
  const prior=db.prepare('SELECT task_id,state FROM managed_worktrees WHERE task_id=? OR path=?').get(taskId,target);
  if(prior)throw Error('worktree already registered');
- const result=gitRunner(['worktree','add','-b',branch,target,baseSha],repo);
- if(result.status!==0)throw Error('worktree create failed');
- // Never register a path that resolved outside the approved root after creation.
- let actual;
- try{actual=realpathSync(target);}catch{throw Error('worktree path unresolved; manual reconciliation required');}
- if(actual!==target||!inside(base,actual))throw Error('worktree path changed; manual reconciliation required');
- try{registerWorktree(db,{taskId,path:target,branch,root:base});}
- catch(e){throw Error('worktree created but registry uncertain; manual reconciliation required',{cause:e});}
+ // Persist the intent before invoking git, so interrupted or failed setup is discoverable.
+ registerWorktree(db,{taskId,path:target,branch,root:base,state:'allocating'});
+ try {
+  const result=gitRunner(['worktree','add','-b',branch,target,baseSha],repo);
+  if(result.status!==0)throw Error('worktree create failed');
+  let actual;
+  try{actual=realpathSync(target);}catch{throw Error('worktree path unresolved');}
+  if(actual!==target||!inside(base,actual))throw Error('worktree path changed');
+  db.prepare("UPDATE managed_worktrees SET state='active',updated_at=? WHERE task_id=? AND state='allocating'")
+    .run(new Date().toISOString(),taskId);
+ }catch(e){
+  // Do not guess whether git created a partial tree: preserve a durable recovery record.
+  db.prepare("UPDATE managed_worktrees SET state='recovery_required',updated_at=? WHERE task_id=? AND state='allocating'")
+    .run(new Date().toISOString(),taskId);
+  throw Error('worktree allocation uncertain; manual reconciliation required',{cause:e});
+ }
  return {taskId,path:target,baseSha,state:'active'};
 }
 export function listManagedWorktrees(db){
