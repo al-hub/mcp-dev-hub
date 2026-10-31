@@ -28,7 +28,7 @@ npm run check
 - `src/jobs/`: 지속 작업 및 상태 전이 계약
 - `src/mcp/`: MCP 도구와 전송 계층 설계
 - `src/agents/`: 코딩 CLI 어댑터 설계
-- `config/hub.example.json`: 가상 값만 포함한 예제
+- `config/hub.example.json`: 가상 값만 포함한 설정 예제
 - `scripts/check-privacy.mjs`: 커밋 대상의 금지 경로·민감정보 후보 검사
 - `docs/`: 아키텍처, 단계별 완료 기준, 다음 작업
 
