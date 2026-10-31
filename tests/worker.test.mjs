@@ -15,6 +15,9 @@ test('durable queue accepts only approved fixed tasks and rejects duplicate IDs'
   addJob(db,job);
   assert.equal(jobs(db)[0].state,'queued');
   assert.equal(publicEvents(db)[0].state,'queued');
+  assert.equal(publicEvents(db,'demo').length,1);
+  assert.equal(publicEvents(db,'other').length,0);
+  assert.throws(()=>publicEvents(db,'../other'),/invalid project/);
   assert.equal(Object.hasOwn(publicEvents(db)[0],'workspace'),false);
   assert.equal(Object.hasOwn(publicEvents(db)[0],'target'),false);
   assert.throws(()=>addJob(db,job));
