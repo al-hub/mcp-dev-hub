@@ -5,7 +5,7 @@ const store=new EventStore();
 const token=process.env.DASHBOARD_TOKEN;
 const project=process.env.DASHBOARD_PROJECT||'demo';
 const port=Number(process.env.DASHBOARD_PORT||8765);
-const host=process.env.DASHBOARD_HOST||'127.0.0.1';
+const host=process.env.DASHBOARD_HOST||'localhost';
 if(!token||token.length<24)throw Error('DASHBOARD_TOKEN must be configured (24+ characters)');
 function authorized(req){
   const value=req.headers.authorization||'';
