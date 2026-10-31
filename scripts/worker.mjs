@@ -225,11 +225,19 @@ export function tick(db) {
   const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
   const win='job-'+job.id+'-a'+attempt;
   let executionDir=process.cwd();
-  if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA){
+  const trackedSha=job.id.startsWith('review-pr-')
+    ? db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY||'')?.head_sha : null;
+  const baseSha=trackedSha && job.id==='review-pr-'+trackedSha.slice(0,12)
+    ? trackedSha : (job.id.startsWith('review-pr-') ? null : process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA);
+  if(job.id.startsWith('review-pr-')&&!baseSha){
+    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+    return false;
+  }
+  if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && baseSha){
     try {
       const existing=db.prepare("SELECT path FROM managed_worktrees WHERE task_id=?").get(job.id);
       if(existing)executionDir=existing.path;
-      else executionDir=allocateWorktree(db,{taskId:job.id,root:process.env.MCP_DEV_HUB_WORKTREE_ROOT,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,baseSha:process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA,branch:'task/'+job.id}).path;
+      else executionDir=allocateWorktree(db,{taskId:job.id,root:process.env.MCP_DEV_HUB_WORKTREE_ROOT,repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,baseSha,branch:'task/'+job.id}).path;
     }catch(e){db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);return false;}
   }
   // Results of earlier attempts remain immutable; a new attempt uses a different result file.
@@ -264,7 +272,8 @@ export async function dispatchDueCiRetries(db,{at=Date.now(),dispatch=dispatchSc
 export function enqueuePrReviewIfReady(db,result){
  if(result?.gate!=='independent_review'||result?.state!=='verifying'||!result.headSha)return false;
  // Require a separately approved local execution scope and an exact pinned checkout.
- if(process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA!==result.headSha)return false;
+ if(!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)return false;
+ if(!/^[0-9a-f]{40}$/.test(result.headSha))return false;
  const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE?.split(':');
  if(!scope||scope.length!==3||scope[1]!=='local')return false;
  const id='review-pr-'+result.headSha.slice(0,12);
