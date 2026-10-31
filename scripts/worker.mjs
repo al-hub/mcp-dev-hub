@@ -283,6 +283,21 @@ export function enqueuePrReviewIfReady(db,result){
  registerReviewJob(db,{id,kind:'review-opencode',project:scope[0],target:scope[1],workspace:scope[2]});
  return true;
 }
+export function reconcilePrReviewEvidence(db,{prKey=process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY}={}){
+ if(!prKey)return {state:'unconfigured'};
+ const pr=db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(prKey);
+ if(!pr)return {state:'untracked'};
+ const id='review-pr-'+pr.head_sha.slice(0,12);
+ const job=db.prepare('SELECT state FROM jobs WHERE id=?').get(id);
+ if(!job)return {state:'not_queued'};
+ if(job.state==='succeeded'){
+   const review=db.prepare('SELECT status FROM review_results WHERE job_id=?').get(id);
+   // A completed AI report is not independent approval. Require a separately
+   // authenticated review verdict before the independent_review gate can pass.
+   return {state:review?.status==='completed'?'awaiting_independent_approval':'review_unverified',jobId:id};
+ }
+ return {state:job.state,jobId:id};
+}
 export async function runWorker(db,{interval=300}={}) {
  let lastPrPoll=0;
  while(true){
@@ -292,7 +307,7 @@ export async function runWorker(db,{interval=300}={}) {
     const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
     if(prKey&&token&&Date.now()-lastPrPoll>=30000){
       lastPrPoll=Date.now();
-      try{enqueuePrReviewIfReady(db,await pollPrGithub({db,prKey,token}));}
+      try{enqueuePrReviewIfReady(db,await pollPrGithub({db,prKey,token}));reconcilePrReviewEvidence(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
