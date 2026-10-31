@@ -17,7 +17,7 @@ test('authenticated dashboard projects Worker jobs and GitHub independently',asy
   process.env.MCP_DEV_HUB_APPROVED_SCOPE='beta:local:workspace';
   addJob(db,{id:'job-beta',kind:'synthetic-two',project:'beta',target:'local',workspace:'workspace'});
   const app=createReadOnlyDashboard({token:'x'.repeat(32),project:'alpha',repository:'example/app',db,readGithub:async()=>({repository:'example/app',issues:[]})});
-  server=app.server;const addr=await app.listen(),base='http://127.0.0.1:'+addr.port;
+  server=app.server;const addr=await app.listen(),base='http://localhost:'+addr.port;
   const unauthorized=await fetch(base+'/api/jobs');
   assert.equal(unauthorized.status,401);
   const headers={Authorization:'Bearer '+'x'.repeat(32)};
