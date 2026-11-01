@@ -29,13 +29,12 @@ test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branc
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha,'worktree must match requested SHA');
   const agy=exe('agy', "printf 'export const value=2;\\n' > tests/example.test.mjs");
   const codex=exe('codex','echo REVIEW_PASS');
-  exe('npm','exit 0');
-  process.env.PATH=bin+':'+previous.path;
+  const npmBin=exe('npm','exit 0');
   process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';
   process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
   const db=new DatabaseSync(':memory:');
   claimDevelopment(db,{jobId,headSha});
-  const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,allowPush:true};
+  const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true};
   const result=executeOnce(args);
   assert.equal(result.state,'pushed_task_branch');
   assert.equal(db.prepare('SELECT phase FROM ai_development_claims WHERE job_id=?').get(jobId).phase,'pushed');
