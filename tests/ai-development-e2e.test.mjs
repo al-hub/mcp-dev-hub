@@ -35,6 +35,7 @@ test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branc
   const db=new DatabaseSync(':memory:');
   claimDevelopment(db,{jobId,headSha});
   const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true};
+  assert.equal(git(worktree,'rev-parse','HEAD'),headSha,'fixture HEAD must remain pinned after claim');
   const result=executeOnce(args);
   assert.equal(result.state,'pushed_task_branch');
   assert.equal(db.prepare('SELECT phase FROM ai_development_claims WHERE job_id=?').get(jobId).phase,'pushed');
