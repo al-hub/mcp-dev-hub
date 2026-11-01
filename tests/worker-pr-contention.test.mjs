@@ -48,3 +48,13 @@ test('race: blocked independent review must never become merge eligible from CI 
  assert.equal(prNextAction(db,{prKey,observedSha:shaA}).action,'remediate_or_block');
  db.close();
 });
+
+test('race: stale SHA cannot mutate the new HEAD gate after turnover',()=>{
+ const db=new DatabaseSync(':memory:');
+ trackPr(db,{prKey,headSha:shaA});
+ trackPr(db,{prKey,headSha:shaB});
+ recordPrGate(db,{prKey,headSha:shaB,gate:'ci',verdict:'passed',evidenceId:'fresh-ci'});
+ assert.throws(()=>recordPrGate(db,{prKey,headSha:shaA,gate:'ci',verdict:'passed',evidenceId:'stale-ci'}),/stale/);
+ assert.deepEqual(db.prepare('SELECT head_sha,evidence_id FROM pr_gate_evidence WHERE gate=?').get('ci'),{head_sha:shaB,evidence_id:'fresh-ci'});
+ db.close();
+});
