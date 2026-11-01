@@ -23,7 +23,8 @@ export const ALLOWED = Object.freeze({
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
   'repo-check': ['npm', 'run', 'check'],
   'cli-smoke': ['node', 'scripts/cli-smoke.mjs'],
-  'review-opencode': ['node', 'scripts/review-opencode.mjs']
+  'review-opencode': ['node', 'scripts/review-opencode.mjs'],
+  'ai-development': ['node', 'scripts/ai-development-run.mjs']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
 export function publicEvents(db, project) {
@@ -232,11 +233,12 @@ export function tick(db) {
   const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
   const win='job-'+job.id+'-a'+attempt;
   let executionDir=process.cwd();
-  const trackedSha=job.id.startsWith('review-pr-')
+  const pinnedPrJob=job.id.startsWith('review-pr-')||job.id.startsWith('fix-pr-');
+  const trackedSha=pinnedPrJob
     ? db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY||'')?.head_sha : null;
-  const baseSha=trackedSha && job.id==='review-pr-'+trackedSha.slice(0,12)
-    ? trackedSha : (job.id.startsWith('review-pr-') ? null : process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA);
-  if(job.id.startsWith('review-pr-')&&(!baseSha||!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)){
+  const baseSha=trackedSha && (job.id==='review-pr-'+trackedSha.slice(0,12)||job.id==='fix-pr-'+trackedSha.slice(0,12))
+    ? trackedSha : (pinnedPrJob ? null : process.env.MCP_DEV_HUB_WORKTREE_BASE_SHA);
+  if(pinnedPrJob&&(!baseSha||!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)){
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false;
   }
@@ -252,11 +254,13 @@ export function tick(db) {
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+' ' : '';
+  const devEnv=job.kind==='ai-development'
+    ? 'MCP_DEV_HUB_AI_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_AI_HEAD_SHA='+quoteShell(baseSha)+' MCP_DEV_HUB_AI_WORKTREE='+quoteShell(executionDir)+' MCP_DEV_HUB_AI_BRANCH='+quoteShell('task/'+job.id)+' ' : '';
   const nonce=randomBytes(16).toString('hex');
   const proofDir=join(stateDir(),'run-proofs');
   mkdirSync(proofDir,{recursive:true,mode:0o700});
   const proofFile=join(proofDir,job.id+'-attempt-'+attempt+'.txt');
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+devEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
@@ -319,6 +323,11 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
  // code without distinct validated task authorization and independent review.
  const jobId='fix-pr-'+pr.head_sha.slice(0,12);
  const result=claimDevelopment(db,{jobId,headSha:pr.head_sha});
+ if(result.claimed && process.env.MCP_DEV_HUB_ENABLE_AI_WRITE==='1'){
+  const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE?.split(':');
+  if(scope?.length===3&&scope[1]==='local'&&process.env.MCP_DEV_HUB_WORKTREE_ROOT&&process.env.MCP_DEV_HUB_WORKTREE_REPO)
+   addJob(db,{id:jobId,kind:'ai-development',project:scope[0],target:scope[1],workspace:scope[2]});
+ }
  return {state:'remediation_required',claimed:result.claimed,jobId};
 }
 export async function runWorker(db,{interval=300}={}) {
