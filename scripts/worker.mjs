@@ -42,9 +42,11 @@ export function eventBounds(db,project){
   return db.prepare('SELECT MIN(id) AS first, MAX(id) AS last FROM job_events WHERE project=?').get(project);
 }
 const stateDir = () => process.env.MCP_DEV_HUB_STATE_DIR || join(homedir(), '.local','state','mcp-dev-hub');
-export function openDb() {
-  const dir=resolve(stateDir()); mkdirSync(dir,{recursive:true,mode:0o700}); chmodSync(dir,0o700);
-  const db=new DatabaseSync(join(dir,'worker.sqlite'));
+export function openDb({readOnly=false}={}) {
+  const dir=resolve(stateDir());
+  if(!readOnly){mkdirSync(dir,{recursive:true,mode:0o700}); chmodSync(dir,0o700);}
+  const db=new DatabaseSync(join(dir,'worker.sqlite'),{readOnly,timeout:5000});
+  if(readOnly)return db;
   db.exec(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, project TEXT NOT NULL, target TEXT NOT NULL, workspace TEXT NOT NULL, state TEXT NOT NULL, window TEXT, exit_code INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS review_attempts (job_id TEXT PRIMARY KEY REFERENCES jobs(id), attempt INTEGER NOT NULL DEFAULT 1 CHECK(attempt BETWEEN 1 AND 4), retry_at TEXT, last_reason TEXT, updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS review_results (job_id TEXT PRIMARY KEY REFERENCES jobs(id), status TEXT NOT NULL, summary TEXT NOT NULL, recorded_at TEXT NOT NULL);
