@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {realpathSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {openDb} from './worker.mjs';
-import {transitionDevelopment,authorizeCommit} from '../src/jobs/ai-development-claims.mjs';
+import {transitionDevelopment} from '../src/jobs/ai-development-claims.mjs';
 const sha=/^[a-f0-9]{40}$/;
 const idre=/^fix-pr-[a-f0-9]{12}$/;
 const run=(bin,args,cwd,ms)=>spawnSync(bin,args,{cwd,shell:false,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:ms,maxBuffer:262144,env:{PATH:process.env.PATH,HOME:process.env.HOME,CI:'1',LANG:'C.UTF-8'}});
@@ -12,6 +12,7 @@ const git=(args,cwd)=>{const r=run('git',args,cwd,12000);if(r.status!==0||r.erro
 export function preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch}){
  if(!idre.test(jobId)||!sha.test(headSha)||jobId!=='fix-pr-'+headSha.slice(0,12))throw Error('invalid identity');
  if(!/^task\/fix-pr-[a-f0-9]{12}$/.test(branch))throw Error('invalid branch');
+ if(!approvedRoot||!worktree||!repoDir)throw Error('unconfigured execution scope');
  const root=realpathSync(approvedRoot),dir=realpathSync(worktree),repo=realpathSync(repoDir);
  if(!dir.startsWith(root+'/')||dir===repo)throw Error('unapproved worktree');
  if(git(['rev-parse','HEAD'],dir)!==headSha)throw Error('stale SHA');
