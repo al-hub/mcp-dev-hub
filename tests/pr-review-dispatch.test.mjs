@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {openDb,enqueuePrReviewIfReady,reconcilePrReviewEvidence,registerReviewJob} from '../scripts/worker.mjs';
+import {openDb,enqueuePrReviewIfReady,reconcilePrReviewEvidence,registerReviewJob,claimPrDevelopmentIfNeeded} from '../scripts/worker.mjs';
 import {trackPr} from '../src/jobs/pr-automation.mjs';
 test('PR reviewer dispatch is idempotent, scoped and pinned to exact SHA',()=>{
  const dir=mkdtempSync(join(tmpdir(),'pr-review-dispatch-'));
@@ -43,6 +43,9 @@ test('review findings require remediation and never substitute for independent a
   db.prepare('INSERT INTO review_results(job_id,status,summary,recorded_at) VALUES(?,?,?,?)')
    .run(id,'completed','REVIEW_FINDINGS:\n1. Concrete defect in parser',new Date().toISOString());
   assert.equal(reconcilePrReviewEvidence(db,{prKey}).state,'remediation_required');
+  assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,true);
+  assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,false);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_development_claims').get().n,1);
   db.prepare('UPDATE review_results SET summary=? WHERE job_id=?').run('REVIEW_FINDINGS: no findings',id);
   assert.equal(reconcilePrReviewEvidence(db,{prKey}).state,'awaiting_independent_approval');
   db.close();
