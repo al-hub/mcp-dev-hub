@@ -3,8 +3,8 @@ import {accessSync,constants,readFileSync,writeFileSync,mkdirSync,chmodSync} fro
 import {join,resolve} from 'node:path';
 import {homedir} from 'node:os';
 const attempt=Number(process.env.MCP_DEV_HUB_REVIEW_ATTEMPT || '1');
-const provider=attempt%2===0?'codex':'agy';
-const executable=provider==='agy'?(process.env.MCP_DEV_HUB_AGY_BIN || join(homedir(),'.local','bin','agy')):(process.env.MCP_DEV_HUB_CODEX_BIN || join(homedir(),'.nvm','versions','node','v24.15.0','bin','codex'));
+const provider=attempt===3 && process.env.MCP_DEV_HUB_ENABLE_OPENCODE_FALLBACK==='1'?'opencode':attempt%2===0?'codex':'agy';
+const executable=provider==='agy'?(process.env.MCP_DEV_HUB_AGY_BIN || join(homedir(),'.local','bin','agy')):provider==='codex'?(process.env.MCP_DEV_HUB_CODEX_BIN || join(homedir(),'.nvm','versions','node','v24.15.0','bin','codex')):(process.env.MCP_DEV_HUB_OPENCODE_BIN || join(homedir(),'.opencode','bin','opencode'));
 const jobId=process.env.MCP_DEV_HUB_REVIEW_JOB_ID;
 const resultDir=process.env.MCP_DEV_HUB_REVIEW_RESULT_DIR;
 if(!jobId || !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(jobId) || !resultDir || !Number.isInteger(attempt) || attempt<1 || attempt>4) {
@@ -20,7 +20,7 @@ const area=process.env.MCP_DEV_HUB_REVIEW_AREA || 'dashboard';
 if(!Object.hasOwn(areas,area)){process.stderr.write('INVALID_REVIEW_AREA\\n');process.exit(78);}
 const source=areas[area].map(file=>file+'\n'+readFileSync(resolve(file),'utf8').slice(0,26000)).join('\n---\n');
 const prompt='Review the attached code only. Identify up to three concrete defects or say no findings. Do not use tools, edit files or execute commands. Return REVIEW_FINDINGS: with findings or REVIEW_INCOMPLETE if source is insufficient. This is not GitHub approval.\n'+source;
-const args=provider==='agy'?['--mode','plan','--sandbox','--print-timeout','65s','--print='+prompt]:['exec','--sandbox','read-only',prompt];
+const args=provider==='agy'?['--mode','plan','--sandbox','--print-timeout','65s','--print='+prompt]:provider==='codex'?['exec','--sandbox','read-only',prompt]:['run','--model','opencode/deepseek-v4.1-flash-free',prompt];
 let output='',finished=false,timedOut=false;
 const child=spawn(executable,args,{shell:false,stdio:['ignore','pipe','pipe'],env:{PATH:process.env.PATH || '/usr/bin:/bin',HOME:homedir(),LANG:'C.UTF-8',CI:'1'}});
 const timer=setTimeout(()=>{timedOut=true;child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),1500).unref();},75000);
