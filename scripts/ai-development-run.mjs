@@ -15,7 +15,8 @@ export function preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch}){
  if(!approvedRoot||!worktree||!repoDir)throw Error('unconfigured execution scope');
  const root=realpathSync(approvedRoot),dir=realpathSync(worktree),repo=realpathSync(repoDir);
  if(!dir.startsWith(root+'/')||dir===repo)throw Error('unapproved worktree');
- if(git(['rev-parse','HEAD'],dir)!==headSha)throw Error('stale SHA');
+ const actualHead=git(['rev-parse','HEAD'],dir);
+ if(actualHead!==headSha)throw Error('stale SHA expected='+headSha.slice(0,8)+' actual='+actualHead.slice(0,8));
  if(git(['status','--porcelain'],dir))throw Error('dirty worktree');
  if(git(['branch','--show-current'],dir)!==branch)throw Error('unexpected branch');
  return dir;
