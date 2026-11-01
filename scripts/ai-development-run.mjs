@@ -24,9 +24,9 @@ export function preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch}){
 }
 export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,branch,prompt,agyBin,codexBin,npmBin='npm',allowPush=false}){
  if(process.env.MCP_DEV_HUB_ENABLE_AI_WRITE!=='1')return {state:'disabled'};
- const dir=preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch});
  const claim=db.prepare('SELECT phase,head_sha FROM ai_development_claims WHERE job_id=?').get(jobId);
  if(claim?.head_sha!==headSha||claim?.phase!=='claimed')return {state:'not_claimed'};
+ const dir=preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch});
  // Claim the one execution before launching any process. Unknown results stay blocked.
  if(!transitionDevelopment(db,{jobId,headSha,from:'claimed',to:'running'}))return {state:'duplicate'};
  const agy=run(agyBin,['--mode','accept-edits','--sandbox','--print-timeout','65s','--print='+prompt],dir,80000);
