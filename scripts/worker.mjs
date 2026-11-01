@@ -303,7 +303,7 @@ export function reconcilePrReviewEvidence(db,{prKey=process.env.MCP_DEV_HUB_AUTO
    const review=db.prepare('SELECT status FROM review_results WHERE job_id=?').get(id);
    // A completed AI report is not independent approval. Require a separately
    // authenticated review verdict before the independent_review gate can pass.
-   return {state:review?.status==='completed'?'awaiting_independent_approval':'review_unverified',jobId:id};
+   const hasFindings=review?.status==='completed' && /REVIEW_FINDINGS:\\s*(?:\\r?\\n)?\\s*(?:[1-9][.)]|[-*]\\s+)(?!no\\s+findings)/i.test(review.summary);\n   return {state:hasFindings?'remediation_required':review?.status==='completed'?'awaiting_independent_approval':'review_unverified',jobId:id};
  }
  return {state:job.state,jobId:id};
 }
