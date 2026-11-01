@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -20,7 +20,6 @@ test('preflight refuses stale SHA, dirty worktrees and wrong branch',()=>{
  mkdirSync(repo);mkdirSync(worktrees);
  try{
   git(repo,'init','-q');git(repo,'config','user.email','ci@example.invalid');git(repo,'config','user.name','CI');
-  const {writeFileSync}=await import('node:fs');
   writeFileSync(join(repo,'README.md'),'safe\n');
   git(repo,'add','README.md');git(repo,'commit','-qm','initial');
   const sha=git(repo,'rev-parse','HEAD');
