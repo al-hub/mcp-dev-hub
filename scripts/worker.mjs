@@ -254,8 +254,20 @@ export function tick(db) {
   const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+' ' : '';
-  const devEnv=job.kind==='ai-development'
-    ? 'MCP_DEV_HUB_AI_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_AI_HEAD_SHA='+quoteShell(baseSha)+' MCP_DEV_HUB_AI_WORKTREE='+quoteShell(executionDir)+' MCP_DEV_HUB_AI_BRANCH='+quoteShell('task/'+job.id)+' ' : '';
+  const aiSettings=job.kind==='ai-development'?{
+    MCP_DEV_HUB_AI_JOB_ID:job.id,
+    MCP_DEV_HUB_AI_HEAD_SHA:baseSha,
+    MCP_DEV_HUB_AI_WORKTREE:executionDir,
+    MCP_DEV_HUB_AI_BRANCH:'task/'+job.id,
+    MCP_DEV_HUB_ENABLE_AI_WRITE:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE==='1'?'1':'0',
+    MCP_DEV_HUB_ENABLE_AI_PUSH:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH==='1'?'1':'0',
+    MCP_DEV_HUB_WORKTREE_REPO:process.env.MCP_DEV_HUB_WORKTREE_REPO||'',
+    MCP_DEV_HUB_WORKTREE_ROOT:process.env.MCP_DEV_HUB_WORKTREE_ROOT||'',
+    MCP_DEV_HUB_STATE_DIR:stateDir(),
+    MCP_DEV_HUB_AGY_BIN:process.env.MCP_DEV_HUB_AGY_BIN||'agy',
+    MCP_DEV_HUB_CODEX_BIN:process.env.MCP_DEV_HUB_CODEX_BIN||'codex'
+  }:null;
+  const devEnv=aiSettings?Object.entries(aiSettings).map(([key,value])=>key+'='+quoteShell(value)).join(' ')+' ':'';
   const nonce=randomBytes(16).toString('hex');
   const proofDir=join(stateDir(),'run-proofs');
   mkdirSync(proofDir,{recursive:true,mode:0o700});
