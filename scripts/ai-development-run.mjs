@@ -37,7 +37,7 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
  if(test.status!==0||test.error)return {state:'tests_failed'};
  if(!transitionDevelopment(db,{jobId,headSha,from:'edited',to:'tested'}))return {state:'stale_claim'};
  const codex=run(codexBin,['exec','--sandbox','read-only','Review only the working-tree diff of the current git checkout for concrete defects. Say exactly REVIEW_PASS if no defects. Do not edit files.'],dir,80000);
- if(codex.status!==0||codex.error||!/^REVIEW_PASS\s*$/m.test(codex.stdout))return {state:'codex_not_passed'};
+ if(codex.status!==0||codex.error||codex.stdout.trim()!=='REVIEW_PASS')return {state:'codex_not_passed'};
  if(!transitionDevelopment(db,{jobId,headSha,from:'tested',to:'reviewed'}))return {state:'stale_claim'};
  // Verify no second writer changed the checkout during read-only review.
  if(git(['rev-parse','HEAD'],dir)!==headSha)return {state:'stale_sha'};
