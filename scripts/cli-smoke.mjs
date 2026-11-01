@@ -23,14 +23,14 @@ function run(provider){
   child.stdout.on('data',b=>{buffer=(buffer+b.toString()).slice(-8192);});
   child.stderr.on('data',b=>{buffer=(buffer+b.toString()).slice(-8192);});
   child.on('error',()=>finish('unavailable'));
-  child.on('close',code=>finish(timedOut?'timeout':code===0&&/^\\s*READY\\s*$/m.test(buffer)?'ready':'failed'));
+  child.on('close',code=>finish(timedOut?'timeout':code===0&&/^\s*READY\s*$/m.test(buffer)?'ready':'failed'));
  });
 }
 let success=false;
 for(const p of providers){
  const result=await run(p);
- process.stdout.write('CLI_SMOKE '+p.name+' '+result.status+'\\n');
+ process.stdout.write('CLI_SMOKE '+p.name+' '+result.status+'\n');
  if(result.status==='ready'){success=true;break;}
 }
-process.stdout.write(success?'CLI_READY\\n':'CLI_FAILED\\n');
+process.stdout.write(success?'CLI_READY\n':'CLI_FAILED\n');
 process.exitCode=success?0:1;
