@@ -21,7 +21,7 @@ export function preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch}){
  if(git(['branch','--show-current'],dir)!==branch)throw Error('unexpected branch');
  return dir;
 }
-export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,branch,prompt,agyBin,codexBin,allowPush=false}){
+export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,branch,prompt,agyBin,codexBin,npmBin='npm',allowPush=false}){
  if(process.env.MCP_DEV_HUB_ENABLE_AI_WRITE!=='1')return {state:'disabled'};
  const dir=preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch});
  const claim=db.prepare('SELECT phase,head_sha FROM ai_development_claims WHERE job_id=?').get(jobId);
@@ -34,7 +34,7 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
  if(!changed.length||changed.some(p=>!/^tests\/[a-z0-9][a-z0-9_.-]*\.test\.mjs$/.test(p)))return {state:'unsafe_diff'};
  if(git(['ls-files','--others','--exclude-standard'],dir))return {state:'untracked_files'};
  if(!transitionDevelopment(db,{jobId,headSha,from:'running',to:'edited'}))return {state:'stale_claim'};
- const test=run('npm',['run','check'],dir,60000);
+ const test=run(npmBin,['run','check'],dir,60000);
  if(test.status!==0||test.error)return {state:'tests_failed'};
  if(!transitionDevelopment(db,{jobId,headSha,from:'edited',to:'tested'}))return {state:'stale_claim'};
  const codex=run(codexBin,['exec','--sandbox','read-only','Review only the working-tree diff of the current git checkout for concrete defects. Say exactly REVIEW_PASS if no defects. Do not edit files.'],dir,80000);
