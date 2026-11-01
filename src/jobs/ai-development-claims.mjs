@@ -17,8 +17,8 @@ export function claimDevelopment(db,{jobId,headSha,at=new Date().toISOString()})
  return {claimed:result.changes===1,head_sha:headSha,phase:'claimed',attempts:1};
 }
 export function transitionDevelopment(db,{jobId,headSha,from,to,at=new Date().toISOString()}){
- if(!ID.test(jobId)||!SHA.test(headSha)||!['claimed','edited','tested','reviewed','blocked'].includes(from)||
-    !['edited','tested','reviewed','blocked'].includes(to))throw Error('invalid development transition');
+ if(!ID.test(jobId)||!SHA.test(headSha)||!['claimed','running','edited','tested','reviewed','pushing','blocked'].includes(from)||
+    !['running','edited','tested','reviewed','pushing','pushed','blocked'].includes(to))throw Error('invalid development transition');
  ensureDevelopmentClaims(db);
  return db.prepare('UPDATE ai_development_claims SET phase=?,updated_at=? WHERE job_id=? AND head_sha=? AND phase=?')
  .run(to,at,jobId,headSha,from).changes===1;
