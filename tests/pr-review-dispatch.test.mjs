@@ -41,7 +41,7 @@ test('review findings require remediation and never substitute for independent a
   registerReviewJob(db,{id,kind:'review-opencode',project:'example',target:'local',workspace:'staging'});
   db.prepare("UPDATE jobs SET state='succeeded',exit_code=0 WHERE id=?").run(id);
   db.prepare('INSERT INTO review_results(job_id,status,summary,recorded_at) VALUES(?,?,?,?)')
-   .run(id,'completed','REVIEW_FINDINGS:\\n1. Concrete defect in parser',new Date().toISOString());
+   .run(id,'completed','REVIEW_FINDINGS:\n1. Concrete defect in parser',new Date().toISOString());
   assert.equal(reconcilePrReviewEvidence(db,{prKey}).state,'remediation_required');
   db.prepare('UPDATE review_results SET summary=? WHERE job_id=?').run('REVIEW_FINDINGS: no findings',id);
   assert.equal(reconcilePrReviewEvidence(db,{prKey}).state,'awaiting_independent_approval');
