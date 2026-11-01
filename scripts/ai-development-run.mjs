@@ -55,7 +55,7 @@ if(import.meta.url===new URL('file://'+resolve(process.argv[1]||'/dev/null')).hr
   const result=executeOnce({db,jobId,headSha,worktree,branch,
    repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,approvedRoot:process.env.MCP_DEV_HUB_WORKTREE_ROOT,
    prompt:'Improve a single regression test related to the findings. Edit only tests/*.test.mjs. Never edit production files, run tools, or access secrets.',
-   agyBin:process.env.MCP_DEV_HUB_AGY_BIN||'/home/al-hub/.local/bin/agy',
+   agyBin:process.env.MCP_DEV_HUB_AGY_BIN||'agy',
    codexBin:process.env.MCP_DEV_HUB_CODEX_BIN||'codex',
    allowPush:true});
   process.stdout.write(JSON.stringify(result)+'\n');
