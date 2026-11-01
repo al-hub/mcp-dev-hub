@@ -11,7 +11,7 @@ const providers=[
 ];
 if(process.env.MCP_DEV_HUB_ENABLE_OPENCODE_FALLBACK==='1')
  providers.push({name:'opencode',bin:process.env.MCP_DEV_HUB_OPENCODE_BIN||join(home,'.opencode','bin','opencode'),args:['run','--model','opencode/deepseek-v4.1-flash-free','Reply with exactly READY']});
-const timeoutMs=Number(process.env.MCP_DEV_HUB_CLI_SMOKE_TIMEOUT_MS||30000);
+const timeoutMs=Number(process.env.MCP_DEV_HUB_CLI_SMOKE_TIMEOUT_MS||24000);
 if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>60000)throw Error('INVALID_SMOKE_TIMEOUT');
 function run(provider){
  return new Promise(resolve=>{
