@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import {claimDevelopment} from '../src/jobs/ai-development-claims.mjs';
 import {randomBytes} from 'node:crypto';
 import {trackPr,recordPrGate,prNextAction} from '../src/jobs/pr-automation.mjs';
 import {pollPrGithub} from '../src/jobs/pr-github-poll.mjs';
@@ -308,6 +309,18 @@ export function reconcilePrReviewEvidence(db,{prKey=process.env.MCP_DEV_HUB_AUTO
  }
  return {state:job.state,jobId:id};
 }
+export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUTOMATION_PR_KEY}={}){
+ if(!prKey)return {state:'unconfigured'};
+ const pr=db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(prKey);
+ if(!pr)return {state:'untracked'};
+ const review=reconcilePrReviewEvidence(db,{prKey});
+ if(review.state!=='remediation_required')return {state:review.state,claimed:false};
+ // This records a single pending task only; it MUST NOT execute edits or push
+ // code without distinct validated task authorization and independent review.
+ const jobId='fix-pr-'+pr.head_sha.slice(0,12);
+ const result=claimDevelopment(db,{jobId,headSha:pr.head_sha});
+ return {state:'remediation_required',claimed:result.claimed,jobId};
+}
 export async function runWorker(db,{interval=300}={}) {
  let lastPrPoll=0;
  while(true){
@@ -317,7 +330,7 @@ export async function runWorker(db,{interval=300}={}) {
     const token=process.env.MCP_DEV_HUB_GITHUB_TOKEN;
     if(prKey&&Date.now()-lastPrPoll>=30000){
       lastPrPoll=Date.now();
-      try{enqueuePrReviewIfReady(db,token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey}));reconcilePrReviewEvidence(db,{prKey});}
+      try{enqueuePrReviewIfReady(db,token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey}));claimPrDevelopmentIfNeeded(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
