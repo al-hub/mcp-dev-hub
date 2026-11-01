@@ -49,7 +49,10 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
  return {state:'pushed_task_branch',branch,changed};
 }
 if(import.meta.url===new URL('file://'+resolve(process.argv[1]||'/dev/null')).href){
- const [jobId,headSha,worktree,branch]=process.argv.slice(2);
+ const jobId=process.env.MCP_DEV_HUB_AI_JOB_ID;
+ const headSha=process.env.MCP_DEV_HUB_AI_HEAD_SHA;
+ const worktree=process.env.MCP_DEV_HUB_AI_WORKTREE;
+ const branch=process.env.MCP_DEV_HUB_AI_BRANCH;
  const db=openDb();
  try {
   const result=executeOnce({db,jobId,headSha,worktree,branch,
