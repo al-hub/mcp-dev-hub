@@ -32,7 +32,7 @@ test('PR reviewer dispatch is idempotent, scoped and pinned to exact SHA',()=>{
 });
 test('review findings require remediation and never substitute for independent approval',()=>{
  const dir=mkdtempSync(join(tmpdir(),'pr-review-findings-'));
- const env=Object.fromEntries(['MCP_DEV_HUB_STATE_DIR','MCP_DEV_HUB_APPROVED_SCOPE'].map(k=>[k,process.env[k]]));
+ const env=Object.fromEntries(['MCP_DEV_HUB_STATE_DIR','MCP_DEV_HUB_APPROVED_SCOPE','MCP_DEV_HUB_ENABLE_AI_WRITE','MCP_DEV_HUB_WORKTREE_ROOT','MCP_DEV_HUB_WORKTREE_REPO'].map(k=>[k,process.env[k]]));
  process.env.MCP_DEV_HUB_STATE_DIR=dir;process.env.MCP_DEV_HUB_APPROVED_SCOPE='example:local:staging';
  const prKey='al-hub/mcp-dev-hub#17',sha='c'.repeat(40),id='review-pr-'+sha.slice(0,12);
  try{
@@ -46,6 +46,13 @@ test('review findings require remediation and never substitute for independent a
   assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,true);
   assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,false);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_development_claims').get().n,1);
+  process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';
+  process.env.MCP_DEV_HUB_WORKTREE_ROOT=dir;
+  process.env.MCP_DEV_HUB_WORKTREE_REPO=dir;
+  assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE kind='ai-development'").get().n,1);
+  assert.equal(claimPrDevelopmentIfNeeded(db,{prKey}).claimed,false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE kind='ai-development'").get().n,1);
   db.prepare('UPDATE review_results SET summary=? WHERE job_id=?').run('REVIEW_FINDINGS: no findings',id);
   assert.equal(reconcilePrReviewEvidence(db,{prKey}).state,'awaiting_independent_approval');
   db.close();
