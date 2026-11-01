@@ -33,13 +33,17 @@ export function recordPrGate(db,{prKey,headSha,gate,verdict,evidenceId,now=new D
     !['passed','failed','blocked'].includes(verdict)||typeof evidenceId!=='string'||
     !/^[A-Za-z0-9][A-Za-z0-9_.:\/-]{2,255}$/.test(evidenceId))throw Error('invalid gate evidence');
  ensurePrAutomation(db);
- const current=db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(prKey);
- if(!current||current.head_sha!==headSha)throw Error('stale or untracked PR SHA');
- db.prepare(`INSERT INTO pr_gate_evidence(pr_key,gate,head_sha,verdict,evidence_id,updated_at)
+ db.exec('BEGIN IMMEDIATE');
+ try {
+  const current=db.prepare('SELECT head_sha FROM pr_automation WHERE pr_key=?').get(prKey);
+  if(!current||current.head_sha!==headSha)throw Error('stale or untracked PR SHA');
+  db.prepare(`INSERT INTO pr_gate_evidence(pr_key,gate,head_sha,verdict,evidence_id,updated_at)
    VALUES(?,?,?,?,?,?) ON CONFLICT(pr_key,gate) DO UPDATE SET
    head_sha=excluded.head_sha,verdict=excluded.verdict,
    evidence_id=excluded.evidence_id,updated_at=excluded.updated_at`)
- .run(prKey,gate,headSha,verdict,evidenceId,now);
+   .run(prKey,gate,headSha,verdict,evidenceId,now);
+  db.exec('COMMIT');
+ }catch(e){db.exec('ROLLBACK');throw e;}
 }
 export function prNextAction(db,{prKey,observedSha}){
  if(!KEY.test(prKey)||!SHA.test(observedSha))throw Error('invalid PR');
@@ -47,7 +51,7 @@ export function prNextAction(db,{prKey,observedSha}){
  const pr=db.prepare('SELECT * FROM pr_automation WHERE pr_key=?').get(prKey);
  if(!pr)return {state:'untracked',action:'register'};
  if(pr.head_sha!==observedSha)return {state:'stale_sha',action:'reconcile'};
- const rows=db.prepare('SELECT gate,verdict,evidence_id FROM pr_gate_evidence WHERE pr_key=?').all(prKey);
+ const rows=db.prepare('SELECT gate,verdict,evidence_id FROM pr_gate_evidence WHERE pr_key=? AND head_sha=?').all(prKey,observedSha);
  const statuses=new Map(rows.map(x=>[x.gate,x]));
  for(const gate of GATES){
   const v=statuses.get(gate);
