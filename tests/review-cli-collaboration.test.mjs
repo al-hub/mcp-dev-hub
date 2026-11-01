@@ -9,13 +9,13 @@ test('AGY review result is collected; incomplete AGY attempt selects Codex next 
  const dir=mkdtempSync(join(tmpdir(),'cli-review-'));
  const resultDir=join(dir,'results');mkdirSync(resultDir);
  const mock=join(dir,'mock-cli');
- const mockSource='#!/bin/sh\ncase "$1" in --mode) echo "REVIEW_INCOMPLETE";; exec) echo "REVIEW_FINDINGS: no findings from inspected source";; *) exit 4;; esac\n';
+ const mockSource='#!/bin/sh\ncase "$1" in --mode) echo "REVIEW_INCOMPLETE";; exec|run) echo "REVIEW_FINDINGS: no findings from inspected source";; *) exit 4;; esac\n';
  writeFileSync(mock,mockSource,{mode:0o700});chmodSync(mock,0o700);
  const run=(attempt)=>spawnSync(process.execPath,['scripts/review-opencode.mjs'],{
   cwd:process.cwd(),encoding:'utf8',timeout:10000,env:{
    ...process.env,MCP_DEV_HUB_REVIEW_JOB_ID:'review-test-001',
    MCP_DEV_HUB_REVIEW_RESULT_DIR:resultDir,MCP_DEV_HUB_REVIEW_ATTEMPT:String(attempt),
-   MCP_DEV_HUB_AGY_BIN:mock,MCP_DEV_HUB_CODEX_BIN:mock,
+   MCP_DEV_HUB_AGY_BIN:mock,MCP_DEV_HUB_CODEX_BIN:mock,MCP_DEV_HUB_OPENCODE_BIN:mock,
    MCP_DEV_HUB_REVIEW_AREA:'worker'
   }
  });
@@ -27,5 +27,14 @@ test('AGY review result is collected; incomplete AGY attempt selects Codex next 
   const b=JSON.parse(readFileSync(join(resultDir,'review-test-001-attempt-2.json')));
   assert.equal(b.provider,'codex');assert.equal(b.status,'completed');
   assert.match(b.summary,/REVIEW_FINDINGS:/);
+  const tertiary=spawnSync(process.execPath,['scripts/review-opencode.mjs'],{
+   cwd:process.cwd(),encoding:'utf8',timeout:10000,
+   env:{...process.env,MCP_DEV_HUB_REVIEW_JOB_ID:'review-test-001',
+    MCP_DEV_HUB_REVIEW_RESULT_DIR:resultDir,MCP_DEV_HUB_REVIEW_ATTEMPT:'3',
+    MCP_DEV_HUB_AGY_BIN:mock,MCP_DEV_HUB_CODEX_BIN:mock,MCP_DEV_HUB_OPENCODE_BIN:mock,
+    MCP_DEV_HUB_ENABLE_OPENCODE_FALLBACK:'1',MCP_DEV_HUB_REVIEW_AREA:'worker'}
+  });
+  assert.equal(tertiary.status,0,tertiary.stderr);
+  assert.equal(JSON.parse(readFileSync(join(resultDir,'review-test-001-attempt-3.json'))).provider,'opencode');
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
