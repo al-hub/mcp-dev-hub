@@ -27,13 +27,13 @@ async function stream(signal){
      if(index>65536)throw Error('stream frame overflow');
      const frame=buffer.slice(0,index);buffer=buffer.slice(index+2);
      const id=frame.match(/^id: ([0-9]+)$/m);if(id)cursor=Number(id[1]);
-     if(frame.includes('event: reset')){cursor=0;changed=true;}
-     if(frame.includes('event: job'))changed=true;
+     if(/^event: reset$/m.test(frame)){cursor=0;changed=true;}
+     if(/^event: job$/m.test(frame))changed=true;
     }
     if(buffer.length>65536)throw Error('stream frame overflow');
     if(changed){
      lastRefresh=Date.now();
-     try{await refresh(signal);}catch{if(!signal.aborted)el('status').textContent='Live stream connected; status refresh unavailable';}
+     try{await refresh(signal);if(!signal.aborted)el('status').textContent='Connected';}catch{if(!signal.aborted)el('status').textContent='Live stream connected; status refresh unavailable';}
     }
 
    }
@@ -44,7 +44,30 @@ async function stream(signal){
  }
 }
 el('connect').onclick=async()=>{
- if(abort)abort.abort();if(refreshTimer)clearInterval(refreshTimer);refreshTimer=undefined;abort=new AbortController();token=el('token').value || token;el('token').value='';
- try{await refresh(abort.signal);el('status').textContent='Connected';refreshTimer=setInterval(()=>{if(abort.signal.aborted){clearInterval(refreshTimer);return;}refresh(abort.signal).catch(()=>{if(!abort.signal.aborted)el('status').textContent='Status refresh unavailable';});},30000);stream(abort.signal);}
- catch{el('status').textContent='Authentication or service error';token='';}
+ if(abort)abort.abort();
+ if(refreshTimer)clearInterval(refreshTimer);
+ const controller=new AbortController();
+ abort=controller;
+ refreshTimer=undefined;
+ token=el('token').value || token;
+ el('token').value='';
+ try{
+  await refresh(controller.signal);
+  if(controller.signal.aborted||abort!==controller)return;
+  el('status').textContent='Connected';
+  const timer=setInterval(()=>{
+   if(controller.signal.aborted||abort!==controller){clearInterval(timer);return;}
+   refresh(controller.signal).then(()=>{
+    if(!controller.signal.aborted&&abort===controller)el('status').textContent='Connected';
+   }).catch(()=>{
+    if(!controller.signal.aborted&&abort===controller)el('status').textContent='Status refresh unavailable';
+   });
+  },30000);
+  refreshTimer=timer;
+  stream(controller.signal);
+ }catch{
+  if(controller.signal.aborted||abort!==controller)return;
+  el('status').textContent='Authentication or service error';
+  token='';
+ }
 };
