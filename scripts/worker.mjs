@@ -323,7 +323,7 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
  // code without distinct validated task authorization and independent review.
  const jobId='fix-pr-'+pr.head_sha.slice(0,12);
  const result=claimDevelopment(db,{jobId,headSha:pr.head_sha});
- if(result.claimed && process.env.MCP_DEV_HUB_ENABLE_AI_WRITE==='1'){
+ if((result.claimed||result.phase==='claimed') && process.env.MCP_DEV_HUB_ENABLE_AI_WRITE==='1' && !db.prepare('SELECT 1 FROM jobs WHERE id=?').get(jobId)){
   const scope=process.env.MCP_DEV_HUB_APPROVED_SCOPE?.split(':');
   if(scope?.length===3&&scope[1]==='local'&&process.env.MCP_DEV_HUB_WORKTREE_ROOT&&process.env.MCP_DEV_HUB_WORKTREE_REPO)
    addJob(db,{id:jobId,kind:'ai-development',project:scope[0],target:scope[1],workspace:scope[2]});
