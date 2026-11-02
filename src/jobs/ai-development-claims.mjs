@@ -7,8 +7,14 @@ export function ensureDevelopmentClaims(db){
   job_id TEXT PRIMARY KEY, head_sha TEXT NOT NULL, phase TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, last_reason TEXT
  )`);
- if(!db.prepare('PRAGMA table_info(ai_development_claims)').all().some(c=>c.name==='last_reason'))
-   db.exec('ALTER TABLE ai_development_claims ADD COLUMN last_reason TEXT');
+ if(!db.prepare('PRAGMA table_info(ai_development_claims)').all().some(c=>c.name==='last_reason')){
+   try{db.exec('ALTER TABLE ai_development_claims ADD COLUMN last_reason TEXT');}
+   catch(e){
+     // Another connection may have migrated after our column inspection.
+     if(!/duplicate column name/i.test(String(e))||
+        !db.prepare('PRAGMA table_info(ai_development_claims)').all().some(c=>c.name==='last_reason'))throw e;
+   }
+ }
 }
 export function claimDevelopment(db,{jobId,headSha,at=new Date().toISOString()}){
  if(!ID.test(jobId)||!SHA.test(headSha))throw Error('invalid development claim');
