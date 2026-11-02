@@ -7,7 +7,7 @@ const project=process.env.MCP_DEV_HUB_DASHBOARD_PROJECT;
 const repository=process.env.MCP_DEV_HUB_DASHBOARD_REPOSITORY;
 const port=Number(process.env.MCP_DEV_HUB_DASHBOARD_PORT || 8765);
 if (!Number.isInteger(port) || port<1 || port>65535)throw Error('invalid dashboard port');
-const db=openDb();
+const db=openDb({readOnly:true});
 const dashboard=createReadOnlyDashboard({
  token,project,repository,port,host:'localhost',db,
  readGithub:createGithubStatusReader({token:process.env.MCP_DEV_HUB_GITHUB_TOKEN})
