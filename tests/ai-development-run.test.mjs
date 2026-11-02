@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 import {executeOnce,preflight} from '../scripts/ai-development-run.mjs';
+import {claimDevelopment} from '../src/jobs/ai-development-claims.mjs';
 const git=(cwd,...args)=>{const r=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
 test('writer remains disabled without explicit enable, regardless of claim',()=>{
  const db=new DatabaseSync(':memory:');
