@@ -10,8 +10,8 @@ import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
 import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, chmodSync, readFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, chmodSync, readFileSync, rmSync, lstatSync, realpathSync } from 'node:fs';
+import { join, resolve, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
@@ -23,10 +23,33 @@ export const ALLOWED = Object.freeze({
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
   'repo-check': ['npm', 'run', 'check'],
   'cli-smoke': ['node', 'scripts/cli-smoke.mjs'],
-  'review-opencode': ['node', 'scripts/review-opencode.mjs'],
+  'review-opencode': ['node', '__trusted_runner_required__'],
   'ai-development': ['node', 'scripts/ai-development-run.mjs']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
+// Fail closed unless the trusted reviewer launcher was deployed outside any
+// checkout or PR-controlled worktree, with non-symlink regular files.
+export function trustedReviewRunner({executionDir,baseSha}={}){
+ const root=process.env.MCP_DEV_HUB_TRUSTED_RUNNER_ROOT;
+ const bwrap=process.env.MCP_DEV_HUB_BWRAP_BIN;
+ if(typeof root!=='string'||!isAbsolute(root)||typeof bwrap!=='string'||
+    !isAbsolute(bwrap)||!/^[a-f0-9]{40}$/.test(baseSha||''))return null;
+ try{
+  const normalized=resolve(root),review=realpathSync(executionDir);
+  const repo=realpathSync(process.env.MCP_DEV_HUB_WORKTREE_REPO||process.cwd());
+  const worktrees=realpathSync(process.env.MCP_DEV_HUB_WORKTREE_ROOT||process.cwd());
+  const blocked=[review,repo,worktrees,realpathSync(process.cwd())];
+  if(normalized!==root||realpathSync(root)!==root||
+    blocked.some(path=>root===path||root.startsWith(path+sep)||path.startsWith(root+sep)))return null;
+  const dir=lstatSync(root),file=join(root,'review-opencode.mjs'),st=lstatSync(file);
+  if(!dir.isDirectory()||dir.isSymbolicLink()||(dir.mode&0o022)!==0||
+    !st.isFile()||st.isSymbolicLink()||(st.mode&0o022)!==0||realpathSync(file)!==file)return null;
+  const bw=lstatSync(bwrap);
+  if(!bw.isFile()||bw.isSymbolicLink()||(bw.mode&0o022)!==0||realpathSync(bwrap)!==bwrap)return null;
+  return file;
+ }catch{return null;}
+}
+
 export function publicEvents(db, project) {
   if (project !== undefined && !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(project)) throw Error('invalid project');
   return jobs(db).filter(job => project === undefined || job.project === project).map(({id,kind,project,state,exit_code,created_at,updated_at})=>({
@@ -251,9 +274,18 @@ export function tick(db) {
   }
   // Results of earlier attempts remain immutable; a new attempt uses a different result file.
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
-  const cmd=ALLOWED[job.kind].map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
+  const trustedRunner=job.kind==='review-opencode'?trustedReviewRunner({executionDir,baseSha}):null;
+  if(job.kind==='review-opencode'&&!trustedRunner){
+   db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+   return false;
+  }
+  const argv=trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
+  const cmd=argv.map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
-  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+' ' : '';
+  const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+
+    ' MCP_DEV_HUB_REVIEW_SOURCE_DIR='+quoteShell(executionDir)+
+    ' MCP_DEV_HUB_REVIEW_HEAD_SHA='+quoteShell(baseSha)+
+    ' MCP_DEV_HUB_BWRAP_BIN='+quoteShell(process.env.MCP_DEV_HUB_BWRAP_BIN)+' ' : '';
   const aiSettings=job.kind==='ai-development'?{
     MCP_DEV_HUB_AI_JOB_ID:job.id,
     MCP_DEV_HUB_AI_HEAD_SHA:baseSha,

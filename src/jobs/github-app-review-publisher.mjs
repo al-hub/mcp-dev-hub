@@ -22,6 +22,22 @@ export function validateReviewEvidence({headSha,evidence,verifyEvidence}){
  }
  return verifyEvidence(evidence)===true || fail('unverified independent review provenance');
 }
+// Protection information comes from a separately trusted verifier; this
+// narrowly scoped review App must never gain policy/contents permissions.
+// Both the evidence and its provenance must be pinned to the exact PR HEAD.
+export function validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence}){
+ const p=protectionEvidence;
+ if(typeof verifyProtectionEvidence!=='function'||!p||p.repository!==REPO||
+    p.branch!=='main'||p.headSha!==headSha||p.enforceAdmins!==true||
+    !Number.isSafeInteger(p.requiredApprovals)||p.requiredApprovals<1||
+    p.dismissStaleReviews!==true||p.requireLastPushApproval!==true||
+    p.requireConversationResolution!==true||!Array.isArray(p.requiredChecks)||
+    !p.requiredChecks.includes('bootstrap')||
+    typeof p.evidenceId!=='string'||!/^verified-[a-z0-9-]{6,100}$/.test(p.evidenceId))
+   fail('trusted branch protection evidence unavailable');
+ if(verifyProtectionEvidence(p)!==true)fail('unverified branch protection provenance');
+ return true;
+}
 export function createAppJwt({appId,privateKey,now=Math.floor(Date.now()/1000)}){
  if(!Number.isSafeInteger(appId)||appId<1||typeof privateKey!=='string'||!privateKey.includes('PRIVATE KEY')||
     !Number.isSafeInteger(now))fail('invalid GitHub App configuration');
@@ -60,7 +76,7 @@ export async function createScopedAppClient({appId,installationId,repositoryId,k
  if(typeof access.token!=='string'||access.token.length<20||
     access.permissions?.pull_requests!=='write')fail('insufficient scoped installation token');
  const scoped=async (method,path,body)=>{
-  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/[1-9][0-9]*(\/reviews(\?per_page=100)?)?|branches\/main\/protection|actions\/runs\?head_sha=[a-f0-9]{40}&per_page=30)$/.test(path)
+  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/[1-9][0-9]*(\/reviews(\?per_page=100)?)?|actions\/runs\?head_sha=[a-f0-9]{40}&per_page=30)$/.test(path)
      && path!=='/graphql')fail('unapproved GitHub App API path');
   return call(method,path,body,access.token);
  };
@@ -69,21 +85,16 @@ export async function createScopedAppClient({appId,installationId,repositoryId,k
  return {api:scoped,actor:app.slug+'[bot]'};
 }
 export async function publishIndependentApproval({
- api,actor,headSha,prNumber=17,evidence,verifyEvidence
+ api,actor,headSha,prNumber=17,evidence,verifyEvidence,protectionEvidence,verifyProtectionEvidence
 }){
  if(typeof api!=='function'||typeof actor!=='string'||!/^[-a-z0-9]+\[bot\]$/.test(actor)||
     prNumber!==17||!SHA.test(headSha))fail('review publisher scope denied');
  validateReviewEvidence({headSha,evidence,verifyEvidence});
+ validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence});
  const prefix='/repos/'+REPO;
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
     pr.base?.ref!=='main'||pr.user?.login===actor)fail('stale or self-authored pull request');
- const protection=await api('GET',prefix+'/branches/main/protection');
- if(protection.enforce_admins?.enabled!==true||
-    !(protection.required_pull_request_reviews?.required_approving_review_count>=1)||
-    protection.required_pull_request_reviews?.dismiss_stale_reviews!==true)fail('required review protection not active');
- const contexts=protection.required_status_checks?.contexts??[];
- if(!contexts.includes('bootstrap'))fail('required GitHub CI protection missing');
  const runs=await api('GET',prefix+'/actions/runs?head_sha='+headSha+'&per_page=30');
  const matching=(runs.workflow_runs??[]).filter(x=>x.head_sha===headSha&&
     x.event==='pull_request'&&x.name==='CI'&&Number.isSafeInteger(x.id))
@@ -95,19 +106,33 @@ export async function publishIndependentApproval({
  if(own && (own.state!=='APPROVED'||own.commit_id!==headSha))fail('existing Bot review needs reconciliation');
  let review=own;
  if(!review){
-  // Never replay an uncertain POST. The caller must first reconcile the live reviews.
+  // Check the HEAD and existing Bot reviews at the last possible point before POST.
+  const justBefore=await api('GET',prefix+'/pulls/'+prNumber);
+  if(justBefore.number!==prNumber||justBefore.state!=='open'||
+     justBefore.head?.sha!==headSha||justBefore.base?.ref!=='main')
+   fail('PR HEAD moved immediately before approval POST');
+  const prePostReviews=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
+  if(!Array.isArray(prePostReviews)||prePostReviews.length>=100||
+     prePostReviews.some(x=>x.user?.login===actor))
+   fail('review submission changed or incomplete; reconcile before POST');
+  // Uncertain POST is never repeated. Any error needs an explicit live reconciliation.
   review=await api('POST',prefix+'/pulls/'+prNumber+'/reviews',{
    commit_id:headSha,event:'APPROVE',
    body:'AI-assisted independent Codex technical review (not a human review). Evidence: '+evidence.evidenceId
   });
  }
  const after=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
- const confirmed=Array.isArray(after)&&after.some(x=>x.id===review.id&&x.state==='APPROVED'&&
-    x.commit_id===headSha&&x.user?.login===actor);
+ const confirmed=Number.isSafeInteger(review?.id)&&Array.isArray(after)&&after.length<100&&
+    after.some(x=>x.id===review.id&&x.state==='APPROVED'&&
+     x.commit_id===headSha&&x.user?.login===actor);
  if(!confirmed)fail('review submission not confirmed; do not retry');
- const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewDecision}}}';
+ const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
  const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:17}});
- if(result.data?.repository?.pullRequest?.reviewDecision!=='APPROVED')
-  fail('GitHub does not confirm required approval eligibility');
- return {state:'approved',reviewId:review.id,headSha,actor};
+ const decision=result.data?.repository?.pullRequest;
+ if(decision?.headRefOid!==headSha||decision?.reviewDecision!=='APPROVED')
+  fail('GitHub does not confirm same-HEAD required approval eligibility');
+ const afterPr=await api('GET',prefix+'/pulls/'+prNumber);
+ if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||afterPr.state!=='open')
+  fail('PR HEAD moved during approval confirmation');
+ return {state:'approved',reviewId:review.id,reviewUrl:review.html_url??null,headSha,actor};
 }

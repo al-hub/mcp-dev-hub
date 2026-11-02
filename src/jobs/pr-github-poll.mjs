@@ -28,8 +28,26 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
  recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:passed?'passed':'blocked',evidenceId:passed?'github-actions-'+passed.id:'github-ci-not-current'});
  let next=prNextAction(db,{prKey,observedSha:sha});
  if(next.gate==='independent_review' || next.action==='request_guarded_merge' || next.gate==='security' || next.gate==='private_sse' || next.gate==='pc' || next.gate==='galaxy'){
-  const reviews=await get('/pulls/'+number+'/reviews?per_page=100');
-  if(!Array.isArray(reviews))throw Error('unverifiable PR review state');
+  // GitHub caps each reviews response at 100. A partial or ambiguous history
+  // cannot establish the most recent state of an independent reviewer.
+  const reviews=[];
+  let historyComplete=false;
+  try{
+   for(let page=1;page<=10;page++){
+    const batch=await get('/pulls/'+number+'/reviews?per_page=100&page='+page);
+    if(!Array.isArray(batch)||batch.length>100||batch.some(x=>!Number.isSafeInteger(x?.id)||
+      x.id<1||typeof x?.user?.login!=='string'||typeof x.state!=='string'))
+      throw Error('unverifiable PR review page');
+    reviews.push(...batch);
+    if(batch.length<100){historyComplete=true;break;}
+   }
+   if(!historyComplete)throw Error('GitHub PR review history exceeds bounded pagination');
+  }catch{
+   // A network, format or upper-bound error must revoke any cached approval.
+   recordPrGate(db,{prKey,headSha:sha,gate:'independent_review',verdict:'blocked',
+    evidenceId:'github-review-history-incomplete'});
+   return {changed,headSha:sha,...prNextAction(db,{prKey,observedSha:sha})};
+  }
   // Only the latest review per independent reviewer counts; stale SHA or dismissed reviews do not.
   const latestByReviewer=new Map();
   for(const review of reviews){
