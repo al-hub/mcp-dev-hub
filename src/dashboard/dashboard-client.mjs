@@ -1,16 +1,25 @@
 const el=id=>document.getElementById(id);
-let token='',abort,refreshTimer;
+let token='',abort,refreshTimer,connectGeneration=0,pendingConnect;
 const show=(parent,items,mapper)=>{parent.replaceChildren(...items.map(mapper));};
 const card=(title,details,url)=>{const a=document.createElement('article'),b=document.createElement('strong'),p=document.createElement('p');b.textContent=title;p.textContent=details;a.append(b,p);if(typeof url==='string' && /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/(?:issues|pull|actions\/runs)\/[0-9]+(?:\/files)?$/.test(url)){const l=document.createElement('a');l.href=url;l.target='_blank';l.rel='noopener noreferrer';l.textContent='GitHub';a.append(l);}return a;};
-async function read(path,signal){
- const r=await fetch(path,{headers:{Authorization:'Bearer '+token},signal,cache:'no-store'});
+async function read(path,signal,authToken=token){
+ const r=await fetch(path,{headers:{Authorization:'Bearer '+authToken},signal,cache:'no-store'});
  if(!r.ok)throw Error('Status unavailable ('+r.status+')');return r.json();
 }
-async function refresh(signal){
- const [jobs,github]=await Promise.all([read('/api/jobs',signal),read('/api/github',signal)]);
+async function loadSnapshot(signal,authToken=token){
+ const [jobs,github]=await Promise.all([read('/api/jobs',signal,authToken),read('/api/github',signal,authToken)]);
+ return {jobs,github};
+}
+function renderSnapshot({jobs,github}){
  show(el('jobs'),jobs.jobs,j=>card(j.kind+' · '+j.state,j.id+' · '+j.updatedAt));
  const items=[...github.issues.map(x=>({...x,type:'Issue'})),...github.pullRequests.map(x=>({...x,type:'PR'})),...github.ci.map(x=>({type:'CI',title:x.name,state:x.conclusion||x.status,url:x.url}))];
  show(el('github'),items.slice(0,60),x=>card(x.type+' · '+x.title,x.state||'unknown',x.type==='PR' && x.url && /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/pull\/[0-9]+$/.test(x.url)?x.url+'/files':x.url));
+}
+async function refresh(signal,authToken=token){
+ const snapshot=await loadSnapshot(signal,authToken);
+ if(signal.aborted)return false;
+ renderSnapshot(snapshot);
+ return true;
 }
 async function stream(signal){
  let cursor=0,lastRefresh=0,reconnects=0;
@@ -40,20 +49,39 @@ async function stream(signal){
   }catch(e){if(!signal.aborted)el('status').textContent='Reconnecting live stream';}
   if(signal.aborted)break;
   reconnects=Math.min(reconnects+1,6);
-  await new Promise(resolve=>setTimeout(resolve,Math.min(1000*2**(reconnects-1),30000)));
+  await new Promise(resolve=>{
+   let finished=false;
+   const finish=()=>{if(finished)return;finished=true;clearTimeout(timer);signal.removeEventListener('abort',finish);resolve();};
+   if(signal.aborted){resolve();return;}
+   const timer=setTimeout(finish,Math.min(1000*2**(reconnects-1),30000));
+   signal.addEventListener('abort',finish,{once:true});
+   if(signal.aborted)finish();
+  });
  }
 }
 el('connect').onclick=async()=>{
- if(abort)abort.abort();
- if(refreshTimer)clearInterval(refreshTimer);
- const controller=new AbortController();
- abort=controller;
- refreshTimer=undefined;
- token=el('token').value || token;
+ const enteredToken=el('token').value;
  el('token').value='';
+ // A duplicate blank click must not replace a pending authentication attempt.
+ if(!enteredToken && pendingConnect)return;
+ const candidateToken=enteredToken || token;
+ if(!candidateToken){
+  if(!pendingConnect)el('status').textContent='Authentication token required';
+  return;
+ }
+ const generation=++connectGeneration;
+ const controller=new AbortController();
+ if(pendingConnect)pendingConnect.abort();
+ pendingConnect=controller;
  try{
-  await refresh(controller.signal);
-  if(controller.signal.aborted||abort!==controller)return;
+  // Validate a candidate before closing an existing authenticated session.
+  const snapshot=await loadSnapshot(controller.signal,candidateToken);
+  if(controller.signal.aborted||generation!==connectGeneration)return;
+  if(abort)abort.abort();
+  if(refreshTimer)clearInterval(refreshTimer);
+  abort=controller;
+  token=candidateToken;
+  renderSnapshot(snapshot);
   el('status').textContent='Connected';
   const timer=setInterval(()=>{
    if(controller.signal.aborted||abort!==controller){clearInterval(timer);return;}
@@ -66,8 +94,10 @@ el('connect').onclick=async()=>{
   refreshTimer=timer;
   stream(controller.signal);
  }catch{
-  if(controller.signal.aborted||abort!==controller)return;
-  el('status').textContent='Authentication or service error';
-  token='';
+  controller.abort();
+  if(generation!==connectGeneration)return;
+  el('status').textContent=abort&&!abort.signal.aborted?'Connected':'Authentication or service error';
+ }finally{
+  if(pendingConnect===controller)pendingConnect=undefined;
  }
 };
