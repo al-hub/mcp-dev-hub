@@ -5,6 +5,12 @@ import {publicEvents,eventHistory,eventBounds} from '../../scripts/worker.mjs';
 
 const assets = Object.freeze(Object.fromEntries(Object.entries({'/':['index.html','text/html; charset=utf-8'],'/dashboard-client.mjs':['dashboard-client.mjs','text/javascript; charset=utf-8'],'/dashboard.css':['dashboard.css','text/css; charset=utf-8']}).map(([route,[file,type]])=>[route,{type,body:readFileSync(new URL(file,import.meta.url))}])));
 const isProject = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{1,63}$/.test(value);
+const permitsLoopbackOrigin=(host,origin)=>{
+  if(typeof host!=='string')return false;
+  const match=/^(?:localhost|127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})$/.exec(host);
+  if(!match || Number(match[1])>65535)return false;
+  return origin===undefined || (typeof origin==='string' && origin==='http://'+host);
+};
 export function safeBearer(value,expected) {
   if (typeof expected !== 'string' || expected.length < 24 || typeof value !== 'string' || !value.startsWith('Bearer ')) return false;
   const a=createHash('sha256').update(value.slice(7)).digest();const b=createHash('sha256').update(expected).digest();
@@ -27,6 +33,7 @@ export function createReadOnlyDashboard({token,project,repository,db,readGithub,
   const server=http.createServer(async (req,res)=>{
     for(const [key,val] of Object.entries(headers)) if(key!=='Access-Control-Allow-Origin') res.setHeader(key,val);
     try {
+    if(!permitsLoopbackOrigin(req.headers.host,req.headers.origin)){res.writeHead(403);res.end('Forbidden');return;}
     if(req.method==='GET' && Object.hasOwn(assets,req.url)){
       const {type,body}=assets[req.url];
       res.writeHead(200,{'Content-Type':type});
