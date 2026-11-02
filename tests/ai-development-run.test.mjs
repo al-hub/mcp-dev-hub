@@ -53,7 +53,9 @@ test('no-edit AGY exit is durably failed with a reason and cannot replay',()=>{
   process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';
   const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'synthetic',agyBin:bin,codexBin:bin};
   assert.equal(executeOnce(args).state,'no_diff');
-  assert.deepEqual(db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(jobId),{phase:'failed',last_reason:'no_diff'});
+  const persisted=db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(jobId);
+  assert.equal(persisted.phase,'failed');
+  assert.equal(persisted.last_reason,'no_diff');
   assert.equal(executeOnce(args).state,'not_claimed');
   db.close();
  }finally{
