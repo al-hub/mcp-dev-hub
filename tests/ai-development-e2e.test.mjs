@@ -40,12 +40,21 @@ test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branc
   process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
   const db=new DatabaseSync(':memory:');
   claimDevelopment(db,{jobId,headSha});
+  // Synthetic local race: HEAD moves after the reviewed commit is frozen,
+  // immediately before push. The remote must receive only the approved SHA.
+  const realGit=spawnSync('sh',['-c','command -v git'],{encoding:'utf8'}).stdout.trim();
+  assert.ok(realGit.startsWith('/'));
+  exe('git','if [ "\u00241" = "push" ]; then\n "'+realGit+'" commit --allow-empty -qm "unreviewed race commit"\nfi\nexec "'+realGit+'" "\u0024@"');
+  process.env.PATH=bin+':'+previous.path;
   const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true};
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha,'fixture HEAD must remain pinned after claim');
   const result=executeOnce(args);
   assert.equal(result.state,'pushed_task_branch');
   assert.equal(db.prepare('SELECT phase FROM ai_development_claims WHERE job_id=?').get(jobId).phase,'pushed');
   assert.match(git(bare,'show','refs/heads/'+branch+':tests/example.test.mjs'),/value=2/);
+  const remoteSha=git(bare,'rev-parse','refs/heads/'+branch);
+  assert.notEqual(remoteSha,git(worktree,'rev-parse','HEAD'),'moving HEAD must not be pushed');
+  assert.equal(git(bare,'rev-parse',remoteSha+'^'),headSha);
   assert.equal(git(repo,'rev-parse','HEAD'),headSha);
   assert.equal(executeOnce(args).state,'not_claimed');
   db.close();
