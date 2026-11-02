@@ -105,7 +105,7 @@ if(import.meta.url===new URL('file://'+resolve(process.argv[1]||'/dev/null')).hr
  try {
   const result=executeOnce({db,jobId,headSha,worktree,branch,
    repoDir:process.env.MCP_DEV_HUB_WORKTREE_REPO,approvedRoot:process.env.MCP_DEV_HUB_WORKTREE_ROOT,
-   prompt:'Improve a single regression test related to the findings. Edit only tests/*.test.mjs. Never edit production files, run tools, or access secrets.',
+   prompt:'Add one regression test in tests/ai-development-claims.test.mjs: a blocked terminal claim must retain its reason and must not be claimed again. You may read and edit only this test file using file tools. Do not execute shell commands, modify production files, or access secrets.',
    agyBin:process.env.MCP_DEV_HUB_AGY_BIN||'agy',
    codexBin:process.env.MCP_DEV_HUB_CODEX_BIN||'codex',
    allowPush:true});
