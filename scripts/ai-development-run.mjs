@@ -93,8 +93,17 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
    const staged=git(['diff','--cached','--name-only'],dir).split('\n').filter(Boolean);
    if(JSON.stringify(staged)!==JSON.stringify(changed))return stop('staged_mismatch','unknown');
    git(['diff','--cached','--check'],dir);
-   git(['commit','-m','test: AI-reviewed bounded remediation'],dir);
-   const pushedSha=git(['rev-parse','HEAD'],dir);
+   // Freeze the index as an immutable tree. Any surviving writer changing the
+   // working tree or index cannot alter this tree after its digest is approved.
+   const treeSha=git(['write-tree'],dir);
+   const frozenFiles=git(['diff','--name-only',headSha,treeSha],dir).split('\n').filter(Boolean);
+   if(JSON.stringify(frozenFiles)!==JSON.stringify(changed))return stop('tree_mismatch','unknown');
+   const frozenPatch=git(['diff','--binary',headSha,treeSha,'--',...changed],dir);
+   if(createHash('sha256').update(frozenPatch).digest('hex')!==changeDigest)
+     return stop('frozen_content_mismatch','unknown');
+   const pushedSha=git(['commit-tree',treeSha,'-p',headSha,'-m','test: AI-reviewed bounded remediation'],dir);
+   // Compare-and-swap only our isolated task branch, never shared PR/main refs.
+   git(['update-ref','refs/heads/'+branch,pushedSha,headSha],dir);
    git(['push','--porcelain','origin','HEAD:refs/heads/'+branch],dir);
    const remote=git(['ls-remote','--heads','origin','refs/heads/'+branch],dir);
    if(!remote.startsWith(pushedSha+'\t'))return stop('push_unconfirmed','unknown');
