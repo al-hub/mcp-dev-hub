@@ -37,3 +37,15 @@ test('legacy claim schema adds durable failure reason idempotently',()=>{
  assert.equal(claimDevelopment(db,{jobId:id,headSha:sha}).claimed,false);
  db.close();
 });
+test('blocked terminal claim retains reason and cannot be claimed again',()=>{
+ const db=new DatabaseSync(':memory:');
+ assert.equal(claimDevelopment(db,{jobId:id,headSha:sha}).claimed,true);
+ assert.equal(finishDevelopment(db,{jobId:id,headSha:sha,from:'claimed',to:'blocked',reason:'terminal_block'}),true);
+ assert.equal(claimDevelopment(db,{jobId:id,headSha:sha}).claimed,false);
+ assert.equal(claimDevelopment(db,{jobId:id,headSha:other}).claimed,false);
+ assert.equal(finishDevelopment(db,{jobId:id,headSha:sha,from:'claimed',to:'blocked',reason:'overwrite_attempt'}),false);
+ const row=db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(id);
+ assert.equal(row.phase,'blocked');
+ assert.equal(row.last_reason,'terminal_block');
+ db.close();
+});
