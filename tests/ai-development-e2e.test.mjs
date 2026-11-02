@@ -28,7 +28,8 @@ test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branc
   git(repo,'worktree','add','-qb',branch,worktree,headSha);
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha,'worktree must match requested SHA');
   const agy=exe('agy', "printf 'export const value=2;\\n' > tests/example.test.mjs");
-  const codex=exe('codex','echo REVIEW_PASS');
+  const verdict={verdict:'APPROVE',baseSha:headSha,files:['tests/example.test.mjs'],findings:[]};
+  const codex=exe('codex',"printf '%s\\n' '"+JSON.stringify(verdict)+"'");
   const npmBin=exe('npm','exit 0');
   process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';
   process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
