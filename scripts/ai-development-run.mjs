@@ -104,7 +104,7 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
    const pushedSha=git(['commit-tree',treeSha,'-p',headSha,'-m','test: AI-reviewed bounded remediation'],dir);
    // Compare-and-swap only our isolated task branch, never shared PR/main refs.
    git(['update-ref','refs/heads/'+branch,pushedSha,headSha],dir);
-   git(['push','--porcelain','origin','HEAD:refs/heads/'+branch],dir);
+   git(['push','--porcelain','origin',pushedSha+':refs/heads/'+branch],dir);
    const remote=git(['ls-remote','--heads','origin','refs/heads/'+branch],dir);
    if(!remote.startsWith(pushedSha+'\t'))return stop('push_unconfirmed','unknown');
    if(!transitionDevelopment(db,{jobId,headSha,from:'pushing',to:'pushed'}))return {state:'push_claim_uncertain'};
