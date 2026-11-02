@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
-import {openDb,enqueuePrReviewIfReady,reconcilePrReviewEvidence,registerReviewJob,claimPrDevelopmentIfNeeded,tick,jobs} from '../scripts/worker.mjs';
+import {openDb,enqueuePrReviewIfReady,reconcilePrReviewEvidence,registerReviewJob,claimPrDevelopmentIfNeeded,tick,jobs,trustedReviewRunner} from '../scripts/worker.mjs';
 import {trackPr} from '../src/jobs/pr-automation.mjs';
 test('PR reviewer dispatch is idempotent, scoped and pinned to exact SHA',()=>{
  const dir=mkdtempSync(join(tmpdir(),'pr-review-dispatch-'));
@@ -97,6 +97,26 @@ test('review findings require remediation and never substitute for independent a
   db.close();
  }finally{
   for(const [k,v] of Object.entries(env)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
+  rmSync(dir,{recursive:true,force:true});
+ }
+});
+
+test('same-account writable launcher cannot become trusted Worker review code',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'trusted-runner-owner-'));
+ const trusted=join(dir,'trusted'),trees=join(dir,'worktrees'),bwrap=join(dir,'bwrap');
+ mkdirSync(trusted,{mode:0o700});mkdirSync(trees,{mode:0o700});
+ writeFileSync(join(trusted,'review-opencode.mjs'),'// synthetic\n',{mode:0o700});
+ writeFileSync(bwrap,'#!/bin/sh\nexit 0\n',{mode:0o700});
+ const keys=['MCP_DEV_HUB_TRUSTED_RUNNER_ROOT','MCP_DEV_HUB_WORKTREE_REPO','MCP_DEV_HUB_WORKTREE_ROOT','MCP_DEV_HUB_BWRAP_BIN'];
+ const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ try{
+  Object.assign(process.env,{
+   MCP_DEV_HUB_TRUSTED_RUNNER_ROOT:trusted,MCP_DEV_HUB_WORKTREE_REPO:process.cwd(),
+   MCP_DEV_HUB_WORKTREE_ROOT:trees,MCP_DEV_HUB_BWRAP_BIN:bwrap
+  });
+  assert.equal(trustedReviewRunner({executionDir:process.cwd(),baseSha:'a'.repeat(40)}),null);
+ }finally{
+  for(const [k,v] of Object.entries(old)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
   rmSync(dir,{recursive:true,force:true});
  }
 });

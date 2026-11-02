@@ -36,3 +36,27 @@ test('unbounded 100-per-page review history cannot be considered complete or app
   assert.ok(pages<=10);
  }finally{db.close();}
 });
+
+test('COMMENTED after current approval does not withdraw it',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  const result=await pollPrGithub({db,prKey,token,fetchImpl:makeFetch(()=>[
+   {id:10,state:'APPROVED',commit_id:sha,user:{login:'reviewer'}},
+   {id:11,state:'COMMENTED',commit_id:sha,user:{login:'reviewer'}}
+  ])});
+  assert.equal(result.gate,'security');
+  assert.equal(db.prepare("SELECT verdict FROM pr_gate_evidence WHERE gate='independent_review'").get().verdict,'passed');
+ }finally{db.close();}
+});
+
+test('review order uses submission time when older pending ID was submitted later',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  const result=await pollPrGithub({db,prKey,token,fetchImpl:makeFetch(()=>[
+   {id:10,state:'CHANGES_REQUESTED',commit_id:sha,submitted_at:'2026-11-02T20:30:00Z',user:{login:'reviewer'}},
+   {id:11,state:'APPROVED',commit_id:sha,submitted_at:'2026-11-02T20:00:00Z',user:{login:'reviewer'}}
+  ])});
+  assert.equal(result.gate,'independent_review');
+  assert.equal(db.prepare("SELECT verdict FROM pr_gate_evidence WHERE gate='independent_review'").get().verdict,'blocked');
+ }finally{db.close();}
+});

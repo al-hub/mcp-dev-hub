@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,chmodSync,readFileSync,rmSync,copyFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,chmodSync,readFileSync,rmSync,copyFileSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -89,5 +89,30 @@ test('review-opencode fails closed without trusted isolation, exact SHA, or clea
    env:{...baseEnv,MCP_DEV_HUB_REVIEW_SOURCE_DIR:''}
   });
   assert.notEqual(noSource.status,0);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test('committed source symlink to host-private file fails before reviewer CLI launch',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'review-symlink-'));
+ const repo=join(dir,'exact-head'),priv=join(dir,'private-file'),bwrap=join(dir,'mock-bwrap'),cli=join(dir,'mock-cli');
+ mkdirSync(repo);mkdirSync(join(repo,'scripts'));mkdirSync(join(dir,'results'));
+ writeFileSync(priv,'SYNTHETIC_PRIVATE_CONTENT_DO_NOT_DISCLOSE\n');
+ symlinkSync(priv,join(repo,'scripts','worker.mjs'));
+ writeFileSync(bwrap,'#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = "--" ]; then shift;exec "$@";fi;shift;done\nexit 97\n',{mode:0o700});
+ writeFileSync(cli,'#!/bin/sh\necho "REVIEW_FINDINGS: no findings"\n',{mode:0o700});
+ const git=(...args)=>spawnSync('git',args,{cwd:repo,encoding:'utf8'});
+ git('init','-q');git('config','user.email','ci@example.invalid');git('config','user.name','CI');
+ git('add','.');git('commit','-qm','committed malicious symlink');
+ const headSha=git('rev-parse','HEAD').stdout.trim();
+ try{
+  const run=spawnSync(process.execPath,['scripts/review-opencode.mjs'],{
+   cwd:process.cwd(),encoding:'utf8',timeout:10000,
+   env:{...process.env,MCP_DEV_HUB_REVIEW_JOB_ID:'review-symlink-001',
+    MCP_DEV_HUB_REVIEW_RESULT_DIR:join(dir,'results'),MCP_DEV_HUB_REVIEW_ATTEMPT:'1',
+    MCP_DEV_HUB_REVIEW_SOURCE_DIR:repo,MCP_DEV_HUB_REVIEW_HEAD_SHA:headSha,
+    MCP_DEV_HUB_BWRAP_BIN:bwrap,MCP_DEV_HUB_AGY_BIN:cli,MCP_DEV_HUB_REVIEW_AREA:'worker'}
+  });
+  assert.notEqual(run.status,0);
+  assert.doesNotMatch((run.stdout||'')+(run.stderr||''),/SYNTHETIC_PRIVATE_CONTENT_DO_NOT_DISCLOSE/);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });

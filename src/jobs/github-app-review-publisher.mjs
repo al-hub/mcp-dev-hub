@@ -76,7 +76,7 @@ export async function createScopedAppClient({appId,installationId,repositoryId,k
  if(typeof access.token!=='string'||access.token.length<20||
     access.permissions?.pull_requests!=='write')fail('insufficient scoped installation token');
  const scoped=async (method,path,body)=>{
-  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/[1-9][0-9]*(\/reviews(\?per_page=100)?)?|actions\/runs\?head_sha=[a-f0-9]{40}&per_page=30)$/.test(path)
+  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/[1-9][0-9]*(\/reviews(\?per_page=100)?)?)$/.test(path)
      && path!=='/graphql')fail('unapproved GitHub App API path');
   return call(method,path,body,access.token);
  };
@@ -95,14 +95,20 @@ export async function publishIndependentApproval({
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
     pr.base?.ref!=='main'||pr.user?.login===actor)fail('stale or self-authored pull request');
- const runs=await api('GET',prefix+'/actions/runs?head_sha='+headSha+'&per_page=30');
- const matching=(runs.workflow_runs??[]).filter(x=>x.head_sha===headSha&&
-    x.event==='pull_request'&&x.name==='CI'&&Number.isSafeInteger(x.id))
-    .sort((a,b)=>b.id-a.id);
- if(matching[0]?.status!=='completed'||matching[0].conclusion!=='success')fail('current SHA CI not successful');
+ // CI is an independently verified exact-SHA acceptance gate in
+ // validateReviewEvidence. The pull_requests-only App never queries Actions.
  const reviews=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
  if(!Array.isArray(reviews)||reviews.length>=100)fail('incomplete GitHub reviews listing');
- const own=reviews.filter(x=>x.user?.login===actor).sort((a,b)=>b.id-a.id)[0];
+ const latestActorReview=(rows)=>{
+  const relevant=rows.filter(x=>x.user?.login===actor &&
+   ['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(x.state));
+  relevant.sort((a,b)=>{
+   const ta=Date.parse(a.submitted_at||''),tb=Date.parse(b.submitted_at||'');
+   return Number.isFinite(ta)&&Number.isFinite(tb)?ta-tb||a.id-b.id:a.id-b.id;
+  });
+  return relevant.at(-1);
+ };
+ const own=latestActorReview(reviews);
  if(own && (own.state!=='APPROVED'||own.commit_id!==headSha))fail('existing Bot review needs reconciliation');
  let review=own;
  if(!review){
@@ -122,9 +128,9 @@ export async function publishIndependentApproval({
   });
  }
  const after=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
- const confirmed=Number.isSafeInteger(review?.id)&&Array.isArray(after)&&after.length<100&&
-    after.some(x=>x.id===review.id&&x.state==='APPROVED'&&
-     x.commit_id===headSha&&x.user?.login===actor);
+ const effective=Array.isArray(after)&&after.length<100?latestActorReview(after):null;
+ const confirmed=Number.isSafeInteger(review?.id)&&effective?.id===review.id&&
+    effective.state==='APPROVED'&&effective.commit_id===headSha&&effective.user?.login===actor;
  if(!confirmed)fail('review submission not confirmed; do not retry');
  const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
  const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:17}});

@@ -32,6 +32,7 @@ test('reviewer App client cannot request branch protection with Pull requests:wr
  }});
  const client=await createScopedAppClient({appId:42,installationId:123,repositoryId:99,key,fetchImpl});
  await assert.rejects(()=>client.api('GET','/repos/al-hub/mcp-dev-hub/branches/main/protection'),/unapproved/);
+ await assert.rejects(()=>client.api('GET','/repos/al-hub/mcp-dev-hub/actions/runs?head_sha='+sha+'&per_page=30'),/unapproved/);
 });
 test('trusted out-of-band policy evidence allows approval without privileged App policy endpoint',async()=>{
  const f=fixture({denyPolicyApi:true});
@@ -55,4 +56,32 @@ test('absent or unverified trusted policy evidence must fail before approval API
  const g=fixture();
  await assert.rejects(()=>publishIndependentApproval({api:g.api,...params,verifyProtectionEvidence:()=>false}));
  assert.equal(g.posted,0);
+});
+
+test('approval uses separately verified CI evidence without calling forbidden App Actions endpoint',async()=>{
+ const f=fixture();
+ const api=async(method,path,body)=>{
+  if(path.includes('/actions/runs'))throw Error('Actions permission denied');
+  return f.api(method,path,body);
+ };
+ const r=await publishIndependentApproval({...params,api});
+ assert.equal(r.state,'approved');
+ assert.equal(f.posted,1);
+});
+
+test('approval reconciliation rejects superseding same-actor CHANGES_REQUESTED review',async()=>{
+ const f=fixture(),history=[];
+ let posted=0;
+ const api=async(method,path,body)=>{
+  if(path.endsWith('/reviews?per_page=100'))return history;
+  if(path.endsWith('/reviews')&&method==='POST'){
+   posted++;
+   const approved={id:99,user:{login:actor},state:'APPROVED',commit_id:sha};
+   history.push(approved,{id:100,user:{login:actor},state:'CHANGES_REQUESTED',commit_id:sha});
+   return approved;
+  }
+  return f.api(method,path,body);
+ };
+ await assert.rejects(()=>publishIndependentApproval({...params,api}));
+ assert.equal(posted,1);
 });

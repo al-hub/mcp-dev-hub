@@ -70,7 +70,24 @@ const areas=Object.freeze({
 });
 const area=process.env.MCP_DEV_HUB_REVIEW_AREA || 'dashboard';
 if(!Object.hasOwn(areas,area)){process.stderr.write('INVALID_REVIEW_AREA\\n');process.exit(78);}
-const source=areas[area].map(file=>file+'\n'+readFileSync(resolve(sourceDir,file),'utf8').slice(0,26000)).join('\n---\n');
+function exactHeadBlob(file){
+ // Resolve the blob through the immutable verified commit, not the filesystem.
+ // A committed symlink must never be dereferenced in the Worker process.
+ const tree=git(['ls-tree',headSha,'--',file]);
+ if(tree.status!==0||!/^100(?:644|755) blob [a-f0-9]{40}\t/.test(tree.stdout)||
+    !tree.stdout.trimEnd().endsWith('\t'+file))
+  throw Error('SOURCE_NOT_A_REGULAR_GIT_BLOB');
+ const blob=spawnSync('git',['-C',sourceDir,'show',headSha+':'+file],{
+  encoding:'utf8',timeout:10000,maxBuffer:512*1024,
+  env:{PATH:process.env.PATH||'/usr/bin:/bin',LANG:'C.UTF-8'}
+ });
+ if(blob.status!==0||typeof blob.stdout!=='string'||blob.stdout.length>256000)
+  throw Error('SOURCE_BLOB_UNREADABLE');
+ return blob.stdout.slice(0,26000);
+}
+let source;
+try{source=areas[area].map(file=>file+'\n'+exactHeadBlob(file)).join('\n---\n');}
+catch{process.stderr.write('REVIEW_SOURCE_NOT_VERIFIED\n');process.exit(78);}
 const prompt='Review the attached code only. Identify up to three concrete defects or say no findings. Do not use tools, edit files or execute commands. Return REVIEW_FINDINGS: with findings or REVIEW_INCOMPLETE if source is insufficient. This is not GitHub approval.\n'+source;
 const args=provider==='agy'?['--mode','plan','--sandbox','--print-timeout','65s','--print='+prompt]:provider==='codex'?['exec','--sandbox','read-only',prompt]:['run','--model','opencode/deepseek-v4.1-flash-free',prompt];
 let output='',finished=false,timedOut=false;

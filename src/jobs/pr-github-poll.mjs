@@ -36,7 +36,7 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
    for(let page=1;page<=10;page++){
     const batch=await get('/pulls/'+number+'/reviews?per_page=100&page='+page);
     if(!Array.isArray(batch)||batch.length>100||batch.some(x=>!Number.isSafeInteger(x?.id)||
-      x.id<1||typeof x?.user?.login!=='string'||typeof x.state!=='string'))
+      x.id<1||typeof x?.user?.login!=='string'||!['APPROVED','CHANGES_REQUESTED','DISMISSED','COMMENTED','PENDING'].includes(x.state)))
       throw Error('unverifiable PR review page');
     reviews.push(...batch);
     if(batch.length<100){historyComplete=true;break;}
@@ -48,14 +48,17 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
     evidenceId:'github-review-history-incomplete'});
    return {changed,headSha:sha,...prNextAction(db,{prKey,observedSha:sha})};
   }
-  // Only the latest review per independent reviewer counts; stale SHA or dismissed reviews do not.
+  // COMMENTED and PENDING do not withdraw an effective decision; use actual
+  // submission chronology rather than creation IDs when timestamps are present.
   const latestByReviewer=new Map();
   for(const review of reviews){
    const login=review.user?.login;
-   if(typeof login==='string' && login!==pr.user?.login && Number.isSafeInteger(review.id)){
-    const prev=latestByReviewer.get(login);
-    if(!prev||review.id>prev.id)latestByReviewer.set(login,review);
-   }
+   if(login===pr.user?.login||!['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(review.state))continue;
+   const prev=latestByReviewer.get(login);
+   const ta=Date.parse(review.submitted_at||''),tb=Date.parse(prev?.submitted_at||'');
+   const newer=prev&&(Number.isFinite(ta)&&Number.isFinite(tb)?
+    ta>tb||(ta===tb&&review.id>prev.id):review.id>prev.id);
+   if(!prev||newer)latestByReviewer.set(login,review);
   }
   const approved=[...latestByReviewer.values()].find(x=>x.state==='APPROVED' && x.commit_id===sha);
   recordPrGate(db,{prKey,headSha:sha,gate:'independent_review',verdict:approved?'passed':'blocked',evidenceId:approved?'github-review-'+approved.id:'github-review-not-current'});

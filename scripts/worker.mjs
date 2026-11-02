@@ -11,7 +11,7 @@ import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, chmodSync, readFileSync, rmSync, lstatSync, realpathSync } from 'node:fs';
-import { join, resolve, isAbsolute, sep } from 'node:path';
+import { join, resolve, isAbsolute, sep, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
@@ -27,6 +27,20 @@ export const ALLOWED = Object.freeze({
   'ai-development': ['node', 'scripts/ai-development-run.mjs']
 });
 const tmux = (args) => spawnSync('tmux', args, {encoding:'utf8',stdio:['ignore','pipe','pipe']});
+function immutableTrustedPath(path){
+ // The Worker is never run as root. A same-identity writable directory can
+ // replace the launcher/bwrap binary even when group/other writes are disabled.
+ if(typeof process.getuid!=='function'||process.getuid()===0)return false;
+ let current=path;
+ try{
+  while(true){
+   const st=lstatSync(current);
+   if(st.isSymbolicLink()||st.uid!==0||(st.mode&0o022)!==0)return false;
+   if(current==='/')return true;
+   current=dirname(current);
+  }
+ }catch{return false;}
+}
 // Fail closed unless the trusted reviewer launcher was deployed outside any
 // checkout or PR-controlled worktree, with non-symlink regular files.
 export function trustedReviewRunner({executionDir,baseSha}={}){
@@ -46,6 +60,7 @@ export function trustedReviewRunner({executionDir,baseSha}={}){
     !st.isFile()||st.isSymbolicLink()||(st.mode&0o022)!==0||realpathSync(file)!==file)return null;
   const bw=lstatSync(bwrap);
   if(!bw.isFile()||bw.isSymbolicLink()||(bw.mode&0o022)!==0||realpathSync(bwrap)!==bwrap)return null;
+  if(!immutableTrustedPath(root)||!immutableTrustedPath(file)||!immutableTrustedPath(bwrap))return null;
   return file;
  }catch{return null;}
 }

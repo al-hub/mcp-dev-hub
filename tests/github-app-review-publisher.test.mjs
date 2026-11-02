@@ -5,7 +5,7 @@ import {validateReviewEvidence,createAppJwt,publishIndependentApproval} from '..
 const sha='a'.repeat(40),prNumber=17,actor='independent-reviewer[bot]';
 const gates=Object.fromEntries(['ci','security','private_sse','pc','galaxy'].map(g=>[g,{verdict:'passed',headSha:sha,evidenceId:'verified-'+g}]));
 const evidence=()=>({headSha:sha,authorAgent:'agy',reviewerAgent:'codex',verdict:'passed',reviewReadonly:true,
- reviewIsolated:true,exitCode:0,evidenceId:'verified-review-123456',gates});
+ reviewIsolated:true,exitCode:0,evidenceId:'verified-review-123456',gates:Object.fromEntries(Object.entries(gates).map(([k,v])=>[k,{...v}]))});
 const verifyEvidence=()=>true;
 const protectionEvidence={repository:'al-hub/mcp-dev-hub',branch:'main',headSha:sha,
  enforceAdmins:true,requiredApprovals:1,dismissStaleReviews:true,requireLastPushApproval:true,
@@ -39,7 +39,7 @@ test('exact SHA validated independently before any API call',async()=>{
 test('moved PR SHA, missing protection and failed CI block approval',async()=>{
  for(const scenario of [{currentSha:'b'.repeat(40)},{protectedBranch:false},{ci:false}]){
   const m=mockApi(scenario);
-  await assert.rejects(publishIndependentApproval({api:m.api,actor,headSha:sha,evidence:evidence(),verifyEvidence,protectionEvidence:scenario.protectedBranch===false?{...protectionEvidence,requiredApprovals:0}:protectionEvidence,verifyProtectionEvidence}));
+  await assert.rejects(publishIndependentApproval({api:m.api,actor,headSha:sha,evidence:(()=>{const e=evidence();if(scenario.ci===false)e.gates.ci={...e.gates.ci,verdict:'blocked'};return e;})(),verifyEvidence,protectionEvidence:scenario.protectedBranch===false?{...protectionEvidence,requiredApprovals:0}:protectionEvidence,verifyProtectionEvidence}));
   assert.equal(m.posted,0);
  }
 });
