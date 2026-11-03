@@ -60,6 +60,22 @@ test('public outsider approval is not a valid independent approval without write
   assert.equal(db.prepare("SELECT verdict FROM pr_gate_evidence WHERE gate='independent_review'").get().verdict,'blocked');
  }finally{db.close();}
 });
+test('skips outsider approval when another distinct reviewer is eligible',async()=>{
+ const db=new DatabaseSync(':memory:');
+ const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?[
+  {id:55,state:'APPROVED',commit_id:sha,user:{login:'outsider'}},
+  {id:56,state:'APPROVED',commit_id:sha,user:{login:'eligible-reviewer'}}
+ ]:url.includes('/collaborators/outsider/')?{permission:'read',user:{login:'outsider'}}:
+ url.includes('/collaborators/eligible-reviewer/')?{permission:'write',user:{login:'eligible-reviewer'}}:
+ url.includes('/pulls/')?{number:17,state:'open',head:{sha},user:{login:'author'}}:
+ {workflow_runs:[{id:25,name:'CI',event:'pull_request',head_sha:sha,status:'completed',conclusion:'success'}]}
+ });
+ try{
+  const result=await pollPrGithub({db,prKey,token,fetchImpl});
+  assert.equal(result.gate,'security');
+  assert.equal(db.prepare("SELECT evidence_id FROM pr_gate_evidence WHERE gate='independent_review'").get().evidence_id,'github-review-56');
+ }finally{db.close();}
+});
 test('revoked CI and independent approval invalidate same-SHA cached passes',async()=>{
  const db=new DatabaseSync(':memory:');
  let ci=true,approval=true;

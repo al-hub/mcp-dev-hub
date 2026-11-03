@@ -60,18 +60,19 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
     ta>tb||(ta===tb&&review.id>prev.id):review.id>prev.id);
    if(!prev||newer)latestByReviewer.set(login,review);
   }
-  const approved=[...latestByReviewer.values()].find(x=>x.state==='APPROVED' && x.commit_id===sha);
-  // Public GitHub lets outside accounts submit review comments. Only an actual
-  // repository reviewer with write/maintain/admin permission may satisfy this gate.
-  // Permission errors or incomplete responses MUST fail closed. GitHub's ultimate
-  // required-review decision / branch protection is checked again before merging.
+  // Examine a bounded set of APPROVED reviewers rather than treating the first
+  // public approval as authoritative; an outsider cannot shadow an eligible actor.
+  const approvals=[...latestByReviewer.values()].filter(x=>x.state==='APPROVED' && x.commit_id===sha);
   let eligible=null;
-  if(approved&&/^[A-Za-z0-9-]{1,39}$/.test(approved.user.login)){
+  for(const approval of approvals.slice(0,10)){
+   if(!/^[A-Za-z0-9-]{1,39}$/.test(approval.user.login))continue;
    try{
-    const permission=await get('/collaborators/'+encodeURIComponent(approved.user.login)+'/permission');
-    if(permission?.user?.login?.toLowerCase()===approved.user.login.toLowerCase() &&
-       ['write','maintain','admin'].includes(permission.permission))eligible=approved;
-   }catch{}
+    const permission=await get('/collaborators/'+encodeURIComponent(approval.user.login)+'/permission');
+    if(permission?.user?.login?.toLowerCase()===approval.user.login.toLowerCase() &&
+       ['write','maintain','admin'].includes(permission.permission)){
+     eligible=approval;break;
+    }
+   }catch{} // Permission lookup errors stay blocked, not treated as approval.
   }
   recordPrGate(db,{prKey,headSha:sha,gate:'independent_review',verdict:eligible?'passed':'blocked',evidenceId:eligible?'github-review-'+eligible.id:'github-review-not-eligible-or-current'});
   next=prNextAction(db,{prKey,observedSha:sha});

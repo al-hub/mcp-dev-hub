@@ -11,7 +11,7 @@ export async function pollPrWithGh({db,prKey,runner=execFileSync}){
   let value;
   try{
    const home=process.env.HOME;
-   if(typeof home!=='string'||!home.startsWith('/')||home.includes('\\0')||home.length>4096)
+   if(typeof home!=='string'||!home.startsWith('/')||home.includes('\0')||home.length>4096)
     throw Error('untrusted GitHub CLI home');
    const env={PATH:'/usr/bin:/bin',HOME:home,LANG:'C.UTF-8',
     GH_HOST:'github.com',GH_PROMPT_DISABLED:'1'};
