@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openDb,addJob,jobs,ALLOWED,publicEvents,eventHistory,eventBounds,reconcile,tick} from '../scripts/worker.mjs';
+import {openDb,addJob,jobs,ALLOWED,publicEvents,eventHistory,eventBounds,reconcile,tick,canStartAiDevelopment} from '../scripts/worker.mjs';
 
 test('durable queue accepts only approved fixed tasks and rejects duplicate IDs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-test-'));
@@ -30,6 +30,38 @@ test('durable queue accepts only approved fixed tasks and rejects duplicate IDs'
  }finally{
   if(oldDir===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;else process.env.MCP_DEV_HUB_STATE_DIR=oldDir;
   if(oldScope===undefined)delete process.env.MCP_DEV_HUB_APPROVED_SCOPE;else process.env.MCP_DEV_HUB_APPROVED_SCOPE=oldScope;
+  rmSync(dir,{recursive:true,force:true});
+ }
+});
+test('AI development execution is disabled until OS isolation is proven',()=>{
+ assert.equal(canStartAiDevelopment(),false,
+  'the user-controlled PR worktree must never be executed by the production Worker');
+});
+test('queued development jobs cannot reach execution even when write/push are requested',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'worker-dev-denied-'));
+ const oldDir=process.env.MCP_DEV_HUB_STATE_DIR;
+ const oldScope=process.env.MCP_DEV_HUB_APPROVED_SCOPE;
+ const oldWrite=process.env.MCP_DEV_HUB_ENABLE_AI_WRITE;
+ const oldPush=process.env.MCP_DEV_HUB_ENABLE_AI_PUSH;
+ process.env.MCP_DEV_HUB_STATE_DIR=dir;
+ process.env.MCP_DEV_HUB_APPROVED_SCOPE='demo:local:workspace';
+ process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';
+ process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
+ try{
+  const db=openDb();
+  addJob(db,{id:'fix-pr-'+ 'a'.repeat(12),kind:'ai-development',
+   project:'demo',target:'local',workspace:'workspace'});
+  assert.equal(tick(db),false);
+  const job=jobs(db)[0];
+  assert.equal(job.state,'blocked');
+  assert.equal(job.window,null,'no untrusted process/window may be launched');
+  db.close();
+ }finally{
+  for(const [k,v] of Object.entries({MCP_DEV_HUB_STATE_DIR:oldDir,
+    MCP_DEV_HUB_APPROVED_SCOPE:oldScope,MCP_DEV_HUB_ENABLE_AI_WRITE:oldWrite,
+    MCP_DEV_HUB_ENABLE_AI_PUSH:oldPush})){
+    if(v===undefined)delete process.env[k];else process.env[k]=v;
+  }
   rmSync(dir,{recursive:true,force:true});
  }
 });

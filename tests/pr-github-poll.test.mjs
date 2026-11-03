@@ -37,7 +37,7 @@ test('external GitHub approval advances review only for current SHA and independ
  const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?[
   {id:41,state:'APPROVED',commit_id:sha,user:{login:'independent-reviewer'}},
   {id:42,state:'APPROVED',commit_id:sha2,user:{login:'author'}}
- ]:url.includes('/pulls/')?
+ ]:url.includes('/collaborators/')?{permission:'write',user:{login:'independent-reviewer'}}:url.includes('/pulls/')?
   {number:17,state:'open',head:{sha},user:{login:'author'}}:
   {workflow_runs:[{id:123,name:'CI',status:'completed',conclusion:'success',head_sha:sha,event:'pull_request'}]}});
  const result=await pollPrGithub({db,prKey,token,fetchImpl});
@@ -46,10 +46,24 @@ test('external GitHub approval advances review only for current SHA and independ
  db.close();
 });
 
+test('public outsider approval is not a valid independent approval without write permission',async()=>{
+ const db=new DatabaseSync(':memory:');
+ const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?
+  [{id:55,state:'APPROVED',commit_id:sha,user:{login:'outsider'}}]:
+  url.includes('/collaborators/')?{permission:'read',user:{login:'outsider'}}:
+  url.includes('/pulls/')?{number:17,state:'open',head:{sha},user:{login:'author'}}:
+  {workflow_runs:[{id:23,name:'CI',event:'pull_request',head_sha:sha,status:'completed',conclusion:'success'}]}
+ });
+ try{
+  const result=await pollPrGithub({db,prKey,token,fetchImpl});
+  assert.equal(result.gate,'independent_review');
+  assert.equal(db.prepare("SELECT verdict FROM pr_gate_evidence WHERE gate='independent_review'").get().verdict,'blocked');
+ }finally{db.close();}
+});
 test('revoked CI and independent approval invalidate same-SHA cached passes',async()=>{
  const db=new DatabaseSync(':memory:');
  let ci=true,approval=true;
- const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?(approval?[{id:41,state:'APPROVED',commit_id:sha,user:{login:'reviewer'}}]:[{id:42,state:'DISMISSED',commit_id:sha,user:{login:'reviewer'}}]):url.includes('/pulls/')?{number:17,state:'open',head:{sha},user:{login:'author'}}:{workflow_runs:[{id:12,name:'CI',status:'completed',conclusion:ci?'success':'failure',head_sha:sha,event:'pull_request'}]}});
+ const fetchImpl=async url=>({ok:true,json:async()=>url.includes('/reviews?')?(approval?[{id:41,state:'APPROVED',commit_id:sha,user:{login:'reviewer'}}]:[{id:42,state:'DISMISSED',commit_id:sha,user:{login:'reviewer'}}]):url.includes('/collaborators/')?{permission:'write',user:{login:'reviewer'}}:url.includes('/pulls/')?{number:17,state:'open',head:{sha},user:{login:'author'}}:{workflow_runs:[{id:12,name:'CI',status:'completed',conclusion:ci?'success':'failure',head_sha:sha,event:'pull_request'}]}});
  await pollPrGithub({db,prKey,token,fetchImpl});
  assert.equal(db.prepare("SELECT verdict FROM pr_gate_evidence WHERE gate='independent_review'").get().verdict,'passed');
  approval=false;

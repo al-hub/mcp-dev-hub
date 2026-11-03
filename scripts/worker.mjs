@@ -18,6 +18,10 @@ import { pathToFileURL } from 'node:url';
 const configuredSession = process.env.MCP_DEV_HUB_TMUX_SESSION || 'mcp-dev-hub-14';
 if(!/^[a-z][a-z0-9-]{2,63}$/.test(configuredSession))throw Error('invalid tmux session');
 export const SESSION = configuredSession;
+// #10 is read-only dashboard/observability. The untrusted PR checkout
+// may not launch AI development code until a separately reviewed OS sandbox exists.
+// AI_WRITE/AI_PUSH flags alone do NOT make that execution safe.
+export function canStartAiDevelopment(){return false;}
 export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
@@ -265,6 +269,10 @@ export function tick(db) {
   if(jobs(db).some(j=>j.state==='starting'||j.state==='running'||j.state==='unknown'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
+  if(job.kind==='ai-development'&&!canStartAiDevelopment()){
+    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+    return false; // Never spawn checkout-controlled code before OS isolation exists.
+  }
   if(job.target!=='local' || process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }

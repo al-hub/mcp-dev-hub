@@ -8,6 +8,7 @@ function makeFetch(reviewPage){
   ok:true,
   json:async()=>{
    if(url.includes('/reviews?'))return reviewPage(Number(new URL(url).searchParams.get('page')||1));
+   if(url.includes('/collaborators/'))return {permission:'write',user:{login:'reviewer'}};
    if(url.includes('/pulls/'))return {number:17,state:'open',head:{sha},user:{login:'author'}};
    return {workflow_runs:[{id:120,event:'pull_request',name:'CI',head_sha:sha,status:'completed',conclusion:'success'}]};
   }
