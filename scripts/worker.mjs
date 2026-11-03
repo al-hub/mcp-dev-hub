@@ -269,7 +269,9 @@ export function tick(db) {
   if(jobs(db).some(j=>j.state==='starting'||j.state==='running'||j.state==='unknown'))return false;
   const job=db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").get();
   if(!job)return false;
-  if(job.kind==='ai-development'&&!canStartAiDevelopment()){
+  // PR checkout code must never run via npm, CLI smoke or AI development
+  // without independently verified OS isolation. No flag can bypass this gate.
+  if(['ai-development','repo-check','cli-smoke'].includes(job.kind)&&!canStartAiDevelopment()){
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false; // Never spawn checkout-controlled code before OS isolation exists.
   }

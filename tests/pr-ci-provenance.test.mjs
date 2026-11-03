@@ -9,14 +9,14 @@ const pinned={
  'package.json':'031a2750f5949d71909f29390bbef052bb533045',
  'scripts/check-privacy.mjs':'4b9898dc504dc35d30160473204eb246f3b5ecdc'
 };
-function fixture({wrongWorkflow=false,changedWorkflow=false,missingCheck=false}={}){
+function fixture({wrongWorkflow=false,changedWorkflow=false,missingCheck=false,wrongPR=false,wrongBase=false}={}){
  return async url=>{
   let value;
   if(url.includes('/reviews?'))value=[];
-  else if(url.includes('/pulls/'))value={number:17,state:'open',head:{sha},user:{login:'author'}};
+  else if(url.includes('/pulls/'))value={number:17,state:'open',head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)},user:{login:'author'}};
   else if(url.includes('/actions/runs?'))value={workflow_runs:[{
    id:999,name:'CI',event:'pull_request',head_sha:sha,status:'completed',conclusion:'success',
-   workflow_id:wrongWorkflow?999999:402358309,path:'.github/workflows/ci.yml'
+   workflow_id:wrongWorkflow?999999:402358309,path:'.github/workflows/ci.yml',pull_requests:[{number:wrongPR?55:17,head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:wrongBase?'other':'main',sha:'b'.repeat(40)}}]
   }]};
   else if(url.includes('/contents/')){
    const file=url.split('/contents/')[1].split('?')[0];
@@ -32,7 +32,9 @@ function fixture({wrongWorkflow=false,changedWorkflow=false,missingCheck=false}=
 for(const [name,options] of [
  ['forged CI workflow name but wrong workflow identity',{wrongWorkflow:true}],
  ['modified CI workflow at exact head',{changedWorkflow:true}],
- ['successful run without executed required check',{missingCheck:true}]
+ ['successful run without executed required check',{missingCheck:true}],
+ ['CI attached to a different PR number',{wrongPR:true}],
+ ['CI attached to a different target base',{wrongBase:true}]
 ]){
  test(name+' must never PASS the CI gate',async()=>{
   const db=new DatabaseSync(':memory:');

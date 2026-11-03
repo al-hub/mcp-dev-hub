@@ -15,9 +15,9 @@ function ghFixture(path,sha){
  if(path.includes('/jobs?'))return {total_count:1,jobs:[{name:'bootstrap',status:'completed',
   conclusion:'success',steps:[{name:'Run npm run check',status:'completed',conclusion:'success'}]}]};
  if(path.includes('/reviews'))return [];
- if(path.includes('/pulls/'))return {number:17,state:'open',head:{sha},user:{login:'owner'}};
+ if(path.includes('/pulls/'))return {number:17,state:'open',head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)},user:{login:'owner'}};
  return {workflow_runs:[{id:777,name:'CI',workflow_id:402358309,path:'.github/workflows/ci.yml',
-  event:'pull_request',head_sha:sha,status:'completed',conclusion:'success'}]};
+  event:'pull_request',head_sha:sha,status:'completed',conclusion:'success',pull_requests:[{number:17,head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)}}]}]};
 }
 
 test('authenticated gh api client advances only exact-HEAD CI and cannot fetch arbitrary endpoints',async()=>{

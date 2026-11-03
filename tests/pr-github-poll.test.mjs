@@ -18,8 +18,10 @@ const pollPrGithub=opts=>realPollPrGithub({...opts,fetchImpl:async(url,options)=
  const raw=await opts.fetchImpl(url,options);
  return {...raw,json:async()=>{
   const data=await raw.json();
+  if(url.includes('/pulls/')&&data?.number===17)
+   return {...data,head:{...data.head,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)}};
   if(url.includes('/actions/runs?')&&Array.isArray(data.workflow_runs))
-   return {...data,workflow_runs:data.workflow_runs.map(x=>({...x,workflow_id:402358309,path:'.github/workflows/ci.yml'}))};
+   return {...data,workflow_runs:data.workflow_runs.map(x=>({...x,workflow_id:402358309,path:'.github/workflows/ci.yml',pull_requests:[{number:17,head:{sha:x.head_sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)}}]}))};
   return data;
  }};
 }});

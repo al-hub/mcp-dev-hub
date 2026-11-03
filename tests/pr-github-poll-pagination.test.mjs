@@ -19,9 +19,9 @@ function makeFetch(reviewPage){
    if(url.includes('/actions/runs/120/jobs?'))
     return {total_count:1,jobs:[{name:'bootstrap',status:'completed',conclusion:'success',
      steps:[{name:'Run npm run check',status:'completed',conclusion:'success'}]}]};
-   if(url.includes('/pulls/'))return {number:17,state:'open',head:{sha},user:{login:'author'}};
+   if(url.includes('/pulls/'))return {number:17,state:'open',head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)},user:{login:'author'}};
    return {workflow_runs:[{id:120,event:'pull_request',name:'CI',head_sha:sha,
-    workflow_id:402358309,path:'.github/workflows/ci.yml',status:'completed',conclusion:'success'}]};
+    workflow_id:402358309,path:'.github/workflows/ci.yml',status:'completed',conclusion:'success',pull_requests:[{number:17,head:{sha,ref:'feat/10-github-status-adapter'},base:{ref:'main',sha:'b'.repeat(40)}}]}]};
   }
  });
 }

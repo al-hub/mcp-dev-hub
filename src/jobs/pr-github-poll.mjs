@@ -25,7 +25,12 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
  // Pinned blob IDs were independently read from protected main a152f920.
  const required=runs.workflow_runs.filter(x=>x.head_sha===sha &&
    x.event==='pull_request' && x.name==='CI' && Number.isSafeInteger(x.id) && x.id>0 &&
-   x.workflow_id===402358309 && x.path==='.github/workflows/ci.yml');
+   x.workflow_id===402358309 && x.path==='.github/workflows/ci.yml' &&
+   pr.base?.ref==='main' && /^[a-f0-9]{40}$/.test(pr.base.sha||'') &&
+   Array.isArray(x.pull_requests) && x.pull_requests.some(p=>
+    p.number===Number(number) && p.head?.sha===sha &&
+    p.head?.ref===pr.head.ref && p.base?.ref===pr.base.ref &&
+    p.base?.sha===pr.base.sha));
  const newest=required.sort((a,b)=>b.id-a.id)[0];
  let passed=null;
  if(newest?.status==='completed' && newest.conclusion==='success'){
