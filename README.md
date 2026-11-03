@@ -34,3 +34,13 @@ npm run check
 
 AI CLI는 먼저 [AGENTS.md](AGENTS.md)를 읽습니다. Claude와 Gemini용 진입 문서도 같은 지침을 가리킵니다.
 개인정보 관리 기준은 [SECURITY.md](SECURITY.md)에 있습니다.
+
+## AI 개발 모델 선택 원칙
+
+- **무료·경량 모델 우선:** 파일 탐색, 요약, 반복 점검에는 실제 호출이 확인된 OpenCode 무료 모델을 먼저 고려합니다.
+- **필요할 때 상향:** 일반 구현은 Codex 기본 모델 또는 AGY 중간급 모델, 복잡한 설계·보안 검토는 상위 모델을 선택합니다. 한 모델을 고정하지 않습니다.
+- **독립 리뷰:** 구현과 리뷰는 가급적 다른 모델 계열로 분리하고, 중요도에 맞게 추론 수준을 조절합니다.
+- **사용량·안전:** 작업별 호출 범위와 시간·토큰 예산을 제한하며, 할당량 소진·실패 시 무한 재시도나 무단 유료 모델 전환을 하지 않습니다.
+- **검증 구분:** 모델 목록 노출, 짧은 응답 성공, 실제 개발·리뷰 완료를 구분해 기록합니다. 모델·계정별 제공 여부와 무료 한도는 변할 수 있습니다.
+
+노트북에서 실호출이 확인된 OpenCode 무료 모델: `glm-5.3-flash-free`, `deepseek-v4.1-flash-free`, `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`, `flint-40b-free`, `beam-free`, `big-pickle`, `nemotron-3.5-super-vl-free` (모두 `opencode/` 접두어). 상세 검증 및 갱신 기준은 [이슈 #10](https://github.com/al-hub/mcp-dev-hub/issues/10)을 참조합니다.
