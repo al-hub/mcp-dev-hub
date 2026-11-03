@@ -10,7 +10,7 @@ import {claimDevelopment} from '../src/jobs/ai-development-claims.mjs';
 import {executeOnce} from '../scripts/ai-development-run.mjs';
 const git=(cwd,...args)=>{const r=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(r.status,0,'Git fixture operation failed');return r.stdout.trim();};
 
-test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branch push is one-shot',()=>{
+test('legacy development fixture cannot run or push before OS isolation',()=>{
  const root=mkdtempSync(join(tmpdir(),'ai-commit-e2e-'));
  const repo=join(root,'source'),worktrees=join(root,'worktrees'),bare=join(root,'remote.git'),bin=join(root,'bin');
  for(const p of [repo,worktrees,bin])mkdirSync(p);
@@ -49,13 +49,15 @@ test('isolated AGY edit -> fake Codex approval -> real Git commit and task-branc
   const args={db,jobId,headSha,repoDir:repo,worktree,approvedRoot:worktrees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true};
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha,'fixture HEAD must remain pinned after claim');
   const result=executeOnce(args);
-  assert.equal(result.state,'pushed_task_branch');
-  assert.equal(db.prepare('SELECT phase FROM ai_development_claims WHERE job_id=?').get(jobId).phase,'pushed');
-  assert.match(git(bare,'show','refs/heads/'+branch+':tests/example.test.mjs'),/value=2/);
-  const remoteSha=git(bare,'rev-parse','refs/heads/'+branch);
-  assert.notEqual(remoteSha,git(worktree,'rev-parse','HEAD'),'moving HEAD must not be pushed');
-  assert.equal(git(bare,'rev-parse',remoteSha+'^'),headSha);
+  assert.equal(result.state,'os_sandbox_unverified');
+  const saved=db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(jobId);
+  assert.equal(saved.phase,'blocked');
+  assert.equal(saved.last_reason,'os_sandbox_unverified');
+  assert.equal(git(worktree,'rev-parse','HEAD'),headSha);
   assert.equal(git(repo,'rev-parse','HEAD'),headSha);
+  // No synthetic reviewer verdict may cause an actual push without OS isolation.
+  const pushed=spawnSync('git',['show-ref','--verify','--quiet','refs/heads/'+branch],{cwd:bare});
+  assert.notEqual(pushed.status,0);
   assert.equal(executeOnce(args).state,'not_claimed');
   db.close();
  }finally{
@@ -84,9 +86,9 @@ test('bare REVIEW_PASS cannot approve an AGY edit without pinned SHA and file ve
   const db=new DatabaseSync(':memory:');claimDevelopment(db,{jobId,headSha});
   process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
   const result=executeOnce({db,jobId,headSha,repoDir:repo,worktree,approvedRoot:trees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true});
-  assert.equal(result.state,'codex_invalid');
+  assert.equal(result.state,'os_sandbox_unverified');
   const persisted=db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(jobId);
-  assert.equal(persisted.phase,'blocked');assert.equal(persisted.last_reason,'codex_invalid');
+  assert.equal(persisted.phase,'blocked');assert.equal(persisted.last_reason,'os_sandbox_unverified');
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha);
   db.close();
  }finally{
@@ -114,9 +116,9 @@ test('staged production edits hidden from git diff block commit before any Codex
   const db=new DatabaseSync(':memory:');claimDevelopment(db,{jobId,headSha});
   process.env.MCP_DEV_HUB_ENABLE_AI_WRITE='1';process.env.MCP_DEV_HUB_ENABLE_AI_PUSH='1';
   const result=executeOnce({db,jobId,headSha,repoDir:repo,worktree,approvedRoot:trees,branch,prompt:'fixture',agyBin:agy,codexBin:codex,npmBin,allowPush:true});
-  assert.equal(result.state,'staged_changes');
+  assert.equal(result.state,'os_sandbox_unverified');
   const persisted=db.prepare('SELECT phase,last_reason FROM ai_development_claims WHERE job_id=?').get(jobId);
-  assert.equal(persisted.phase,'blocked');assert.equal(persisted.last_reason,'staged_changes');
+  assert.equal(persisted.phase,'blocked');assert.equal(persisted.last_reason,'os_sandbox_unverified');
   assert.equal(git(worktree,'rev-parse','HEAD'),headSha);
   assert.equal(git(worktree,'show','HEAD:README.md'),'safe');
   db.close();

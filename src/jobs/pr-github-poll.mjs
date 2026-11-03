@@ -21,11 +21,37 @@ export async function pollPrGithub({db,prKey,token,fetchImpl=fetch}){
  const changed=trackPr(db,{prKey,headSha:sha}).changed;
  const runs=await get('/actions/runs?head_sha='+sha+'&per_page=30');
  if(!Array.isArray(runs.workflow_runs))throw Error('unverifiable CI runs');
- // CI is the required workflow for this repository. Do not accept an unrelated success.
- const required=runs.workflow_runs.filter(x=>x.head_sha===sha && x.event==='pull_request' && x.name==='CI' && Number.isSafeInteger(x.id));
+ // Verify trusted CI identity, immutable check machinery and executed check.
+ // Pinned blob IDs were independently read from protected main a152f920.
+ const required=runs.workflow_runs.filter(x=>x.head_sha===sha &&
+   x.event==='pull_request' && x.name==='CI' && Number.isSafeInteger(x.id) && x.id>0 &&
+   x.workflow_id===402358309 && x.path==='.github/workflows/ci.yml');
  const newest=required.sort((a,b)=>b.id-a.id)[0];
- const passed=newest?.status==='completed' && newest.conclusion==='success' ? newest : null;
- recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:passed?'passed':'blocked',evidenceId:passed?'github-actions-'+passed.id:'github-ci-not-current'});
+ let passed=null;
+ if(newest?.status==='completed' && newest.conclusion==='success'){
+  try{
+   const pinned=[
+    ['.github/workflows/ci.yml','35bbe77dcb0e3dade4f75ee0ad28f1147fe46a7e'],
+    ['package.json','031a2750f5949d71909f29390bbef052bb533045'],
+    ['scripts/check-privacy.mjs','4b9898dc504dc35d30160473204eb246f3b5ecdc']
+   ];
+   let controlFilesTrusted=true;
+   for(const [path,expectedBlob] of pinned){
+    const info=await get('/contents/'+path+'?ref='+sha);
+    if(info?.type!=='file'||info.sha!==expectedBlob){controlFilesTrusted=false;break;}
+   }
+   if(controlFilesTrusted){
+    const jobs=await get('/actions/runs/'+newest.id+'/jobs?per_page=100');
+    const job=Array.isArray(jobs?.jobs)&&jobs.jobs.length===1&&jobs.total_count===1?jobs.jobs[0]:null;
+    const check=Array.isArray(job?.steps)?job.steps.filter(s=>s.name==='Run npm run check'):[];
+    if(job?.name==='bootstrap'&&job.status==='completed'&&job.conclusion==='success'&&
+       check.length===1&&check[0].status==='completed'&&check[0].conclusion==='success')
+      passed=newest;
+   }
+  }catch{} // Missing or ambiguous proof stays blocked.
+ }
+ recordPrGate(db,{prKey,headSha:sha,gate:'ci',verdict:passed?'passed':'blocked',
+  evidenceId:passed?'github-actions-'+passed.id:'github-ci-provenance-unverified'});
  let next=prNextAction(db,{prKey,observedSha:sha});
  if(next.gate==='independent_review' || next.action==='request_guarded_merge' || next.gate==='security' || next.gate==='private_sse' || next.gate==='pc' || next.gate==='galaxy'){
   // GitHub caps each reviews response at 100. A partial or ambiguous history

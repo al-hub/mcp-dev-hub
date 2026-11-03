@@ -1,7 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {pollPrGithub} from '../src/jobs/pr-github-poll.mjs';
+import {pollPrGithub as realPollPrGithub} from '../src/jobs/pr-github-poll.mjs';
+const trustedHashes={
+ '.github/workflows/ci.yml':'35bbe77dcb0e3dade4f75ee0ad28f1147fe46a7e',
+ 'package.json':'031a2750f5949d71909f29390bbef052bb533045',
+ 'scripts/check-privacy.mjs':'4b9898dc504dc35d30160473204eb246f3b5ecdc'
+};
+const pollPrGithub=opts=>realPollPrGithub({...opts,fetchImpl:async(url,options)=>{
+ if(url.includes('/contents/')){
+  const path=url.split('/contents/')[1].split('?')[0];
+  return {ok:true,json:async()=>({type:'file',sha:trustedHashes[path]})};
+ }
+ if(/\/actions\/runs\/[0-9]+\/jobs\?/.test(url))
+  return {ok:true,json:async()=>({total_count:1,jobs:[{name:'bootstrap',status:'completed',conclusion:'success',
+   steps:[{name:'Run npm run check',status:'completed',conclusion:'success'}]}]})};
+ const raw=await opts.fetchImpl(url,options);
+ return {...raw,json:async()=>{
+  const data=await raw.json();
+  if(url.includes('/actions/runs?')&&Array.isArray(data.workflow_runs))
+   return {...data,workflow_runs:data.workflow_runs.map(x=>({...x,workflow_id:402358309,path:'.github/workflows/ci.yml'}))};
+  return data;
+ }};
+}});
+
 const prKey='al-hub/mcp-dev-hub#17',sha='a'.repeat(40),sha2='b'.repeat(40),token='synthetic-test-token-1234567';
 test('trusted PR head and exact-SHA successful CI advance to review only',async()=>{
  const db=new DatabaseSync(':memory:');

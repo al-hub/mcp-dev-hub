@@ -9,8 +9,19 @@ function makeFetch(reviewPage){
   json:async()=>{
    if(url.includes('/reviews?'))return reviewPage(Number(new URL(url).searchParams.get('page')||1));
    if(url.includes('/collaborators/'))return {permission:'write',user:{login:'reviewer'}};
+   if(url.includes('/contents/')){
+    const path=url.split('/contents/')[1].split('?')[0];
+    const pinned={'.github/workflows/ci.yml':'35bbe77dcb0e3dade4f75ee0ad28f1147fe46a7e',
+     'package.json':'031a2750f5949d71909f29390bbef052bb533045',
+     'scripts/check-privacy.mjs':'4b9898dc504dc35d30160473204eb246f3b5ecdc'};
+    return {type:'file',sha:pinned[path]};
+   }
+   if(url.includes('/actions/runs/120/jobs?'))
+    return {total_count:1,jobs:[{name:'bootstrap',status:'completed',conclusion:'success',
+     steps:[{name:'Run npm run check',status:'completed',conclusion:'success'}]}]};
    if(url.includes('/pulls/'))return {number:17,state:'open',head:{sha},user:{login:'author'}};
-   return {workflow_runs:[{id:120,event:'pull_request',name:'CI',head_sha:sha,status:'completed',conclusion:'success'}]};
+   return {workflow_runs:[{id:120,event:'pull_request',name:'CI',head_sha:sha,
+    workflow_id:402358309,path:'.github/workflows/ci.yml',status:'completed',conclusion:'success'}]};
   }
  });
 }

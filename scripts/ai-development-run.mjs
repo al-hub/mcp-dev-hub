@@ -27,6 +27,11 @@ export function executeOnce({db,jobId,headSha,repoDir,worktree,approvedRoot,bran
  if(process.env.MCP_DEV_HUB_ENABLE_AI_WRITE!=='1')return {state:'disabled'};
  const claim=db.prepare('SELECT phase,head_sha FROM ai_development_claims WHERE job_id=?').get(jobId);
  if(claim?.head_sha!==headSha||claim?.phase!=='claimed')return {state:'not_claimed'};
+ // A Git worktree is not an OS sandbox. Never execute checkout-controlled AGY,
+ // npm scripts or tests with the host identity until a separately verified
+ // isolation boundary is delivered (follow-up #21). No env flag bypass.
+ finishDevelopment(db,{jobId,headSha,from:'claimed',to:'blocked',reason:'os_sandbox_unverified'});
+ return {state:'os_sandbox_unverified'};
  let dir;
  try{dir=preflight({jobId,headSha,repoDir,worktree,approvedRoot,branch});}
  catch{
