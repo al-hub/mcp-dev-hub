@@ -1,5 +1,16 @@
 # Handoff status
 
+## 2026-11-04 #10 reviewer-app preflight
+
+- Added a separately invoked, bounded GitHub App connection preflight using the existing scoped App client. Checks expected App bot identity, exact PR HEAD, PR author/base/state. No APPROVE endpoint and no background automation are exposed.
+- Uses only externally configured App identity, installation ID, protected key file reference and exact expected HEAD. Without these, preflight returns BLOCKED without reading a key. No credentials are committed.
+- Initial real execution is BLOCKED: required App runtime configuration was not provisioned in this execution context. Successful synthetic client tests do not establish a real GitHub App JWT or installation token exchange.
+- Independent authenticated full-PR Codex PASS, verified acceptance evidence, legitimate GitHub review, current-head CI, production acceptance and issue close remain pending. Preserve production configuration and branch protection.
+
+The original Stage 0 snapshot below is historical and does not describe the current #10 implementation state.
+
+---
+
 ## Implemented
 
 - Public repository scaffold and provider-neutral AI contributor instructions.
