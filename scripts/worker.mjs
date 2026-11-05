@@ -59,8 +59,9 @@ export function trustedCanaryRunner(){
    const st=lstatSync(file);
    if(!st.isFile()||st.isSymbolicLink()||!immutableTrustedPath(file))return null;
   }
-  const node='/usr/bin/node',bwrap='/usr/bin/bwrap';
-  if(!immutableTrustedPath(node)||!immutableTrustedPath(bwrap))return null;
+  const node='/usr/bin/node',bwrap='/usr/bin/bwrap',codex=join(root,'codex');
+  if(!immutableTrustedPath(node)||!immutableTrustedPath(bwrap)||
+     !immutableTrustedPath(codex)||!lstatSync(codex).isFile())return null;
   return files[0];
  }catch{return null;}
 }
@@ -363,26 +364,38 @@ export function tick(db) {
     MCP_DEV_HUB_CODEX_BIN:process.env.MCP_DEV_HUB_CODEX_BIN||'codex'
   }:null;
   const devEnv=aiSettings?Object.entries(aiSettings).map(([key,value])=>key+'='+quoteShell(value)).join(' ')+' ':'';
-  const canaryEnv=job.kind==='ai-github-canary'?Object.entries({
+  const canarySettings=job.kind==='ai-github-canary'?{
     MCP_DEV_HUB_CANARY_JOB_ID:job.id,
     MCP_DEV_HUB_STATE_DIR:stateDir(),
     MCP_DEV_HUB_APPROVED_SCOPE:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
     MCP_DEV_HUB_ENABLE_GH_CANARY:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY,
     MCP_DEV_HUB_CANARY_APPROVED_JOB_ID:process.env.MCP_DEV_HUB_CANARY_APPROVED_JOB_ID,
     MCP_DEV_HUB_ENABLE_AI_WRITE:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
-    MCP_DEV_HUB_ENABLE_AI_PUSH:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
-    MCP_DEV_HUB_AGY_BIN:process.env.MCP_DEV_HUB_AGY_BIN,
-    MCP_DEV_HUB_CODEX_BIN:process.env.MCP_DEV_HUB_CODEX_BIN
-  }).map(([key,value])=>key+'='+quoteShell(value||'')).join(' ')+' ':'';
+    MCP_DEV_HUB_ENABLE_AI_PUSH:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH
+  }:null;
   const nonce=randomBytes(16).toString('hex');
   const proofDir=join(stateDir(),'run-proofs');
   mkdirSync(proofDir,{recursive:true,mode:0o700});
   const proofFile=join(proofDir,job.id+'-attempt-'+attempt+'.txt');
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+devEnv+canaryEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
+  const proofTail='; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile);
+  const script=canarySettings
+    ? 'printf "RUN '+job.id+'\n"; '+cmd+proofTail+'; exec /usr/bin/bash --noprofile --norc'
+    : 'source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\n"; '+reviewEnv+devEnv+cmd+proofTail+'; exec bash';
+
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
-  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
+  const commandArgs=canarySettings?[
+    '/usr/bin/env','-i',
+    'HOME='+homedir(),'PATH=/usr/bin:/bin','LANG=C.UTF-8',
+    ...Object.entries(canarySettings).map(([key,value])=>key+'='+(value||'')),
+    '/usr/bin/bash','--noprofile','--norc','-c',script
+  ]:['bash','-lc',script];
+  const r=tmux(['new-window','-d','-t','='+SESSION,
+    '-c',canarySettings?'/':executionDir,'-n',win,
+    ...(canarySettings?['-e','BASH_ENV=','-e','ENV=','-e','NODE_OPTIONS=']:[]),
+    ...commandArgs]);
+
   if(r.status!==0)db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
   else db.prepare("UPDATE jobs SET state='running',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
   return r.status===0;
