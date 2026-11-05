@@ -11,9 +11,12 @@ const sha='a'.repeat(40);
 const sample=JSON.stringify({token24:'sample-public-abcdefghij',token23:'sample-public-abcdefghi'});
 const job={id:CANARY_JOB_ID,kind:'ai-github-canary',project:'demo',target:'local',workspace:'stage',state:'queued'};
 test('job scope and all distinct grants are mandatory, with no generic authority',()=>{
- const args={job,scope:'demo:local:stage',write:'1',push:'1',enabled:'1'};
+ const args={job,scope:'demo:local:stage',write:'0',push:'0',enabled:'1',approvedId:CANARY_JOB_ID};
  assert.equal(canaryAuthorized(args),true);
- for(const key of ['write','push','enabled'])assert.equal(canaryAuthorized({...args,[key]:'0'}),false);
+ assert.equal(canaryAuthorized({...args,write:'1'}),false);
+ assert.equal(canaryAuthorized({...args,push:'1'}),false);
+ assert.equal(canaryAuthorized({...args,enabled:'0'}),false);
+ assert.equal(canaryAuthorized({...args,approvedId:'wrong-job'}),false);
  assert.equal(canaryAuthorized({...args,scope:'other:local:stage'}),false);
  assert.equal(canaryAuthorized({...args,job:{...job,id:'other-job'}}),false);
  assert.equal(canaryAuthorized({...args,job:{...job,state:'succeeded'}}),false);
