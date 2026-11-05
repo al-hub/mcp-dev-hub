@@ -3,21 +3,12 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,
- canaryAuthorized,validateCandidate,ensureCanaryTable,
+ canaryAuthorized,validateCandidate,renderCandidate,ensureCanaryTable,
  startCanary,advanceCanary,blockCanary
 } from '../src/jobs/ai-github-canary-policy.mjs';
 
 const sha='a'.repeat(40);
-const sample=[
- "import test from 'node:test';",
- "import assert from 'node:assert/strict';",
- "import {safeBearer} from '../src/dashboard/read-only-server.mjs';",
- "test('valid 24 and invalid 23',()=>{",
- " const valid='x'.repeat(24),short='y'.repeat(23);",
- " assert.equal(safeBearer('Bearer '+valid,valid),true);",
- " assert.equal(safeBearer('Bearer '+short,short),false);",
- "});"
-].join('\n');
+const sample=JSON.stringify({token24:'sample-public-abcdefghij',token23:'sample-public-abcdefghi'});
 const job={id:CANARY_JOB_ID,kind:'ai-github-canary',project:'demo',target:'local',workspace:'stage',state:'queued'};
 test('job scope and all distinct grants are mandatory, with no generic authority',()=>{
  const args={job,scope:'demo:local:stage',write:'1',push:'1',enabled:'1'};
@@ -31,16 +22,18 @@ test('job scope and all distinct grants are mandatory, with no generic authority
  assert.ok(CANARY_BRANCH.startsWith('test/23-'));
  assert.ok(CANARY_PATH.startsWith('tests/'));
 });
-test('candidate code accepts only a bounded public test with exact imports',()=>{
+test('AGY supplies synthetic JSON data only, rendered via fixed code',()=>{
  assert.equal(validateCandidate(sample),true);
+ const rendered=renderCandidate(sample);
+ assert.ok(rendered.includes("safeBearer('Bearer '+valid,valid)"));
  assert.equal(validateCandidate(''),false);
- assert.equal(validateCandidate(sample.replace("node:test","node:fs")),false);
- assert.equal(validateCandidate(sample+' \nrequire("fs")'),false);
- assert.equal(validateCandidate(sample+' \nprocess.env.HOME'),false);
- assert.equal(validateCandidate(sample+' \nfetch("https://invalid.example")'),false);
- assert.equal(validateCandidate(sample+' \n'+('x'.repeat(8000))),false);
- assert.equal(validateCandidate(sample.replace("safeBearer","otherThing")),false);
- assert.equal(validateCandidate(sample+' \nimport("node:os")'),false);
+ assert.equal(validateCandidate('import test from "node:test";'),false);
+ assert.equal(validateCandidate(JSON.stringify({...JSON.parse(sample),extra:'malicious'})),false);
+ assert.equal(validateCandidate(JSON.stringify({token24:'sample-public-abcdefghi',token23:'sample-public-abcdefghi'})),false);
+ assert.equal(validateCandidate(JSON.stringify({token24:'sample-public-abcdefghij',token23:'sample-public-abcdefghi<script>'})),false);
+ assert.equal(validateCandidate(JSON.stringify({token24:'sample-public-abcdefghij',token23:'sample-public-abcdefghi',code:'process.env'})),false);
+ assert.throws(()=>renderCandidate('untrusted executable source'),/candidate_rejected/);
+ assert.ok(!rendered.includes('process.env'));
 });
 test('single-use durable canary cannot replay or leap over a gate',()=>{
  const db=new DatabaseSync(':memory:');
