@@ -314,7 +314,8 @@ export function tick(db) {
   }
   // Never execute checkout-controlled npm or test source on the Worker host.
   const argv=trustedCheck?['/usr/bin/node',trustedCheck,
-    process.env.MCP_DEV_HUB_WORKTREE_ROOT,executionDir,baseSha]:
+    process.env.MCP_DEV_HUB_WORKTREE_ROOT,executionDir,baseSha,
+    process.env.MCP_DEV_HUB_WORKTREE_REPO]:
     trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
   const cmd=argv.map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
