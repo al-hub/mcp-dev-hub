@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {openDb,addJob,reconcile,reconcileStarting} from '../scripts/worker.mjs';
-const id='canary-23-20261105';
+const id='canary-23-20261105-v2';
 const nonce='a'.repeat(32);
 const scope='demo:local:stage';
 function fixture(run){
