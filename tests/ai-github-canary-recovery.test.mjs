@@ -75,3 +75,27 @@ test('missing or wrong-nonce proof cannot fake success',()=>{
   assert.equal(db.prepare('SELECT state FROM jobs').get().state,'unknown');
  });
 });
+
+test('Late authenticated proof can complete an earlier unknown canary exactly once',()=>{
+ fixture(({db,proof})=>{
+  db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=?")
+   .run(new Date(Date.now()-950000).toISOString(),id);
+  reconcile(db);
+  assert.equal(db.prepare('SELECT state FROM jobs').get().state,'unknown');
+  proof(0);
+  reconcile(db);
+  assert.equal(db.prepare('SELECT state,exit_code FROM jobs').get().state,'succeeded');
+  assert.equal(db.prepare('SELECT exit_code FROM jobs').get().exit_code,0);
+  reconcile(db);
+  assert.equal(db.prepare('SELECT state FROM jobs').get().state,'succeeded');
+ });
+});
+test('Late uncertain proof never becomes successful',()=>{
+ fixture(({db,proof})=>{
+  db.prepare("UPDATE jobs SET state='unknown' WHERE id=?").run(id);
+  proof(76);
+  reconcile(db);
+  assert.equal(db.prepare('SELECT state,exit_code FROM jobs').get().state,'unknown');
+  assert.equal(db.prepare('SELECT exit_code FROM jobs').get().exit_code,76);
+ });
+});
