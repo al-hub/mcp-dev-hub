@@ -59,9 +59,11 @@ export function trustedCanaryRunner(){
    const st=lstatSync(file);
    if(!st.isFile()||st.isSymbolicLink()||!immutableTrustedPath(file))return null;
   }
-  const node='/usr/bin/node',bwrap='/usr/bin/bwrap',gh='/usr/bin/gh',codex=join(root,'codex');
+  const node='/usr/bin/node',bwrap='/usr/bin/bwrap',gh='/usr/bin/gh',
+    codex=join(root,'codex'),agy=join(root,'agy');
   if(!immutableTrustedPath(node)||!immutableTrustedPath(bwrap)||
      !immutableTrustedPath(gh)||!lstatSync(gh).isFile()||
+     !immutableTrustedPath(agy)||!lstatSync(agy).isFile()||
      !immutableTrustedPath(codex)||!lstatSync(codex).isFile())return null;
   return files[0];
  }catch{return null;}
