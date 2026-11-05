@@ -94,7 +94,7 @@ function isolatedModel(which,argv,{input,outputFile,timeout=110000}={}){
  if(!['agy','codex'].includes(which))throw Error('unapproved_model');
  const userHome=home();
  const exe=which==='agy'
-  ?join(userHome,'.local/bin/agy'):'/usr/local/lib/mcp-dev-hub/codex';
+  ?'/usr/local/lib/mcp-dev-hub/agy':'/usr/local/lib/mcp-dev-hub/codex';
  const sandboxExe=join(ISOLATED_HOME,'bin',which);
  const temp=mkdtempSync(join(tmpdir(),'mcp23-model-isolated-'));
  try {
