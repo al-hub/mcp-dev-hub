@@ -10,7 +10,7 @@ import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
 import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
-import { spawnSync } from 'node:child_process';
+import { spawnSync,spawn } from 'node:child_process';
 import { mkdirSync, chmodSync, readFileSync, rmSync, lstatSync, realpathSync } from 'node:fs';
 import { join, resolve, isAbsolute, sep, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -223,7 +223,7 @@ export function collectReviewResult(db,id) {
 }
 export function reconcile(db) {
   for(const job of jobs(db).filter(j=>j.state==='running')) {
-    const pane=readPane(job.window);
+    const pane=job.kind==='ai-github-canary'?null:readPane(job.window);
     const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
     const nonce=db.prepare('SELECT nonce FROM job_run_nonces WHERE job_id=? AND attempt=?').get(job.id,attempt)?.nonce;
     // Durable nonce-bound completion proof, independent of tmux pane wrapping.
@@ -238,8 +238,14 @@ export function reconcile(db) {
       const validReview=job.kind!=='review-opencode' || (code===0 && reviewCollected);
       db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state='running'").run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
       // Persist terminal result before attempting pane retirement for every job.
-      if(db.prepare('SELECT state FROM jobs WHERE id=?').get(job.id)?.state!=='running')
+      if(job.kind!=='ai-github-canary'&&
+         db.prepare('SELECT state FROM jobs WHERE id=?').get(job.id)?.state!=='running')
         tmux(['kill-window','-t','='+SESSION+':'+job.window]);
+    } else if(job.kind==='ai-github-canary'){
+      // No tmux dependency. A missing proof becomes UNKNOWN after a bounded
+      // deadline, never an automatic retry or a fabricated success.
+      if(Date.now()-Date.parse(job.updated_at)>900000)
+       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
     } else if(!windowAlive(job.window)) {
       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
     }
@@ -258,6 +264,7 @@ export function quarantineUnknownJob(db,{id,confirmedNoLiveProcess=false,evidenc
 export function retireTerminalWindows(db){
  let retired=0;
  for(const job of jobs(db).filter(j=>['succeeded','failed','blocked'].includes(j.state)&&j.window)){
+  if(job.kind==='ai-github-canary')continue;
   if(!windowAlive(job.window))continue;
   const r=tmux(['kill-window','-t','='+SESSION+':'+job.window]);
   if(r.status===0)retired++;
@@ -377,25 +384,45 @@ export function tick(db) {
   const proofDir=join(stateDir(),'run-proofs');
   mkdirSync(proofDir,{recursive:true,mode:0o700});
   const proofFile=join(proofDir,job.id+'-attempt-'+attempt+'.txt');
+  // The canary never uses tmux, a login shell, startup files or env wrappers.
+  // A direct Node child inherits ONLY explicit, reviewed environment fields.
+  if(canarySettings){
+   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?')
+    .run('starting','canary-'+job.id,now(),job.id,'queued');
+   if(claimed.changes!==1)return false;
+   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce')
+    .run(job.id,attempt,nonce);
+   let child;
+   try{
+    child=spawn('/usr/bin/node',[canaryRunner],{
+     cwd:'/',detached:true,stdio:'ignore',
+     env:{HOME:homedir(),PATH:'/usr/bin:/bin',LANG:'C.UTF-8',
+      ...Object.fromEntries(Object.entries(canarySettings).map(([k,v])=>[k,v||''])),
+      MCP_DEV_HUB_CANARY_NONCE:nonce,
+      MCP_DEV_HUB_CANARY_ATTEMPT:String(attempt),
+      MCP_DEV_HUB_CANARY_PROOF_FILE:proofFile}
+    });
+   }catch{
+    db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
+    return false;
+   }
+   child.on('error',()=>{try{
+    db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=? AND state IN ('starting','running')").run(now(),job.id);
+   }catch{}});
+   if(!Number.isInteger(child.pid)||child.pid<2){
+    db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
+    return false;
+   }
+   child.unref();
+   db.prepare("UPDATE jobs SET state='running',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
+   return true;
+  }
   const proofTail='; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile);
-  const script=canarySettings
-    ? 'printf "RUN '+job.id+'\n"; '+cmd+proofTail+'; exec /usr/bin/bash --noprofile --norc'
-    : 'source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\n"; '+reviewEnv+devEnv+cmd+proofTail+'; exec bash';
-
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\n"; '+reviewEnv+devEnv+cmd+proofTail+'; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
-  const commandArgs=canarySettings?[
-    '/usr/bin/env','-i',
-    'HOME='+homedir(),'PATH=/usr/bin:/bin','LANG=C.UTF-8',
-    ...Object.entries(canarySettings).map(([key,value])=>key+'='+(value||'')),
-    '/usr/bin/bash','--noprofile','--norc','-c',script
-  ]:['bash','-lc',script];
-  const r=tmux(['new-window','-d','-t','='+SESSION,
-    '-c',canarySettings?'/':executionDir,'-n',win,
-    ...(canarySettings?['-e','BASH_ENV=','-e','ENV=','-e','NODE_OPTIONS=']:[]),
-    ...commandArgs]);
-
+  const r=tmux(['new-window','-d','-t','='+SESSION,'-c',executionDir,'-n',win,'bash','-lc',script]);
   if(r.status!==0)db.prepare("UPDATE jobs SET state='unknown',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
   else db.prepare("UPDATE jobs SET state='running',updated_at=? WHERE id=? AND state='starting'").run(now(),job.id);
   return r.status===0;
