@@ -117,7 +117,7 @@ function isolatedModel(which,argv,{input,outputFile,timeout=110000}={}){
   ];
   if(which==='agy')args.push(
    '--ro-bind',join(userHome,'.gemini'),join(ISOLATED_HOME,'.gemini'));
-  else args.push('--ro-bind',join(userHome,'.codex'),join(ISOLATED_HOME,'.codex'));
+  else args.push('--ro-bind',join(userHome,'.codex','auth.json'),join(ISOLATED_HOME,'.codex','auth.json'));
   args.push('--setenv','HOME',ISOLATED_HOME,
    '--setenv','PATH','/usr/bin:/bin:'+join(ISOLATED_HOME,'bin'),
    '--setenv','CODEX_HOME',join(ISOLATED_HOME,'.codex'),
