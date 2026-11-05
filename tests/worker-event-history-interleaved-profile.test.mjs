@@ -33,8 +33,8 @@ test('interleaved alpha/beta job_events preserve project isolation, monotonic pa
   const betaSecond=eventHistory(db,'beta',betaFirst[0].id,1);
   assert.deepEqual(betaSecond.map(row=>[row.id,row.state,row.exitCode]),[[4,'succeeded',0]]);
   assert.deepEqual(eventHistory(db,'beta',betaSecond[0].id,1),[]);
-  assert.deepEqual(eventBounds(db,'alpha'),{first:1,last:5});
-  assert.deepEqual(eventBounds(db,'beta'),{first:2,last:4});
+  assert.deepEqual({...eventBounds(db,'alpha')},{first:1,last:5});
+  assert.deepEqual({...eventBounds(db,'beta')},{first:2,last:4});
 
   for(const project of ['', 'a','Alpha','alpha/beta','../alpha',null,undefined,123]){
    assert.throws(()=>eventHistory(db,project,0,10),/invalid project/);
