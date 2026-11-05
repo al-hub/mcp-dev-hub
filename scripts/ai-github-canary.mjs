@@ -184,7 +184,8 @@ async function orchestrate(db){
    job,scope:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
    write:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
    push:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
-   enabled:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY
+   enabled:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY,
+   approvedId:process.env.MCP_DEV_HUB_CANARY_APPROVED_JOB_ID
  }))throw Error('canary_not_authorized');
  requireProtection();
  const base=mainSha();
