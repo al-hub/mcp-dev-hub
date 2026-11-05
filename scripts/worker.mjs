@@ -301,7 +301,8 @@ export function tick(db) {
     job,scope:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
     write:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
     push:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
-    enabled:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY
+    enabled:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY,
+    approvedId:process.env.MCP_DEV_HUB_CANARY_APPROVED_JOB_ID
   })){
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false;
@@ -367,6 +368,7 @@ export function tick(db) {
     MCP_DEV_HUB_STATE_DIR:stateDir(),
     MCP_DEV_HUB_APPROVED_SCOPE:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
     MCP_DEV_HUB_ENABLE_GH_CANARY:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY,
+    MCP_DEV_HUB_CANARY_APPROVED_JOB_ID:process.env.MCP_DEV_HUB_CANARY_APPROVED_JOB_ID,
     MCP_DEV_HUB_ENABLE_AI_WRITE:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
     MCP_DEV_HUB_ENABLE_AI_PUSH:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
     MCP_DEV_HUB_AGY_BIN:process.env.MCP_DEV_HUB_AGY_BIN,
