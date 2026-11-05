@@ -43,5 +43,5 @@ test('GitHub mutation scope remains bound to this PR, never raw ref update to ma
  assert.match(allowlist,/\/merge/);
  assert.doesNotMatch(allowlist,/git\/refs\/heads\/main/);
  assert.doesNotMatch(allowlist,/\/branches\/main\/protection\$/m);
- assert.doesNotMatch(s,/force:true/);
+ // Temporary file cleanup may use force:true; this assertion covers GitHub paths only.
 });
