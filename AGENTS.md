@@ -1,7 +1,7 @@
 # Common instructions for all AI contributors
 
 Read this file, SECURITY.md, docs/ARCHITECTURE.md, docs/ROADMAP.md and docs/STATUS.md before editing.
-For environment-dependent work, first consult [docs/ops/current-constraints.md](docs/ops/current-constraints.md) as the current verified constraints register. Recheck only affected or stale entries before acting, record dated sanitized evidence there, and keep docs/STATUS.md for progress history. A recorded capability is not a permission grant.
+Before environment-dependent work, read [docs/ops/current-constraints.md](docs/ops/current-constraints.md) for project-wide goals, security boundaries and issue ownership. Read the linked issue/PR for current technical blockers, dated evidence and release criteria; recheck only changed or stale facts. Keep docs/STATUS.md for work history. Documented capabilities never grant permissions.
 
 ## Public repository: mandatory privacy rules
 

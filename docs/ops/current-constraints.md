@@ -1,37 +1,31 @@
-# Current constraints register — MCP Dev Hub
+# MCP Dev Hub — 상위 제약 (Constraints)
 
-> **Public, sanitized operational snapshot.** Initial verification: **2026-11-06 (Asia/Seoul)**. Applies to preparation issues [#35](https://github.com/al-hub/mcp-dev-hub/issues/35) → [#36](https://github.com/al-hub/mcp-dev-hub/issues/36) → [#37](https://github.com/al-hub/mcp-dev-hub/issues/37).
->
-> This file is the **single current-constraints index**, not proof of unrestricted command privileges, an authorization policy, or a replacement for operational acceptance evidence. Development progress/history remains in [docs/STATUS.md](../STATUS.md). Public content must follow [SECURITY.md](../../SECURITY.md) and [AGENTS.md](../../AGENTS.md).
+**최종 목표:** 모바일 등에서 개발을 지시한 뒤 WSL Worker가 사전 승인된 범위의 코드 수정 → 격리 테스트 → 실제 독립 Codex 리뷰 → PR/필수 CI → 보호 규칙에 따른 병합 → main CI → Issue Close까지 **사용자 중간 개입 없이** 수행한다. 접속이 끊겨도 상태를 보존하고 이어서 처리한다.
 
-## How to use and update
+이 문서에는 **프로젝트 전체의 방향·제약·이슈별 책임만 기록**한다. 개별 오류·환경 진단·증거·수정 내역·검증 및 해제 조건은 **담당 GitHub Issues/PRs**에서 관리한다.
 
-1. **Read this file before environment-dependent work.** Reuse verified findings instead of repeating a full environment/code audit. Do a **narrow, read-only recheck** when an entry is stale, affected by a deployment, contradictory, or required for an irreversible operation.
-2. Treat **observed** (direct result), **blocked** (confirmed refusal), and **unverified** (not established) differently. A reachable MCP endpoint does not prove downstream WSL command execution; CI success does not prove device deployment.
-3. When a constraint changes, update its **status, last verified date, narrow evidence, impact, and release condition**. Retain superseded results in the change log with evidence; do not silently discard negative findings.
-4. Link affected issues/PRs to this canonical file; avoid copying divergent status paragraphs into multiple issue bodies. Do not publish private hostnames, usernames, IPs, home/workspace absolute paths, authentication material, command output, or runtime state.
-5. Respect all permission boundaries. No generic shell or root privileges are inferred from read-only connectivity. Never rerun an uncertain or rejected remote command as a guess.
+## 상위 원칙
 
-## Active constraints — last checked 2026-11-06 KST
+1. **WSL Worker가 실행 주체다.** Microduck MCP와 ClosePaw MCP는 선택적인 접속/관찰 수단이며, 특정 경로의 장애가 다른 경로의 개발·CI를 불필요하게 막아서는 안 된다.
+2. **승인 범위 내 반복 사용자 개입 0회**가 목표다. 작업마다 sudo나 수동 설치를 요구하지 않되, 새로운 root 정책·허용 범위·신뢰키 변경을 AI가 독단적으로 승인하지 않는다.
+3. **보안 게이트를 유지한다.** 최소 권한, 격리 실행, 실제 독립 Codex 리뷰, 필수 GitHub CI 및 branch 보호를 우회하지 않는다. 전역 AI_WRITE/AI_PUSH를 검증 없이 활성화하지 않는다.
+4. **데이터와 실행 결과를 보존한다.** 기존 Worker/Dashboard·작업 원장·설정을 보존하고, unknown/timeout 결과는 식별자로 조회한다. 실패한 외부 작업을 추측해 재실행하지 않는다. 미검증을 성공으로 표시하거나 이슈를 조기 Close하지 않는다.
+5. **기존 자산을 재사용한다.** 이미 검증한 코드·연결·CI·증거를 우선 활용하고 새 계정/앱/권한 확대나 반복 구축을 최소화한다.
+6. **공개 정보는 비식별로 유지한다.** 실제 장비·계정·IP·개인 경로·SSH 구성·키·토큰·운영 로그는 기록하지 않는다. 위험 작업 전에는 담당 이슈의 최신 증거만 필요한 범위에서 재검증한다.
 
-| ID | Status and last verification | Directly observed / bounded claim | Effect on work | Release / recheck condition |
-| --- | --- | --- | --- | --- |
-| **C-01 Microduck workspace boundary** | **BLOCKED for Dev Hub Git operations via Microduck**, 2026-11-06 | A read-only command executed inside WSL2 through Microduck. The Dev Hub checkout exists, but a Git command with that checkout as the command working directory was rejected because it is **outside the Microduck workspace**. | Microduck is **not currently a general-purpose Dev Hub executor**. GitHub API operations and CI remain separate paths. | Authorized, narrowly scoped Dev Hub execution path is demonstrably available; verify a harmless repository-scoped command without loosening global permissions. |
-| **C-02 independent reviewer / coding CLI path** | **UNVERIFIED for actual execution**, 2026-11-06 | `codex` and `agy` were **not on the Microduck command PATH**. Executable files were observed under an existing root-owned protected tool directory, but were **not invoked**. | A real final-HEAD independent Codex review (or AGY execution) cannot be claimed through the tested Microduck route. This does **not** prove the tools are absent from all WSL execution contexts. | Verify exact executable, permitted launcher, isolation, exit code, and final HEAD/BASE bound review evidence in an authorized WSL session. |
-| **C-03 protected updater authority** | **BLOCKED for direct non-root write; expected security boundary**, 2026-11-06 | The protected tool directory is root-owned and not writable by the current ordinary WSL user. No privileged install or replacement attempted. | The #35 authenticated, allowlisted updater and atomic rollback still require implementation and physical operational proof. **Do not fix by broadening directory permissions or granting arbitrary sudo.** | Prove approved vA→vB installation, ownership/hash verification, rollback, rejection cases, and zero per-issue sudo prompts using a trusted installer; a narrowly scoped initial bootstrap may require explicit approval. |
-| **C-04 ClosePaw alternate route** | **BLOCKED for Bridge→WSL command execution**, 2026-11-06 | ClosePaw app v0.1.107 responded, but passive Bridge health was unavailable, authenticated jobs were not ready, Termux RUN_COMMAND support was reported unavailable, and maintenance status returned HTTP 404. WSL command completion through this route was **not verified**. | This is an optional remote-access route, **not** a mandatory dependency for #35 code work. Do not claim app reachability = Bridge recovery. | Confirm new daemon/app deployed on actual device, successful admission of one **new harmless** command, exit 0/result retrieval, preservation/dedup evidence, and Bridge→WSL end-to-end. See [ClosePaw #225](https://github.com/al-hub/closepaw/issues/225). |
-| **C-05 #35→#37 acceptance gates** | **OPEN / NOT ACCEPTED**, 2026-11-06 | #35's [PR #38](https://github.com/al-hub/mcp-dev-hub/pull/38) and [PR #39](https://github.com/al-hub/mcp-dev-hub/pull/39) contain preparatory manifest/approval/journal logic; they do **not** establish a production root-owned updater or successful independent final-head review and WSL acceptance. #36 and #37 remain open. | Do not report a working unattended production-development pipeline or close these issues from synthetic checks alone. | Complete #35 root updater + security/CI/operational gates, then #36 generic Issue→AI→CI→merge→close, then #37 three independent zero-intervention end-to-end runs. |
+## 상세 문제 및 수용 책임
 
-## Architecture and sequencing
+| 이슈 | 역할 / 현재 영향 (2026-11-06 확인 시점) |
+| --- | --- |
+| [MCP Dev Hub #35](https://github.com/al-hub/mcp-dev-hub/issues/35) | OPEN — 보호 실행기 무인 업데이트·최소 권한. Microduck 실행 범위·CLI 리뷰·보호 파일 권한의 [상세 제약 기록](https://github.com/al-hub/mcp-dev-hub/issues/35#issuecomment-6672144819) |
+| [MCP Dev Hub #36](https://github.com/al-hub/mcp-dev-hub/issues/36) | OPEN — 범용 Issue → AI 개발 → 검증·병합·Close 자동화 |
+| [MCP Dev Hub #37](https://github.com/al-hub/mcp-dev-hub/issues/37) | OPEN — 서로 다른 3건의 실제 개발·단절·복구 무인 수용 |
+| [ClosePaw #225](https://github.com/al-hub/closepaw/issues/225) | OPEN — 선택적 Bridge→WSL 경로 복구. [실기기 제약 기록](https://github.com/al-hub/closepaw/issues/225#issuecomment-6672145304) |
 
-- **Execution target:** WSL Worker / protected executors. **Control entry:** Microduck MCP or ClosePaw MCP are alternative transport routes; neither is the unattended Worker itself.
-- **Prefer the working authorized route.** Continue #35's code/CI work through GitHub even when ClosePaw is blocked. Check actual privileges and independent-review availability before claiming #35 operational completion.
-- **#35 → #36 → #37** is the acceptance sequence. ClosePaw #225 is tracked independently. Do not convert a single transport failure into a global prerequisite for all Dev Hub development.
-- A status check is not permission to install, alter root-owned policy, replay commands, bypass reviews, or enable `AI_WRITE`/`AI_PUSH` globally.
+**수용 순서:** #35 → #36 → #37. 이 순서는 최종 수용을 위한 조건이며, 가능한 코드 개발/CI를 불필요하게 멈추라는 뜻이 아니다. ClosePaw #225는 별도 복구한다. **최신 상태의 기준은 각각의 이슈**다.
 
-## Change log
+## 유지 관리
 
-| Date (KST) | Change | Evidence |
-| --- | --- | --- |
-| 2026-11-06 | Initial sanitized constraints snapshot from read-only Microduck and ClosePaw checks. No local files, running services, user data, or security settings were changed by those checks. | [Dev Hub #35](https://github.com/al-hub/mcp-dev-hub/issues/35), [ClosePaw #225](https://github.com/al-hub/closepaw/issues/225) |
-| 2026-11-06 | ClosePaw [PR #226](https://github.com/al-hub/closepaw/pull/226) is reported merged in #225, but that is **distinct from deployed-device Bridge/WSL acceptance**. Retain C-04 until physical proof. | [ClosePaw #225](https://github.com/al-hub/closepaw/issues/225) |
+- 상위 목표·보안 원칙·역할 분담이 바뀔 때에만 **이 문서**를 수정한다. 일상적인 장애 상태와 세부 검증·해제 근거는 해당 **Issue/PR**에서 갱신한다.
+- [AGENTS.md](../../AGENTS.md)는 시작 지침, [docs/STATUS.md](../STATUS.md)는 진행 이력, [SECURITY.md](../../SECURITY.md)는 공개 정보 기준이다.
+- 상세 제약의 이전 문서 버전은 [초판 PR #40](https://github.com/al-hub/mcp-dev-hub/pull/40) Git 이력과 담당 이슈 댓글에서 찾을 수 있다.
