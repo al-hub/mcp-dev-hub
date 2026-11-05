@@ -11,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 // Never import the mutable Worker source into this privileged controller.
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,SHA,
- canaryAuthorized,renderCandidate,validateReviewVerdict,verifiedStrictGitHubProtection,readBoundedModelOutput,startCanary,advanceCanary,blockCanary
+ canaryAuthorized,renderCandidate,validateReviewVerdict,verifiedStrictGitHubProtection,readBoundedModelOutput,verifyCanaryPullRequest,startCanary,advanceCanary,blockCanary
 } from './ai-github-canary-policy.mjs';
 
 const stateDir=()=>process.env.MCP_DEV_HUB_STATE_DIR||join(homedir(),'.local','state','mcp-dev-hub');
@@ -146,18 +146,24 @@ function generateCode(){
  ],{timeout:100000});
  return renderCandidate(out.trim());
 }
-function verifyPr(prNumber,headSha,baseSha){
- if(!Number.isSafeInteger(prNumber)||prNumber<1||!SHA.test(headSha))throw Error('invalid_pr');
+function verifyPr(prNumber,headSha,baseSha,{requireClean=false}={}){
+ if(!Number.isSafeInteger(prNumber)||prNumber<1||!SHA.test(headSha)||!SHA.test(baseSha))
+  throw Error('invalid_pr');
  const pr=gh(BASE+'/pulls/'+prNumber);
- if(pr.state!=='open'||pr.draft===true||pr.head?.sha!==headSha||
-   pr.head?.ref!==CANARY_BRANCH||pr.base?.ref!=='main'||pr.base?.sha!==baseSha||
-   !['clean','has_hooks'].includes(pr.mergeable_state))
-  throw Error('pr_head_or_scope_changed');
  const files=gh(BASE+'/pulls/'+prNumber+'/files?per_page=100');
- if(!Array.isArray(files)||files.length!==1||files[0].filename!==CANARY_PATH||
-   files[0].status!=='added'||typeof files[0].patch!=='string')
-  throw Error('unauthorized_pr_files');
- return files[0].patch;
+ return verifyCanaryPullRequest({pr,files,head:headSha,base:baseSha,requireClean});
+}
+async function awaitCleanPr(prNumber,headSha,baseSha){
+ // Read-only checks may be polled while GitHub computes mergeability.
+ // Mutations are NEVER replayed; any scope/HEAD/file deviation is terminal.
+ for(let attempt=0;attempt<30;attempt++){
+  try{return verifyPr(prNumber,headSha,baseSha,{requireClean:true});}
+  catch(error){
+   if(error?.message!=='pr_mergeability_pending')throw error;
+  }
+  await sleep(2000);
+ }
+ throw Error('pr_mergeability_timeout');
 }
 function reviewCode({patch,head,base}){
  if(typeof patch!=='string'||patch.length>18000)throw Error('review_patch_invalid');
@@ -223,7 +229,7 @@ async function orchestrate(db){
   const prCi=await ciFor({sha:head,event:'pull_request',prNumber});
   advance('ci_passed',{evidence:'github:ci:'+prCi.runId});
   if(mainSha()!==base)throw Error('main_changed_before_review');
-  const patch=verifyPr(prNumber,head,base);
+  const patch=await awaitCleanPr(prNumber,head,base);
   advance('review_dispatching');
   const digest=reviewCode({patch,head,base});
   advance('review_passed',{evidence:'codex:sha256:'+digest});
@@ -233,7 +239,7 @@ async function orchestrate(db){
   // REST merge is refused by GitHub. PR head is separately pinned by sha.
   // If protection differs in any way, no dispatch is permitted.
   if(mainSha()!==base)throw Error('main_changed_before_merge');
-  verifyPr(prNumber,head,base);
+  await awaitCleanPr(prNumber,head,base);
   requireProtection();
   advance('merge_dispatching');
   const merged=gh(BASE+'/pulls/'+prNumber+'/merge',{method:'PUT',body:{
