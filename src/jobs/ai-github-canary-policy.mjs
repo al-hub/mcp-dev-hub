@@ -9,11 +9,11 @@ const stages=['started','branch_dispatching','branch_created','source_generated'
  'content_dispatching','content_uploaded','pr_dispatching','pr_created',
  'ci_passed','review_dispatching','review_passed',
  'merge_dispatching','merged','succeeded'];
-export function canaryAuthorized({job,scope,write,push,enabled}={}){
+export function canaryAuthorized({job,scope,write,push,enabled,approvedId}={}){
  return job?.id===CANARY_JOB_ID&&job.kind==='ai-github-canary'&&
    ['queued','starting','running'].includes(job.state)&&
    job.target==='local'&&[job.project,job.target,job.workspace].join(':')===scope&&
-   write==='1'&&push==='1'&&enabled==='1';
+   write==='0'&&push==='0'&&enabled==='1'&&approvedId===CANARY_JOB_ID;
 }
 // The model returns DATA ONLY; source code is constructed exclusively from a
 // reviewed local template. No model-supplied JavaScript is ever executed.
