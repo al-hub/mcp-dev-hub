@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,
- canaryAuthorized,validateCandidate,renderCandidate,validateReviewVerdict,ensureCanaryTable,
+ canaryAuthorized,validateCandidate,renderCandidate,validateReviewVerdict,verifyCanaryPullRequest,ensureCanaryTable,
  startCanary,advanceCanary,blockCanary
 } from '../src/jobs/ai-github-canary-policy.mjs';
 
@@ -96,4 +96,20 @@ test('Codex approval cannot be forged with prefix, stale SHA, duplicate keys or 
  assert.equal(validateReviewVerdict(JSON.stringify({verdict:'PASS',head,base,findings:[],extra:true}),{head,base}),false);
  assert.equal(validateReviewVerdict('{"verdict":"FAIL","verdict":"PASS","head":"'+head+'","base":"'+base+'","findings":[]}',{head,base}),false);
  assert.equal(validateReviewVerdict(valid,{head,base:'c'.repeat(40)}),false);
+});
+
+test('GitHub pending mergeability is not misclassified as a changed HEAD/PR scope',()=>{
+ const head='a'.repeat(40),base='b'.repeat(40);
+ const pr={state:'open',draft:false,head:{sha:head,ref:CANARY_BRANCH},
+  base:{sha:base,ref:'main'},mergeable:null,mergeable_state:'unknown'};
+ const files=[{filename:CANARY_PATH,status:'added',patch:'@@ -0,0 +1,1 @@\n+test();'}];
+ assert.equal(verifyCanaryPullRequest({pr,files,head,base,requireClean:false}),files[0].patch);
+ assert.throws(()=>verifyCanaryPullRequest({pr,files,head,base,requireClean:true}),/pr_mergeability_pending/);
+ assert.throws(()=>verifyCanaryPullRequest({pr:{...pr,mergeable:true,mergeable_state:'unstable'},files,head,base,requireClean:true}),/pr_mergeability_pending/);
+ assert.equal(verifyCanaryPullRequest({pr:{...pr,mergeable:true,mergeable_state:'clean'},files,head,base,requireClean:true}),files[0].patch);
+ assert.throws(()=>verifyCanaryPullRequest({pr:{...pr,head:{sha:'c'.repeat(40),ref:CANARY_BRANCH}},files,head,base}),/pr_head_or_scope_changed/);
+ assert.throws(()=>verifyCanaryPullRequest({pr:{...pr,base:{sha:'c'.repeat(40),ref:'main'}},files,head,base}),/pr_head_or_scope_changed/);
+ assert.throws(()=>verifyCanaryPullRequest({pr:{...pr,draft:true},files,head,base}),/pr_head_or_scope_changed/);
+ assert.throws(()=>verifyCanaryPullRequest({pr,files:[...files,...files],head,base}),/unauthorized_pr_files/);
+ assert.throws(()=>verifyCanaryPullRequest({pr,files:[{...files[0],filename:'src/worker.mjs'}],head,base}),/unauthorized_pr_files/);
 });
