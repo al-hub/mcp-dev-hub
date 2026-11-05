@@ -2,7 +2,7 @@
 // model text, GitHub CI and independent review; it NEVER executes AI output.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync,renameSync,existsSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {tmpdir,homedir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -254,15 +254,36 @@ async function orchestrate(db){
   return {state:uncertain?'unknown':'blocked',reason,phase,prNumber:prNumber??null};
  }
 }
+// Independent detached Worker launch: nonce-bound proof is persisted by the
+// root-owned controller itself. No tmux shell or inherited environment executes.
+function persistCanaryProof(exitCode){
+ const nonce=process.env.MCP_DEV_HUB_CANARY_NONCE;
+ const attempt=process.env.MCP_DEV_HUB_CANARY_ATTEMPT;
+ const jobId=process.env.MCP_DEV_HUB_CANARY_JOB_ID;
+ const proofFile=process.env.MCP_DEV_HUB_CANARY_PROOF_FILE;
+ const expected=join(stateDir(),'run-proofs',CANARY_JOB_ID+'-attempt-1.txt');
+ if(jobId!==CANARY_JOB_ID||attempt!=='1'||!/^[0-9a-f]{32}$/.test(nonce||'')||
+    proofFile!==expected||existsSync(expected)||![0,75].includes(exitCode))
+  throw Error('invalid_or_existing_proof');
+ const temp=expected+'.tmp.'+process.pid;
+ const line='END '+jobId+' attempt=1 proof='+nonce+' exit='+exitCode+'\n';
+ writeFileSync(temp,line,{flag:'wx',mode:0o600});
+ renameSync(temp,expected);
+}
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  const db=openDb();
+ let code=75;
  try{
   const result=await orchestrate(db);
   process.stdout.write(JSON.stringify(result)+'\n');
-  if(result.state!=='succeeded')process.exitCode=75;
+  code=result.state==='succeeded'?0:75;
  }catch{
   process.stdout.write('{"state":"blocked","reason":"admission_denied"}\n');
-  process.exitCode=75;
- }finally{db.close();}
+ }finally{
+  db.close();
+  try{persistCanaryProof(code);}
+  catch{code=75;}
+  process.exitCode=code;
+ }
 }
 export {orchestrate};
