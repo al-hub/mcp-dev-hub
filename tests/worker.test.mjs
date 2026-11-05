@@ -65,7 +65,7 @@ test('queued development jobs cannot reach execution even when write/push are re
   rmSync(dir,{recursive:true,force:true});
  }
 });
-test('command allowlist is closed',()=>assert.deepEqual(Object.keys(ALLOWED).sort(),['ai-development','cli-smoke','repo-check','review-opencode','synthetic-one','synthetic-two']));
+test('command allowlist is closed',()=>assert.deepEqual(Object.keys(ALLOWED).sort(),['ai-development','ai-github-canary','cli-smoke','repo-check','review-opencode','synthetic-one','synthetic-two']));
 
 test('missing tmux evidence becomes unknown and prevents queued replay',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-unknown-'));
