@@ -98,7 +98,7 @@ export function materializeSnapshot({repoDir,head,destination}){
       if(!validGitName(path))fail('unsafe_tree_entry');
       if(mode==='40000'){walk(objectId,path,depth+1);continue;}
       if(!['100644','100755'].includes(mode))fail('unsafe_tree_entry');
-      if(++files.length>300)fail('unsafe_tree_size');
+      if(files.length>=300)fail('unsafe_tree_size');
       const blob=verifiedGitObject(repoDir,'blob',objectId,786432);
       totalBytes+=blob.length;
       if(totalBytes>8*1024*1024)fail('unsafe_tree_bytes');
@@ -107,7 +107,7 @@ export function materializeSnapshot({repoDir,head,destination}){
       mkdirSync(dirname(target),{recursive:true,mode:0o700});
       writeFileSync(target,blob,{flag:'wx',mode:0o400});
       chmodSync(target,0o400);
-      files[files.length-1]=path;
+      files.push(path);
     }
   }
   walk(tree[1],'',0);
