@@ -172,7 +172,10 @@ export function releaseDueReviewRetries(db,{at=Date.now()}={}) {
 export function jobs(db){return db.prepare('SELECT * FROM jobs ORDER BY created_at,id').all();}
 export function ensureSession() {
   if(tmux(['has-session','-t','='+SESSION]).status===0)return;
-  if(tmux(['new-session','-d','-s',SESSION,'-n','observer']).status!==0)throw Error('tmux unavailable');
+  // Concurrent observers can create the session after our first check.
+  // Only accept an unsuccessful create when the exact session now exists.
+  if(tmux(['new-session','-d','-s',SESSION,'-n','observer']).status!==0 &&
+     tmux(['has-session','-t','='+SESSION]).status!==0)throw Error('tmux unavailable');
 }
 function readPane(window) {
   const r=tmux(['capture-pane','-p','-S','-','-t','='+SESSION+':'+window]);
