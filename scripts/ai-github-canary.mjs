@@ -3,15 +3,23 @@
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {DatabaseSync} from 'node:sqlite';
+import {tmpdir,homedir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {openDb} from './worker.mjs';
+// This file and policy must both be deployed root-owned outside every checkout.
+// Never import the mutable Worker source into this privileged controller.
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,SHA,
  canaryAuthorized,renderCandidate,startCanary,advanceCanary,blockCanary
-} from '../src/jobs/ai-github-canary-policy.mjs';
+} from './ai-github-canary-policy.mjs';
 
+const stateDir=()=>process.env.MCP_DEV_HUB_STATE_DIR||join(homedir(),'.local','state','mcp-dev-hub');
+function openDb(){
+ const dir=stateDir();
+ if(!dir.startsWith('/')||dir.includes('\0'))throw Error('invalid_state_directory');
+ return new DatabaseSync(join(dir,'worker.sqlite'),{timeout:5000});
+}
 const BASE='repos/'+CANARY_REPO;
 const CLI_TIMEOUT=20000;
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -21,7 +29,16 @@ const home=()=>{
  return h;
 };
 function gh(path,{method='GET',body}={}){
+ const approved=[
+  /^commits\/main$/, /^branches\/main\/protection$/, /^git\/refs$/,
+  /^contents\/tests\/dashboard-bearer-minimum-24\.test\.mjs$/,
+  /^pulls$/, /^pulls\/[1-9][0-9]*$/, /^pulls\/[1-9][0-9]*\/files\?per_page=100$/,
+  /^pulls\/[1-9][0-9]*\/merge$/,
+  /^actions\/runs\?event=(?:push|pull_request)&head_sha=[a-f0-9]{40}&per_page=20$/,
+  /^actions\/runs\/[1-9][0-9]*\/jobs\?per_page=100$/
+ ];
  if(typeof path!=='string'||!path.startsWith(BASE+'/')||
+    !approved.some(re=>re.test(path.slice(BASE.length+1)))||
     !['GET','POST','PUT'].includes(method))throw Error('unapproved_github_path');
  const args=['api',path,'--method',method];
  if(body!==undefined)args.push('--input','-');
@@ -92,11 +109,12 @@ function generateCode(){
  const source=r.stdout.trim();
  return renderCandidate(source);
 }
-function verifyPr(prNumber,headSha){
+function verifyPr(prNumber,headSha,baseSha){
  if(!Number.isSafeInteger(prNumber)||prNumber<1||!SHA.test(headSha))throw Error('invalid_pr');
  const pr=gh(BASE+'/pulls/'+prNumber);
  if(pr.state!=='open'||pr.draft===true||pr.head?.sha!==headSha||
-   pr.head?.ref!==CANARY_BRANCH||pr.base?.ref!=='main'||pr.base?.sha===undefined)
+   pr.head?.ref!==CANARY_BRANCH||pr.base?.ref!=='main'||pr.base?.sha!==baseSha||
+   !['clean','has_hooks'].includes(pr.mergeable_state))
   throw Error('pr_head_or_scope_changed');
  const files=gh(BASE+'/pulls/'+prNumber+'/files?per_page=100');
  if(!Array.isArray(files)||files.length!==1||files[0].filename!==CANARY_PATH||
@@ -174,16 +192,17 @@ async function orchestrate(db){
   prNumber=pr.number;
   if(!Number.isSafeInteger(prNumber)||prNumber<1)throw Error('pr_create_unconfirmed');
   advance('pr_created',{prNumber});
-  verifyPr(prNumber,head);
+  verifyPr(prNumber,head,base);
   const prCi=await ciFor({sha:head,event:'pull_request',prNumber});
   advance('ci_passed',{evidence:'github:ci:'+prCi.runId});
   if(mainSha()!==base)throw Error('main_changed_before_review');
-  const patch=verifyPr(prNumber,head);
+  const patch=verifyPr(prNumber,head,base);
   advance('review_dispatching');
   const digest=reviewCode({patch,head,base});
   advance('review_passed',{evidence:'codex:sha256:'+digest});
   if(mainSha()!==base)throw Error('main_changed_before_merge');
-  verifyPr(prNumber,head);
+  verifyPr(prNumber,head,base);
+  // Strict server-side required CI is the final protection against a base-sha race.
   requireProtection();
   advance('merge_dispatching');
   const merged=gh(BASE+'/pulls/'+prNumber+'/merge',{method:'PUT',body:{
