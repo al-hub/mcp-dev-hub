@@ -34,6 +34,7 @@ function gh(path,{method='GET',body}={}){
   /^commits\/main$/, /^branches\/main\/protection$/, /^git\/refs$/,
   /^contents\/tests\/dashboard-bearer-minimum-24\.test\.mjs$/,
   /^pulls$/, /^pulls\/[1-9][0-9]*$/, /^pulls\/[1-9][0-9]*\/files\?per_page=100$/,
+  /^pulls\/[1-9][0-9]*\/merge$/,
   /^actions\/runs\?event=(?:push|pull_request)&head_sha=[a-f0-9]{40}&per_page=20$/,
   /^actions\/runs\/[1-9][0-9]*\/jobs\?per_page=100$/
  ];
@@ -230,14 +231,25 @@ async function orchestrate(db){
   advance('review_dispatching');
   const digest=reviewCode({patch,head,base});
   advance('review_passed',{evidence:'codex:sha256:'+digest});
-  // GitHub REST merges pin only PR HEAD, not the reviewed base SHA.
-  // With no configured merge queue + independently verified merge-group
-  // review gate, dispatching a direct merge is unsafe even after a fresh
-  // main SHA check. Preserve the reviewed PR for an approved future gate.
-  const reason='atomic_base_merge_unavailable';
-  blockCanary(db,{phase,reason,uncertain:false});
-  return {state:'blocked',reason,phase,jobId,prNumber,head,base,
-   reviewSha256:digest,prCi:prCi.runId};
+  // GitHub server-enforced strict required checks require this PR head
+  // to contain the current main base at merge time. With enforce_admins,
+  // a main advancement after our final read makes the PR stale and the
+  // REST merge is refused by GitHub. PR head is separately pinned by sha.
+  // If protection differs in any way, no dispatch is permitted.
+  if(mainSha()!==base)throw Error('main_changed_before_merge');
+  verifyPr(prNumber,head,base);
+  requireProtection();
+  advance('merge_dispatching');
+  const merged=gh(BASE+'/pulls/'+prNumber+'/merge',{method:'PUT',body:{
+   sha:head,merge_method:'merge'
+  }});
+  if(merged.merged!==true||!SHA.test(merged.sha||''))throw Error('merge_unconfirmed');
+  mergeSha=merged.sha;
+  advance('merged',{mergeSha});
+  const mainCi=await ciFor({sha:mergeSha,event:'push'});
+  advance('succeeded',{evidence:'github:ci:'+mainCi.runId});
+  return {state:'succeeded',jobId,prNumber,head,base,mergeSha,
+   reviewSha256:digest,prCi:prCi.runId,mainCi:mainCi.runId};
  }catch(error){
   // Dispatches may have occurred even if the CLI returned an error; don't replay.
   const uncertain=['branch_dispatching','content_dispatching','pr_dispatching',
