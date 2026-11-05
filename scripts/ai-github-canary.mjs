@@ -2,7 +2,7 @@
 // model text, GitHub CI and independent review; it NEVER executes AI output.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync,readFileSync,rmSync,writeFileSync,renameSync,existsSync,openSync,closeSync,fstatSync,readSync,constants} from 'node:fs';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync,renameSync,existsSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {tmpdir,homedir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -11,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 // Never import the mutable Worker source into this privileged controller.
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,SHA,
- canaryAuthorized,renderCandidate,validateReviewVerdict,verifiedStrictGitHubProtection,startCanary,advanceCanary,blockCanary
+ canaryAuthorized,renderCandidate,validateReviewVerdict,verifiedStrictGitHubProtection,readBoundedModelOutput,startCanary,advanceCanary,blockCanary
 } from './ai-github-canary-policy.mjs';
 
 const stateDir=()=>process.env.MCP_DEV_HUB_STATE_DIR||join(homedir(),'.local','state','mcp-dev-hub');
@@ -86,27 +86,6 @@ async function ciFor({sha,event,prNumber,timeoutMs=180000}){
   await sleep(3000);
  }
  throw Error('ci_observation_timeout');
-}
-// A model sandbox owns the output directory. Never follow a model-created
-// symlink or trust its file size: the credential-bearing host reads a bounded
-// regular file only, even if the sandbox output changes between checks.
-export function readBoundedModelOutput(path,maxBytes=6500){
- if(typeof path!=='string'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>6500)
-  throw Error('invalid_output_path_or_limit');
- const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
- try{
-  const st=fstatSync(fd);
-  if(!st.isFile()||st.size<1||st.size>maxBytes)
-   throw Error('invalid_model_output_size_or_type');
-  const buf=Buffer.alloc(st.size);
-  let off=0;
-  while(off<buf.length){
-   const got=readSync(fd,buf,off,buf.length-off,off);
-   if(got<=0)throw Error('incomplete_model_output');
-   off+=got;
-  }
-  return buf.toString('utf8');
- }finally{closeSync(fd);}
 }
 // Models have a NETWORK connection to their provider but do not inherit
 // the host HOME, GH credentials, worker database, checkout or host /proc.
