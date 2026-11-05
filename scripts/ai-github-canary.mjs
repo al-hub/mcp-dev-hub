@@ -2,7 +2,7 @@
 // model text, GitHub CI and independent review; it NEVER executes AI output.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync,readFileSync,rmSync,writeFileSync,renameSync,existsSync} from 'node:fs';
+import {mkdtempSync,readFileSync,rmSync,writeFileSync,renameSync,existsSync,openSync,closeSync,fstatSync,readSync,constants} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {tmpdir,homedir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -87,6 +87,27 @@ async function ciFor({sha,event,prNumber,timeoutMs=180000}){
  }
  throw Error('ci_observation_timeout');
 }
+// A model sandbox owns the output directory. Never follow a model-created
+// symlink or trust its file size: the credential-bearing host reads a bounded
+// regular file only, even if the sandbox output changes between checks.
+export function readBoundedModelOutput(path,maxBytes=6500){
+ if(typeof path!=='string'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>6500)
+  throw Error('invalid_output_path_or_limit');
+ const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+ try{
+  const st=fstatSync(fd);
+  if(!st.isFile()||st.size<1||st.size>maxBytes)
+   throw Error('invalid_model_output_size_or_type');
+  const buf=Buffer.alloc(st.size);
+  let off=0;
+  while(off<buf.length){
+   const got=readSync(fd,buf,off,buf.length-off,off);
+   if(got<=0)throw Error('incomplete_model_output');
+   off+=got;
+  }
+  return buf.toString('utf8');
+ }finally{closeSync(fd);}
+}
 // Models have a NETWORK connection to their provider but do not inherit
 // the host HOME, GH credentials, worker database, checkout or host /proc.
 // The Bubblewrap namespace is the security boundary, not a prompt instruction.
@@ -129,7 +150,7 @@ function isolatedModel(which,argv,{input,outputFile,timeout=110000}={}){
   });
   if(run.status!==0||run.error||run.signal)
    throw Error(which+'_sandboxed_model_failed');
-  if(outputFile)return readFileSync(join(temp,outputFile),'utf8');
+  if(outputFile)return readBoundedModelOutput(join(temp,outputFile));
   return run.stdout;
  }finally{rmSync(temp,{recursive:true,force:true})}
 }
