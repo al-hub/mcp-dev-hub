@@ -39,7 +39,7 @@ test('sandbox uses an isolated namespace and an immutable fixed test command',()
  assert.equal(args.includes('--share-net'),false);
  assert.equal(args.includes('--bind'),false);
  assert.equal(args.includes('/home/host'),false);
- assert.deepEqual(args.slice(-4),['--','/usr/bin/node','--test','tests/check.test.mjs']);
+ assert.deepEqual(args.slice(-5),['--','/usr/bin/node','--test','--test-reporter=tap','tests/check.test.mjs']);
  assert.ok(!args.includes('/etc/passwd'));
  assert.equal(args.filter(x=>x==='--ro-bind').length,6);
 });
