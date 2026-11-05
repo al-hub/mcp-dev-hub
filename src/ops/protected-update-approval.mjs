@@ -20,8 +20,9 @@ const FIELDS = Object.freeze([
 const fail = () => { throw Error('invalid_protected_approval'); };
 const sha256 = text => createHash('sha256').update(text,'utf8').digest('hex');
 const keysExact = value => value!==null && typeof value==='object' &&
-  !Array.isArray(value) && Object.keys(value).sort().join('\0')===
-  [...FIELDS].sort().join('\0');
+  !Array.isArray(value) &&
+  Object.keys(value).length===FIELDS.length &&
+  FIELDS.every(field=>Object.hasOwn(value,field));
 
 /**
  * Read-only cryptographic guard. Every trusted* argument MUST be acquired
