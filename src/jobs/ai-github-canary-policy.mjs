@@ -62,6 +62,17 @@ export function validateReviewVerdict(raw,{head,base}={}){
  return data.verdict==='PASS'&&data.head===head&&data.base===base&&
    Array.isArray(data.findings)&&data.findings.length===0;
 }
+// Server-side invariant: strict required CI rejects stale PR heads at merge
+// time, including when main advances after our last read. Admins may not bypass.
+export function verifiedStrictGitHubProtection(p){
+ const checks=p?.required_status_checks;
+ return checks?.strict===true&&
+  Array.isArray(checks?.contexts)&&checks.contexts.includes('bootstrap')&&
+  Array.isArray(checks?.checks)&&
+  checks.checks.some(row=>row.context==='bootstrap'&&row.app_id===15368)&&
+  p?.enforce_admins?.enabled===true&&
+  p?.allow_force_pushes?.enabled===false;
+}
 export function ensureCanaryTable(db){
  db.exec('CREATE TABLE IF NOT EXISTS ai_github_canary ('+
   'job_id TEXT PRIMARY KEY, phase TEXT NOT NULL, base_sha TEXT NOT NULL,'+
