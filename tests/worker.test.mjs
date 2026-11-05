@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openDb,addJob,jobs,ALLOWED,publicEvents,eventHistory,eventBounds,reconcile,tick,canStartAiDevelopment} from '../scripts/worker.mjs';
+import {openDb,addJob,jobs,ALLOWED,publicEvents,eventHistory,eventBounds,reconcile,tick,canStartAiDevelopment,ensureSession} from '../scripts/worker.mjs';
 
 test('durable queue accepts only approved fixed tasks and rejects duplicate IDs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'worker-test-'));
@@ -114,6 +114,34 @@ test('SQLite event IDs persist across reopening and capture each state transitio
  }finally{
   if(oldDir===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;else process.env.MCP_DEV_HUB_STATE_DIR=oldDir;
   if(oldScope===undefined)delete process.env.MCP_DEV_HUB_APPROVED_SCOPE;else process.env.MCP_DEV_HUB_APPROVED_SCOPE=oldScope;
+  rmSync(dir,{recursive:true,force:true});
+ }
+});
+
+
+test('tmux session creation race succeeds only after exact session becomes visible',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'tmux-race-'));
+ const previousPath=process.env.PATH, previousReady=process.env.TMUX_RACE_READY;
+ const binary=join(dir,'tmux'),ready=join(dir,'ready');
+ try{
+  const racing=['#!/bin/sh',
+   'case "$1" in',
+   '  has-session) test -f "$TMUX_RACE_READY"; exit $? ;;',
+   '  new-session) : > "$TMUX_RACE_READY"; exit 1 ;;',
+   'esac','exit 1',''].join('\n');
+  writeFileSync(binary,racing,{mode:0o700});
+  chmodSync(binary,0o700);
+  process.env.PATH=dir+':'+(previousPath||'/usr/bin:/bin');
+  process.env.TMUX_RACE_READY=ready;
+  assert.doesNotThrow(()=>ensureSession(),
+   'another observer creating the exact session must not count as unavailable');
+
+  writeFileSync(binary,'#!/bin/sh\nexit 1\n',{mode:0o700});
+  assert.throws(()=>ensureSession(),/tmux unavailable/,
+   'a real session creation failure must remain fail-closed');
+ }finally{
+  if(previousPath===undefined)delete process.env.PATH;else process.env.PATH=previousPath;
+  if(previousReady===undefined)delete process.env.TMUX_RACE_READY;else process.env.TMUX_RACE_READY=previousReady;
   rmSync(dir,{recursive:true,force:true});
  }
 });
