@@ -11,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 // Never import the mutable Worker source into this privileged controller.
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,SHA,
- canaryAuthorized,renderCandidate,validateReviewVerdict,startCanary,advanceCanary,blockCanary
+ canaryAuthorized,renderCandidate,validateReviewVerdict,verifiedStrictGitHubProtection,startCanary,advanceCanary,blockCanary
 } from './ai-github-canary-policy.mjs';
 
 const stateDir=()=>process.env.MCP_DEV_HUB_STATE_DIR||join(homedir(),'.local','state','mcp-dev-hub');
@@ -59,11 +59,7 @@ function mainSha(){
 }
 function requireProtection(){
  const p=gh(BASE+'/branches/main/protection');
- const checks=p.required_status_checks;
- if(checks?.strict!==true||!checks.contexts?.includes('bootstrap')||
-   !Array.isArray(checks.checks)||
-   !checks.checks.some(row=>row.context==='bootstrap'&&row.app_id===15368)||
-   p.enforce_admins?.enabled!==true||p.allow_force_pushes?.enabled!==false)
+ if(!verifiedStrictGitHubProtection(p))
   throw Error('branch_protection_invalid');
 }
 async function ciFor({sha,event,prNumber,timeoutMs=180000}){
