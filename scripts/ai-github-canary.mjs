@@ -20,6 +20,7 @@ function openDb(){
  if(!dir.startsWith('/')||dir.includes('\0'))throw Error('invalid_state_directory');
  return new DatabaseSync(join(dir,'worker.sqlite'),{timeout:5000});
 }
+const ISOLATED_HOME=join('/home','agent');
 const BASE='repos/'+CANARY_REPO;
 const CLI_TIMEOUT=20000;
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -96,7 +97,7 @@ function isolatedModel(which,argv,{input,outputFile,timeout=110000}={}){
  const userHome=home();
  const exe=which==='agy'
   ?join(userHome,'.local/bin/agy'):'/usr/local/lib/mcp-dev-hub/codex';
- const sandboxExe='/home/agent/bin/'+which;
+ const sandboxExe=join(ISOLATED_HOME,'bin',which);
  const temp=mkdtempSync(join(tmpdir(),'mcp23-model-isolated-'));
  try {
   const args=[
@@ -108,18 +109,18 @@ function isolatedModel(which,argv,{input,outputFile,timeout=110000}={}){
    '--ro-bind','/etc/resolv.conf','/etc/resolv.conf',
    '--ro-bind','/etc/hosts','/etc/hosts',
    '--ro-bind','/etc/ssl/certs','/etc/ssl/certs',
-   '--dir','/home','--tmpfs','/home/agent',
-   '--dir','/home/agent/bin','--dir','/home/agent/.gemini',
-   '--dir','/home/agent/.codex','--dir','/home/agent/out',
+   '--dir','/home','--tmpfs',ISOLATED_HOME,
+   '--dir',join(ISOLATED_HOME,'bin'),'--dir',join(ISOLATED_HOME,'.gemini'),
+   '--dir',join(ISOLATED_HOME,'.codex'),'--dir',join(ISOLATED_HOME,'out'),
    '--ro-bind',exe,sandboxExe,
-   '--bind',temp,'/home/agent/out'
+   '--bind',temp,join(ISOLATED_HOME,'out')
   ];
   if(which==='agy')args.push(
-   '--ro-bind',join(userHome,'.gemini'),'/home/agent/.gemini');
-  else args.push('--ro-bind',join(userHome,'.codex'),'/home/agent/.codex');
-  args.push('--setenv','HOME','/home/agent',
-   '--setenv','PATH','/usr/bin:/bin:/home/agent/bin',
-   '--setenv','CODEX_HOME','/home/agent/.codex',
+   '--ro-bind',join(userHome,'.gemini'),join(ISOLATED_HOME,'.gemini'));
+  else args.push('--ro-bind',join(userHome,'.codex'),join(ISOLATED_HOME,'.codex'));
+  args.push('--setenv','HOME',ISOLATED_HOME,
+   '--setenv','PATH','/usr/bin:/bin:'+join(ISOLATED_HOME,'bin'),
+   '--setenv','CODEX_HOME',join(ISOLATED_HOME,'.codex'),
    '--setenv','LANG','C.UTF-8','--chdir','/tmp',
    '--',sandboxExe,...argv);
   const run=spawnSync('/usr/bin/bwrap',args,{
@@ -169,7 +170,7 @@ function reviewCode({patch,head,base}){
   'This is NOT a GitHub official APPROVED. PATCH START\n'+patch+'\nPATCH END';
  const out=isolatedModel('codex',[
   'exec','--skip-git-repo-check','--output-last-message',
-  '/home/agent/out/verdict.txt','-'
+  join(ISOLATED_HOME,'out','verdict.txt'),'-'
  ],{input:prompt,outputFile:'verdict.txt',timeout:145000});
  if(!out.trimStart().startsWith('VERDICT: PASS')||
     !out.includes('HEAD: '+head)||!out.includes('BASE: '+base))
