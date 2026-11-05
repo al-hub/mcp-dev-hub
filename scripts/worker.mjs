@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import {canaryAuthorized} from '../src/jobs/ai-github-canary-policy.mjs';
 import {claimDevelopment} from '../src/jobs/ai-development-claims.mjs';
 import {randomBytes} from 'node:crypto';
 import {trackPr,recordPrGate,prNextAction} from '../src/jobs/pr-automation.mjs';
@@ -25,6 +26,7 @@ export function canStartAiDevelopment(){return false;}
 export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
+  'ai-github-canary': ['node', 'scripts/ai-github-canary.mjs'],
   'repo-check': ['npm', 'run', 'check'],
   'cli-smoke': ['node', 'scripts/cli-smoke.mjs'],
   'review-opencode': ['node', '__trusted_runner_required__'],
@@ -278,6 +280,15 @@ export function tick(db) {
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false; // Never spawn checkout-controlled code before OS isolation exists.
   }
+  if(job.kind==='ai-github-canary' && !canaryAuthorized({
+    job,scope:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
+    write:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
+    push:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
+    enabled:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY
+  })){
+    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+    return false;
+  }
   if(job.target!=='local' || process.env.MCP_DEV_HUB_APPROVED_SCOPE!==[job.project,job.target,job.workspace].join(':')){
     db.prepare('UPDATE jobs SET state=?,updated_at=? WHERE id=?').run('blocked',now(),job.id);return false;
   }
@@ -293,7 +304,7 @@ export function tick(db) {
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false;
   }
-  if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && baseSha){
+  if(job.kind!=='ai-github-canary' && process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && baseSha){
     try {
       const existing=db.prepare("SELECT path FROM managed_worktrees WHERE task_id=?").get(job.id);
       if(existing)executionDir=existing.path;
@@ -328,11 +339,21 @@ export function tick(db) {
     MCP_DEV_HUB_CODEX_BIN:process.env.MCP_DEV_HUB_CODEX_BIN||'codex'
   }:null;
   const devEnv=aiSettings?Object.entries(aiSettings).map(([key,value])=>key+'='+quoteShell(value)).join(' ')+' ':'';
+  const canaryEnv=job.kind==='ai-github-canary'?Object.entries({
+    MCP_DEV_HUB_CANARY_JOB_ID:job.id,
+    MCP_DEV_HUB_STATE_DIR:stateDir(),
+    MCP_DEV_HUB_APPROVED_SCOPE:process.env.MCP_DEV_HUB_APPROVED_SCOPE,
+    MCP_DEV_HUB_ENABLE_GH_CANARY:process.env.MCP_DEV_HUB_ENABLE_GH_CANARY,
+    MCP_DEV_HUB_ENABLE_AI_WRITE:process.env.MCP_DEV_HUB_ENABLE_AI_WRITE,
+    MCP_DEV_HUB_ENABLE_AI_PUSH:process.env.MCP_DEV_HUB_ENABLE_AI_PUSH,
+    MCP_DEV_HUB_AGY_BIN:process.env.MCP_DEV_HUB_AGY_BIN,
+    MCP_DEV_HUB_CODEX_BIN:process.env.MCP_DEV_HUB_CODEX_BIN
+  }).map(([key,value])=>key+'='+quoteShell(value||'')).join(' ')+' ':'';
   const nonce=randomBytes(16).toString('hex');
   const proofDir=join(stateDir(),'run-proofs');
   mkdirSync(proofDir,{recursive:true,mode:0o700});
   const proofFile=join(proofDir,job.id+'-attempt-'+attempt+'.txt');
-  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+devEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
+  const script='source "$HOME/.nvm/nvm.sh" 2>/dev/null || true; printf "RUN '+job.id+'\\n"; '+reviewEnv+devEnv+canaryEnv+cmd+'; rc=$?; printf "END '+job.id+' attempt='+attempt+' proof='+nonce+' exit=%s\\n" "$rc" > '+quoteShell(proofFile)+'.tmp; mv '+quoteShell(proofFile)+'.tmp '+quoteShell(proofFile)+'; exec bash';
   const claimed=db.prepare('UPDATE jobs SET state=?,window=?,updated_at=? WHERE id=? AND state=?').run('starting',win,now(),job.id,'queued');
   if(claimed.changes!==1)return false;
   db.prepare('INSERT INTO job_run_nonces(job_id,attempt,nonce) VALUES(?,?,?) ON CONFLICT(job_id) DO UPDATE SET attempt=excluded.attempt,nonce=excluded.nonce').run(job.id,attempt,nonce);
