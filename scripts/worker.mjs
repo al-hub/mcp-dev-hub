@@ -47,7 +47,7 @@ function immutableTrustedPath(path){
 }
 // Fail closed unless the trusted reviewer launcher was deployed outside any
 // checkout or PR-controlled worktree, with non-symlink regular files.
-export function trustedReviewRunner({executionDir,baseSha}={}){
+function trustedRunnerFile(filename,{executionDir,baseSha}={}){
  const root=process.env.MCP_DEV_HUB_TRUSTED_RUNNER_ROOT;
  const bwrap=process.env.MCP_DEV_HUB_BWRAP_BIN;
  if(typeof root!=='string'||!isAbsolute(root)||typeof bwrap!=='string'||
@@ -59,7 +59,7 @@ export function trustedReviewRunner({executionDir,baseSha}={}){
   const blocked=[review,repo,worktrees,realpathSync(process.cwd())];
   if(normalized!==root||realpathSync(root)!==root||
     blocked.some(path=>root===path||root.startsWith(path+sep)||path.startsWith(root+sep)))return null;
-  const dir=lstatSync(root),file=join(root,'review-opencode.mjs'),st=lstatSync(file);
+  const dir=lstatSync(root),file=join(root,filename),st=lstatSync(file);
   if(!dir.isDirectory()||dir.isSymbolicLink()||(dir.mode&0o022)!==0||
     !st.isFile()||st.isSymbolicLink()||(st.mode&0o022)!==0||realpathSync(file)!==file)return null;
   const bw=lstatSync(bwrap);
@@ -68,6 +68,9 @@ export function trustedReviewRunner({executionDir,baseSha}={}){
   return file;
  }catch{return null;}
 }
+
+export function trustedReviewRunner(options={}) { return trustedRunnerFile('review-opencode.mjs',options); }
+export function trustedRepoCheckRunner(options={}) { return trustedRunnerFile('trusted-repo-check.mjs',options); }
 
 export function publicEvents(db, project) {
   if (project !== undefined && !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(project)) throw Error('invalid project');
@@ -271,7 +274,7 @@ export function tick(db) {
   if(!job)return false;
   // PR checkout code must never run via npm, CLI smoke or AI development
   // without independently verified OS isolation. No flag can bypass this gate.
-  if(['ai-development','repo-check','cli-smoke'].includes(job.kind)&&!canStartAiDevelopment()){
+  if(['ai-development','cli-smoke'].includes(job.kind)&&!canStartAiDevelopment()){
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false; // Never spawn checkout-controlled code before OS isolation exists.
   }
@@ -290,6 +293,10 @@ export function tick(db) {
     db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
     return false;
   }
+  if(job.kind==='repo-check' && (!baseSha||!process.env.MCP_DEV_HUB_WORKTREE_ROOT||!process.env.MCP_DEV_HUB_WORKTREE_REPO)){
+    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+    return false; // Read-only tests require an exact pinned, isolated worktree.
+  }
   if(process.env.MCP_DEV_HUB_WORKTREE_ROOT && process.env.MCP_DEV_HUB_WORKTREE_REPO && baseSha){
     try {
       const existing=db.prepare("SELECT path FROM managed_worktrees WHERE task_id=?").get(job.id);
@@ -300,11 +307,15 @@ export function tick(db) {
   // Results of earlier attempts remain immutable; a new attempt uses a different result file.
   // The command is selected exclusively from the fixed allowlist; no user-supplied shell text.
   const trustedRunner=job.kind==='review-opencode'?trustedReviewRunner({executionDir,baseSha}):null;
-  if(job.kind==='review-opencode'&&!trustedRunner){
+  const trustedCheck=job.kind==='repo-check'?trustedRepoCheckRunner({executionDir,baseSha}):null;
+  if((job.kind==='review-opencode'&&!trustedRunner)||(job.kind==='repo-check'&&!trustedCheck)){
    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
    return false;
   }
-  const argv=trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
+  // Never execute checkout-controlled npm or test source on the Worker host.
+  const argv=trustedCheck?['/usr/bin/node',trustedCheck,
+    process.env.MCP_DEV_HUB_WORKTREE_ROOT,executionDir,baseSha]:
+    trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
   const cmd=argv.map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+
