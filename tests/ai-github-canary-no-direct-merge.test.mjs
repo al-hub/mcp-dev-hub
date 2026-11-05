@@ -27,7 +27,7 @@ test('Server-side strict main protection is required without admin bypass',()=>{
 test('Verified strict base and exact HEAD are checked before protected merge',()=>{
  const s=readFileSync(new URL('../scripts/ai-github-canary.mjs',import.meta.url),'utf8');
  const begin=s.indexOf("  if(mainSha()!==base)throw Error('main_changed_before_merge');");
- const checked=s.indexOf("  verifyPr(prNumber,head,base);",begin);
+ const checked=s.indexOf("  await awaitCleanPr(prNumber,head,base);",begin);
  const strict=s.indexOf("  requireProtection();",checked);
  const dispatch=s.indexOf("  advance('merge_dispatching');",strict);
  const merge=s.indexOf("  const merged=gh(BASE+'/pulls/'+prNumber+'/merge'",dispatch);
