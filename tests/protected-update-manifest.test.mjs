@@ -13,7 +13,7 @@ const valid=()=>({
   {name:'ai-github-canary.mjs',sha256:'c'.repeat(64),bytes:2000}
  ]
 });
-const accepts=value=>validateProposedProtectedUpdate(value,{verifiedCommit:sha});
+const accepts=value=>validateProposedProtectedUpdate(JSON.stringify(value),{verifiedCommit:sha});
 test('valid controller pair is normalized and frozen (not an authorization)',()=>{
  const got=accepts(valid());
  assert.equal(got.repository,PROTECTED_REPOSITORY);
@@ -25,9 +25,9 @@ test('valid controller pair is normalized and frozen (not an authorization)',()=
  assert.ok(got.files.every(Object.isFrozen));
 });
 test('manifest rejects untrusted or stale commit',()=>{
- assert.throws(()=>validateProposedProtectedUpdate(valid()),/trusted_commit_missing/);
- assert.throws(()=>validateProposedProtectedUpdate(valid(),{verifiedCommit:'deadbeef'}),/trusted_commit_missing/);
- assert.throws(()=>validateProposedProtectedUpdate(valid(),{verifiedCommit:'d'.repeat(40)}),/invalid_protected_update_manifest/);
+ assert.throws(()=>validateProposedProtectedUpdate(JSON.stringify(valid())),/trusted_commit_missing/);
+ assert.throws(()=>validateProposedProtectedUpdate(JSON.stringify(valid()),{verifiedCommit:'deadbeef'}),/trusted_commit_missing/);
+ assert.throws(()=>validateProposedProtectedUpdate(JSON.stringify(valid()),{verifiedCommit:'d'.repeat(40)}),/invalid_protected_update_manifest/);
  assert.throws(()=>accepts({...valid(),commit:'d'.repeat(40)}),/invalid_protected_update_manifest/);
 });
 test('manifest rejects changed repository or claimed bundle capability',()=>{
@@ -71,4 +71,39 @@ test('prototype metadata and arbitrary steps are rejected',()=>{
  assert.throws(()=>accepts({...v,files:[null,v.files[1]]}),/invalid_protected_update_file/);
  assert.throws(()=>accepts({...v,files:{0:v.files[0],1:v.files[1],length:2}}),
   /invalid_protected_update_file_count/);
+});
+
+test('a JSON text boundary rejects accessors, Proxy objects and oversized input',()=>{
+ let triggered=0;
+ const accessor={get version(){triggered++;throw Error('accessor executed');}};
+ assert.throws(()=>validateProposedProtectedUpdate(accessor,{verifiedCommit:sha}),/invalid_update_json_input/);
+ const proxy=new Proxy({}, {get(){triggered++;throw Error('proxy executed');}});
+ assert.throws(()=>validateProposedProtectedUpdate(proxy,{verifiedCommit:sha}),/invalid_update_json_input/);
+ assert.equal(triggered,0);
+ assert.throws(()=>validateProposedProtectedUpdate('x'.repeat(4097),{verifiedCommit:sha}),/invalid_update_json_input/);
+ assert.throws(()=>validateProposedProtectedUpdate('{truncated',{verifiedCommit:sha}),/invalid_update_json_input/);
+ assert.throws(()=>validateProposedProtectedUpdate('null',{verifiedCommit:sha}),/invalid_protected_update_manifest/);
+});
+test('JSON own prototype-style metadata and extra fields are rejected',()=>{
+ const obj=JSON.parse(JSON.stringify(valid()));
+ obj.__proto__ = {constructor:'an attacker should not control privilege'};
+ // __proto__ assignment changes a JS object prototype; the actual JSON
+ // attack surface is an OWN "__proto__" key parsed from JSON text.
+ const withOwnProto='{"__proto__":{"admin":true},'+JSON.stringify(valid()).slice(1);
+ assert.throws(()=>validateProposedProtectedUpdate(withOwnProto,{verifiedCommit:sha}),/invalid_protected_update_manifest/);
+ const constructorTag='{"constructor":"overwrite",'+JSON.stringify(valid()).slice(1);
+ assert.throws(()=>validateProposedProtectedUpdate(constructorTag,{verifiedCommit:sha}),/invalid_protected_update_manifest/);
+ const fileProto=JSON.parse(JSON.stringify(valid()));
+ const f=JSON.stringify(fileProto.files[0]).slice(1);
+ const raw=JSON.stringify({...fileProto,files:[JSON.parse('{"__proto__":true,'+f),fileProto.files[1]]});
+ assert.throws(()=>validateProposedProtectedUpdate(raw,{verifiedCommit:sha}),/invalid_protected_update_file/);
+});
+test('exact file-size limits and JSON type boundaries',()=>{
+ const v=valid();
+ assert.doesNotThrow(()=>accepts({...v,files:[{...v.files[0],bytes:1},{...v.files[1],bytes:262144}]}));
+ assert.throws(()=>accepts({...v,files:[{...v.files[0],bytes:262145},v.files[1]]}),/invalid_protected_update_file/);
+ assert.throws(()=>accepts({...v,files:[{...v.files[0],sha256:null},v.files[1]]}),/invalid_protected_update_file/);
+ assert.throws(()=>accepts({...v,files:[{...v.files[0],name:null},v.files[1]]}),/invalid_protected_update_file/);
+ assert.throws(()=>accepts({...v,commit:123}),/invalid_protected_update_manifest/);
+ assert.throws(()=>accepts({...v,files:[{...v.files[0],bytes:true},v.files[1]]}),/invalid_protected_update_file/);
 });
