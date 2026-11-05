@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {sandboxArgs,validateScope} from '../scripts/trusted-repo-check.mjs';
+import {sandboxArgs,validateScope,verifiedTapSummary} from '../scripts/trusted-repo-check.mjs';
 
 function git(cwd,...args){
  const r=spawnSync('/usr/bin/git',args,{cwd,encoding:'utf8',env:{
@@ -63,3 +63,13 @@ test('untrusted symlinked test file is rejected even if committed',()=>fixture(c
  git(ctx.worktree,'commit','-qm','synthetic symlink');
  assert.throws(()=>validateScope({...ctx,head:git(ctx.worktree,'rev-parse','HEAD')}),/untrusted_test_file/);
 }));
+
+test('final TAP summary, not an earlier nested summary, controls the verdict',()=>{
+ const earlier='# tests 2\n# pass 2\n# fail 0\n';
+ const final='1..130\n# tests 130\n# suites 0\n# pass 130\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1200\n';
+ assert.equal(verifiedTapSummary(earlier+final,20),130);
+ assert.equal(verifiedTapSummary(earlier,20),null);
+ assert.equal(verifiedTapSummary(final.replace('# fail 0','# fail 1'),20),null);
+ assert.equal(verifiedTapSummary(final.replace('# skipped 0','# skipped 1'),20),null);
+ assert.equal(verifiedTapSummary(final.replace('# tests 130','# tests 10'),20),null);
+});
