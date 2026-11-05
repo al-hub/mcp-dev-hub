@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,rmSync,readFileSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,rmSync,readFileSync,existsSync,chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {sandboxArgs,resourceScopeArgs,validateScope,verifiedTapSummary,materializeSnapshot} from '../scripts/trusted-repo-check.mjs';
@@ -102,6 +102,7 @@ test('untrusted code runs inside a resource-bounded user scope',()=>{
 });
 test('tampering with the named commit object fails before any test executes',()=>fixture(ctx=>{
  const object=join(ctx.repoDir,'.git','objects',ctx.head.slice(0,2),ctx.head.slice(2));
+ chmodSync(object,0o600);
  writeFileSync(object,'corrupted synthetic object');
  assert.throws(()=>validateScope(ctx),/git_object_unavailable|git_object_hash_mismatch/);
 }));
