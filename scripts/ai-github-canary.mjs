@@ -263,7 +263,7 @@ function persistCanaryProof(exitCode){
  const proofFile=process.env.MCP_DEV_HUB_CANARY_PROOF_FILE;
  const expected=join(stateDir(),'run-proofs',CANARY_JOB_ID+'-attempt-1.txt');
  if(jobId!==CANARY_JOB_ID||attempt!=='1'||!/^[0-9a-f]{32}$/.test(nonce||'')||
-    proofFile!==expected||existsSync(expected)||![0,75].includes(exitCode))
+    proofFile!==expected||existsSync(expected)||![0,75,76].includes(exitCode))
   throw Error('invalid_or_existing_proof');
  const temp=expected+'.tmp.'+process.pid;
  const line='END '+jobId+' attempt=1 proof='+nonce+' exit='+exitCode+'\n';
@@ -276,7 +276,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  try{
   const result=await orchestrate(db);
   process.stdout.write(JSON.stringify(result)+'\n');
-  code=result.state==='succeeded'?0:75;
+  code=result.state==='succeeded'?0:result.state==='unknown'?76:75;
  }catch{
   process.stdout.write('{"state":"blocked","reason":"admission_denied"}\n');
  }finally{
