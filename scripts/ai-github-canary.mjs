@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 import {openDb} from './worker.mjs';
 import {
  CANARY_JOB_ID,CANARY_REPO,CANARY_PATH,CANARY_BRANCH,SHA,
- canaryAuthorized,validateCandidate,startCanary,advanceCanary,blockCanary
+ canaryAuthorized,renderCandidate,startCanary,advanceCanary,blockCanary
 } from '../src/jobs/ai-github-canary-policy.mjs';
 
 const BASE='repos/'+CANARY_REPO;
@@ -75,15 +75,13 @@ function generateCode(){
  const bin=process.env.MCP_DEV_HUB_AGY_BIN;
  if(typeof bin!=='string'||!bin.startsWith('/')||bin.includes('\0'))
   throw Error('agy_unconfigured');
- const prompt='Produce ONLY valid JavaScript source for one NEW PUBLIC Node24 test file '+
-  CANARY_PATH+'. No Markdown, no instructions, no commands or outside tools. '+
-  'Exactly three ES imports: node:test, node:assert/strict, and '+
-  '../src/dashboard/read-only-server.mjs importing safeBearer. '+
-  'Create a deterministic test with synthetic token EXACTLY 24 ASCII characters, '+
-  'assert safeBearer succeeds for exact Bearer prefix + that token, '+
-  'fails with wrong token, and rejects a synthetic 23-character expected token. '+
-  'Use node:test and assert.strictEqual or assert.equal, no subprocess, network, file, '+ 
-  'environment, dynamic imports, other modules, or production changes.';
+ const prompt='Return ONLY a JSON object with exactly two string keys token24 and token23. '+
+  'For a PUBLIC synthetic Node24 test fixture for '+CANARY_PATH+'. '+
+  'token24 must be exactly the literal sample-public-abcdefghij '+
+  '(24 characters, 10 lowercase suffix letters); '+
+  'token23 must be exactly sample-public-abcdefghi '+
+  '(23 characters, 9 lowercase suffix letters). '+
+  'No code, markdown, prose, URLs, shell commands, other keys or private data.';
  const r=spawnSync(bin,['--mode','plan','--sandbox','--disable-slash-commands',
   '--print-timeout','70s','--print='+prompt],{
   cwd:process.cwd(),encoding:'utf8',timeout:100000,maxBuffer:10000,
@@ -92,8 +90,7 @@ function generateCode(){
  });
  if(r.status!==0||r.error||r.signal)throw Error('agy_unconfirmed');
  const source=r.stdout.trim();
- if(!validateCandidate(source))throw Error('candidate_rejected');
- return source+'\n';
+ return renderCandidate(source);
 }
 function verifyPr(prNumber,headSha){
  if(!Number.isSafeInteger(prNumber)||prNumber<1||!SHA.test(headSha))throw Error('invalid_pr');
