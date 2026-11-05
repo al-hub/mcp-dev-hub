@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,rmSync,readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {sandboxArgs,validateScope,verifiedTapSummary,materializeSnapshot} from '../scripts/trusted-repo-check.mjs';
+import {sandboxArgs,resourceScopeArgs,validateScope,verifiedTapSummary,materializeSnapshot} from '../scripts/trusted-repo-check.mjs';
 import {trustedRepoCheckRunner,canStartAiDevelopment} from '../scripts/worker.mjs';
 
 function git(cwd,...args){
@@ -90,3 +90,18 @@ test('Worker still refuses AI writes and an absent trusted check launcher',()=>{
  assert.equal(canStartAiDevelopment(),false);
  assert.equal(trustedRepoCheckRunner({executionDir:process.cwd(),baseSha:'a'.repeat(40)}),null);
 });
+
+test('untrusted code runs inside a resource-bounded user scope',()=>{
+ const args=resourceScopeArgs({snapshot:'/synthetic/snapshot',
+   hosts:'/tmp/synthetic-hosts',testFiles:['tests/check.test.mjs']});
+ assert.deepEqual(args.slice(0,4),['--user','--scope','--collect','--quiet']);
+ for(const limit of ['MemoryMax=1G','TasksMax=64','CPUQuota=100%'])assert.ok(args.includes(limit));
+ assert.ok(args.includes('/usr/bin/bwrap'));
+ assert.ok(args.includes('--unshare-all'));
+ assert.ok(!args.includes('--share-net'));
+});
+test('tampering with the named commit object fails before any test executes',()=>fixture(ctx=>{
+ const object=join(ctx.repoDir,'.git','objects',ctx.head.slice(0,2),ctx.head.slice(2));
+ writeFileSync(object,'corrupted synthetic object');
+ assert.throws(()=>validateScope(ctx),/git_object_unavailable|git_object_hash_mismatch/);
+}));
