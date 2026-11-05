@@ -13,7 +13,13 @@ const hasKeys=(value,keys)=>{
  if(value===null||typeof value!=='object'||Array.isArray(value))return false;
  return Object.keys(value).sort().join('\0')===keys.slice().sort().join('\0');
 };
-export function validateProposedProtectedUpdate(value,{verifiedCommit}={}){
+export function validateProposedProtectedUpdate(rawJson,{verifiedCommit}={}){
+ // An inert JSON text boundary prevents accessor/Proxy execution inside a
+ // future privileged verifier. No reviver, eval, JSON-like object or JS code.
+ if(typeof rawJson!=='string'||Buffer.byteLength(rawJson,'utf8')>4096)
+  throw Error('invalid_update_json_input');
+ let value;
+ try{value=JSON.parse(rawJson);}catch{throw Error('invalid_update_json_input');}
  // verifiedCommit MUST come from a separately authenticated root-owned
  // verifier; it is not an authorization token and does not prove code safety.
  if(typeof verifiedCommit!=='string'||!SHA40.test(verifiedCommit))
