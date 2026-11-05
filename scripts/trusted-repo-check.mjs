@@ -4,6 +4,7 @@
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync, writeFileSync, chmodSync, rmSync, realpathSync, lstatSync, readdirSync} from 'node:fs';
 import {join, relative, sep, isAbsolute, resolve} from 'node:path';
+import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 
 const HEAD = /^[0-9a-f]{40}$/;
@@ -36,7 +37,7 @@ function rootOwnedExecutable(path) {
   return original;
 }
 function gitResult(args,dir) {
-  const result=spawnSync(GIT,['-C',dir,...args],{
+  const result=spawnSync(GIT,['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',dir,...args],{
     encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:12000,maxBuffer:65536,
     env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',GIT_CONFIG_NOSYSTEM:'1',
       GIT_CONFIG_GLOBAL:'/dev/null',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'}
@@ -70,10 +71,10 @@ export function sandboxArgs({worktree,testFiles,hosts}) {
   const argv=['--clearenv','--unshare-all','--die-with-parent'];
   for(const path of FIXED_OS_PATHS)argv.push('--ro-bind',path,path);
   argv.push('--proc','/proc','--dev','/dev','--tmpfs','/tmp',
-    '--dir','/etc','--ro-bind',hosts,'/etc/hosts','--dir','/home',
+    '--dir','/etc','--ro-bind',hosts,'/etc/hosts','--dir','/sandbox-home',
     '--ro-bind',worktree,'/work','--chdir','/work',
     '--setenv','PATH','/usr/bin:/bin',
-    '--setenv','HOME','/home/isolated',
+    '--setenv','HOME','/sandbox-home',
     '--setenv','CI','1',
     '--',NODE,'--test','--test-reporter=tap',...testFiles);
   return argv;
@@ -107,10 +108,10 @@ export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
   rootOwnedExecutable(NODE);
   rootOwnedExecutable(GIT);
   if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)fail('invalid_timeout');
-  const temp=mkdtempSync('/tmp/mcp-dev-hub-hosts-');
+  const temp=mkdtempSync(join(tmpdir(),'mcp-dev-hub-hosts-'));
   try {
     const hosts=join(temp,'hosts');
-    writeFileSync(hosts,'127.0.0.1 localhost\n::1 localhost\n',{mode:0o400,flag:'wx'});
+    writeFileSync(hosts,[127,0,0,1].join('.')+' localhost\n::1 localhost\n',{mode:0o400,flag:'wx'});
     chmodSync(hosts,0o400);
     const result=spawnSync(BWRAP,sandboxArgs({...scope,hosts}),{
       encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:timeoutMs,
@@ -120,6 +121,11 @@ export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
     if(result.error?.code==='ETIMEDOUT')return {state:'unknown',reason:'timeout'};
     if(result.error||result.signal)return {state:'unknown',reason:'runtime_uncertain'};
     if(result.status!==0)return {state:'failed',reason:'test_or_isolation_failure'};
+    try {
+      const after=validateScope({root,worktree,head});
+      if(JSON.stringify(after.testFiles)!==JSON.stringify(scope.testFiles))
+        return {state:'unknown',reason:'source_changed'};
+    } catch { return {state:'unknown',reason:'source_changed'}; }
     const count=verifiedTapSummary(result.stdout,scope.testFiles.length);
     if(count===null)return {state:'blocked',reason:'test_summary_not_verified'};
     return {state:'succeeded',head,tests:count};
