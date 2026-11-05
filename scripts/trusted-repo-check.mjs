@@ -78,6 +78,58 @@ export function sandboxArgs({worktree,testFiles,hosts}) {
     '--',NODE,'--test','--test-reporter=tap',...testFiles);
   return argv;
 }
+// Prefer the final TAP epilogue. Earlier TAP-like lines can be nested test
+// output and must not be mistaken for the overall result.
+export function verifiedTapSummary(stdout,minTests=1) {
+  if(typeof stdout!=='string'||!Number.isSafeInteger(minTests)||minTests<1)return null;
+  const lines=stdout.trimEnd().split(/\r?\n/);
+  const tail=lines.slice(-10);
+  const counts=Object.fromEntries(['tests','pass','fail','cancelled','skipped'].map(key=>{
+    const values=tail.filter(line=>new RegExp('^# '+key+' [0-9]+
+  const scope=validateScope({root,worktree,head});
+  rootOwnedExecutable(BWRAP);
+  rootOwnedExecutable(NODE);
+  rootOwnedExecutable(GIT);
+  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)fail('invalid_timeout');
+  const temp=mkdtempSync('/tmp/mcp-dev-hub-hosts-');
+  try {
+    const hosts=join(temp,'hosts');
+    writeFileSync(hosts,'127.0.0.1 localhost\n::1 localhost\n',{mode:0o400,flag:'wx'});
+    chmodSync(hosts,0o400);
+    const result=spawnSync(BWRAP,sandboxArgs({...scope,hosts}),{
+      encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:timeoutMs,
+      maxBuffer:512*1024,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'}
+    });
+    // Never echo untrusted test output into a public log.
+    if(result.error?.code==='ETIMEDOUT')return {state:'unknown',reason:'timeout'};
+    if(result.error||result.signal)return {state:'unknown',reason:'runtime_uncertain'};
+    if(result.status!==0)return {state:'failed',reason:'test_or_isolation_failure'};
+    const count=verifiedTapSummary(result.stdout,scope.testFiles.length);
+    if(count===null)return {state:'blocked',reason:'test_summary_not_verified'};
+    return {state:'succeeded',head,tests:count};
+  } finally {rmSync(temp,{recursive:true,force:true});}
+}
+if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    if(process.argv.length!==5)fail('usage_rejected');
+    const outcome=runIsolatedRepoCheck({
+      root:process.argv[2],worktree:process.argv[3],head:process.argv[4]
+    });
+    process.stdout.write(JSON.stringify(outcome)+'\n');
+    if(outcome.state!=='succeeded')process.exitCode=75;
+  } catch {
+    process.stdout.write(JSON.stringify({state:'blocked',reason:'preflight_rejected'})+'\n');
+    process.exitCode=75;
+  }
+}
+).test(line));
+    return [key,values.length===1?Number(values[0].slice(key.length+3)):null];
+  }));
+  if(Object.values(counts).some(n=>!Number.isSafeInteger(n)) ||
+    counts.tests<minTests||counts.pass!==counts.tests ||
+    counts.fail!==0||counts.cancelled!==0||counts.skipped!==0)return null;
+  return counts.tests;
+}
 export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
   const scope=validateScope({root,worktree,head});
   rootOwnedExecutable(BWRAP);
