@@ -84,8 +84,20 @@ export function verifiedTapSummary(stdout,minTests=1) {
   if(typeof stdout!=='string'||!Number.isSafeInteger(minTests)||minTests<1)return null;
   const lines=stdout.trimEnd().split(/\r?\n/);
   const tail=lines.slice(-10);
-  const counts=Object.fromEntries(['tests','pass','fail','cancelled','skipped'].map(key=>{
-    const values=tail.filter(line=>new RegExp('^# '+key+' [0-9]+
+  const counts={};
+  for(const key of ['tests','pass','fail','cancelled','skipped']) {
+    const prefix='# '+key+' ';
+    const values=tail.filter(line=>line.startsWith(prefix)&&
+      line.length>prefix.length&&
+      [...line.slice(prefix.length)].every(c=>c>='0'&&c<='9'));
+    counts[key]=values.length===1?Number(values[0].slice(prefix.length)):null;
+  }
+  if(Object.values(counts).some(n=>!Number.isSafeInteger(n)) ||
+    counts.tests<minTests||counts.pass!==counts.tests||
+    counts.fail!==0||counts.cancelled!==0||counts.skipped!==0)return null;
+  return counts.tests;
+}
+export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
   const scope=validateScope({root,worktree,head});
   rootOwnedExecutable(BWRAP);
   rootOwnedExecutable(NODE);
