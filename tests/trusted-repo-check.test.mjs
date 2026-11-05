@@ -106,3 +106,12 @@ test('tampering with the named commit object fails before any test executes',()=
  writeFileSync(object,'corrupted synthetic object');
  assert.throws(()=>validateScope(ctx),/git_object_unavailable|git_object_hash_mismatch/);
 }));
+
+test('pinned test set includes TypeScript test entries',()=>fixture(ctx=>{
+ writeFileSync(join(ctx.worktree,'tests','typed.test.ts'),
+   "import test from 'node:test'; test('typed fixture',()=>{});\n");
+ git(ctx.worktree,'add','tests/typed.test.ts');
+ git(ctx.worktree,'commit','-qm','synthetic TypeScript test');
+ const current={...ctx,head:git(ctx.worktree,'rev-parse','HEAD')};
+ assert.ok(snapshot(current).testFiles.includes('tests/typed.test.ts'));
+}));
