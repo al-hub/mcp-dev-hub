@@ -61,6 +61,8 @@ function requireProtection(){
  const p=gh(BASE+'/branches/main/protection');
  const checks=p.required_status_checks;
  if(checks?.strict!==true||!checks.contexts?.includes('bootstrap')||
+   !Array.isArray(checks.checks)||
+   !checks.checks.some(row=>row.context==='bootstrap'&&row.app_id===15368)||
    p.enforce_admins?.enabled!==true||p.allow_force_pushes?.enabled!==false)
   throw Error('branch_protection_invalid');
 }
