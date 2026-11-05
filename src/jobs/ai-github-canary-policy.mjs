@@ -51,7 +51,7 @@ export function renderCandidate(source){
 // Prefix matches, prose around JSON, duplicate keys and conditional passes fail closed.
 export function validateReviewVerdict(raw,{head,base}={}){
  if(typeof raw!=='string'||raw.length<80||raw.length>6500||
-   !SHA.test(head||'')||!SHA.test(base||''))return false;
+   raw.includes('\\')||!SHA.test(head||'')||!SHA.test(base||''))return false;
  for(const key of ['verdict','head','base','findings']){
   if((raw.match(new RegExp('"'+key+'"\\s*:','g'))||[]).length!==1)return false;
  }
