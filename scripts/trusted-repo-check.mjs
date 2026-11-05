@@ -83,7 +83,11 @@ export function sandboxArgs({worktree,testFiles,hosts}) {
 export function verifiedTapSummary(stdout,minTests=1) {
   if(typeof stdout!=='string'||!Number.isSafeInteger(minTests)||minTests<1)return null;
   const lines=stdout.trimEnd().split(/\r?\n/);
-  const tail=lines.slice(-10);
+  const end=lines.findLastIndex(line=>line.startsWith('1..') &&
+    line.length>3 && [...line.slice(3)].every(c=>c>='0'&&c<='9'));
+  if(end<0)return null;
+  const tail=lines.slice(end);
+  const declared=Number(lines[end].slice(3));
   const counts={};
   for(const key of ['tests','pass','fail','cancelled','skipped']) {
     const prefix='# '+key+' ';
@@ -93,7 +97,7 @@ export function verifiedTapSummary(stdout,minTests=1) {
     counts[key]=values.length===1?Number(values[0].slice(prefix.length)):null;
   }
   if(Object.values(counts).some(n=>!Number.isSafeInteger(n)) ||
-    counts.tests<minTests||counts.pass!==counts.tests||
+    counts.tests<minTests||counts.tests!==declared||counts.pass!==counts.tests||
     counts.fail!==0||counts.cancelled!==0||counts.skipped!==0)return null;
   return counts.tests;
 }
