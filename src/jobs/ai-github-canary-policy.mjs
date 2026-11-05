@@ -47,6 +47,21 @@ export function renderCandidate(source){
   ''
  ].join('\n');
 }
+// Independent reviewer must supply an unambiguous exact-HEAD approval.
+// Prefix matches, prose around JSON, duplicate keys and conditional passes fail closed.
+export function validateReviewVerdict(raw,{head,base}={}){
+ if(typeof raw!=='string'||raw.length<80||raw.length>6500||
+   !SHA.test(head||'')||!SHA.test(base||''))return false;
+ for(const key of ['verdict','head','base','findings']){
+  if((raw.match(new RegExp('"'+key+'"\\s*:','g'))||[]).length!==1)return false;
+ }
+ let data;
+ try{data=JSON.parse(raw);}catch{return false;}
+ if(!data||typeof data!=='object'||Array.isArray(data)||
+   Object.keys(data).sort().join(',')!=='base,findings,head,verdict')return false;
+ return data.verdict==='PASS'&&data.head===head&&data.base===base&&
+   Array.isArray(data.findings)&&data.findings.length===0;
+}
 export function ensureCanaryTable(db){
  db.exec('CREATE TABLE IF NOT EXISTS ai_github_canary ('+
   'job_id TEXT PRIMARY KEY, phase TEXT NOT NULL, base_sha TEXT NOT NULL,'+
