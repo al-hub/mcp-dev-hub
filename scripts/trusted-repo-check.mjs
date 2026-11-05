@@ -14,7 +14,7 @@ import {createHash} from 'node:crypto';
 const HEAD=/^[0-9a-f]{40}$/;
 const TEST=/^[a-z0-9][a-z0-9_.-]*\.test\.(?:mjs|js|cjs)$/;
 const OS_PATHS=['/usr','/bin','/lib','/lib64'];
-const NODE='/usr/bin/node',GIT='/usr/bin/git',BWRAP='/usr/bin/bwrap';
+const NODE='/usr/bin/node',GIT='/usr/bin/git',BWRAP='/usr/bin/bwrap',SYSTEMD_RUN='/usr/bin/systemd-run';
 function fail(reason){throw new Error(reason);}
 function contained(root,target){
   const rel=relative(root,target);
@@ -41,20 +41,27 @@ function gitData(repoDir,args,limit=1048576){
   // Object plumbing cannot invoke checkout-controlled hooks, filters or tests.
   // Disable Git object replacements and inherited configs/credential helpers.
   const r=spawnSync(GIT,['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',
-    '-C',repoDir,...args],{
+    '-c','protocol.allow=never','-C',repoDir,...args],{
     encoding:null,timeout:12000,maxBuffer:limit,stdio:['ignore','pipe','pipe'],
     env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',GIT_CONFIG_GLOBAL:'/dev/null',
-      GIT_CONFIG_NOSYSTEM:'1',GIT_NO_REPLACE_OBJECTS:'1',
+      GIT_CONFIG_NOSYSTEM:'1',GIT_NO_REPLACE_OBJECTS:'1',GIT_NO_LAZY_FETCH:'1',
       GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'}
   });
   if(r.error||r.signal||r.status!==0)fail('git_object_unavailable');
   return r.stdout;
 }
+function verifiedGitObject(repo,type,hash,limit){
+  if(!['blob','commit','tree'].includes(type)||!HEAD.test(hash))fail('invalid_git_object');
+  const data=gitData(repo,['cat-file',type,hash],limit);
+  const actual=createHash('sha1').update(type+' '+data.length+'\0').update(data).digest('hex');
+  if(actual!==hash)fail('git_object_hash_mismatch');
+  return data;
+}
 export function validateScope({root,worktree,head,repoDir}){
   if(!HEAD.test(head||''))fail('invalid_head');
   const base=exactPath(root),dir=exactPath(worktree),repo=exactPath(repoDir);
   if(!contained(base,dir))fail('outside_approved_root');
-  if(gitData(repo,['cat-file','-t',head],2048).toString('utf8').trim()!=='commit')
+  if(!/^tree [0-9a-f]{40}\n/.test(verifiedGitObject(repo,'commit',head,262144).toString('utf8')))
     fail('untrusted_commit');
   return {root:base,worktree:dir,head,repoDir:repo};
 }
@@ -68,33 +75,44 @@ function validGitName(name){
 export function materializeSnapshot({repoDir,head,destination}){
   if(!HEAD.test(head||''))fail('invalid_head');
   const root=exactPath(destination);
-  const raw=gitData(repoDir,['ls-tree','-rz','--full-tree',head],524288);
-  const names=raw.toString('utf8').split('\0').filter(Boolean);
-  if(names.length<1||names.length>300)fail('unsafe_tree_size');
-  let total=0;
+  const commit=verifiedGitObject(repoDir,'commit',head,262144).toString('utf8');
+  const tree=/^tree ([0-9a-f]{40})\n/.exec(commit);
+  if(!tree)fail('invalid_commit_tree');
+  let totalBytes=0,treeCount=0;
   const files=[];
-  for(const entry of names){
-    const tab=entry.indexOf('\t');
-    if(tab<0)fail('invalid_tree_entry');
-    const bits=entry.slice(0,tab).split(' ');
-    const name=entry.slice(tab+1);
-    if(bits.length!==3||!['100644','100755'].includes(bits[0])||
-      bits[1]!=='blob'||!HEAD.test(bits[2])||!validGitName(name))
-      fail('unsafe_tree_entry');
-    const file=resolve(join(root,name));
-    if(!contained(root,file))fail('tree_path_escape');
-    const data=gitData(repoDir,['cat-file','blob',bits[2]],786432);
-    total+=data.length;
-    if(total>8*1024*1024)fail('unsafe_tree_bytes');
-    const digest=createHash('sha1').update('blob '+data.length+'\0').update(data).digest('hex');
-    if(digest!==bits[2])fail('git_blob_hash_mismatch');
-    mkdirSync(dirname(file),{recursive:true,mode:0o700});
-    writeFileSync(file,data,{flag:'wx',mode:0o400});
-    chmodSync(file,0o400);
-    files.push(name);
+  function walk(oid,prefix,depth){
+    if(depth>16||++treeCount>300)fail('unsafe_tree_depth');
+    const raw=verifiedGitObject(repoDir,'tree',oid,524288);
+    let offset=0;
+    while(offset<raw.length){
+      const space=raw.indexOf(32,offset);
+      if(space<0)fail('invalid_tree_entry');
+      const nul=raw.indexOf(0,space+1);
+      if(nul<0||nul+21>raw.length)fail('invalid_tree_entry');
+      const mode=raw.subarray(offset,space).toString('ascii');
+      const name=raw.subarray(space+1,nul).toString('utf8');
+      const objectId=raw.subarray(nul+1,nul+21).toString('hex');
+      offset=nul+21;
+      if(name.includes('/'))fail('invalid_tree_entry');
+      const path=prefix?prefix+'/'+name:name;
+      if(!validGitName(path))fail('unsafe_tree_entry');
+      if(mode==='40000'){walk(objectId,path,depth+1);continue;}
+      if(!['100644','100755'].includes(mode))fail('unsafe_tree_entry');
+      if(++files.length>300)fail('unsafe_tree_size');
+      const blob=verifiedGitObject(repoDir,'blob',objectId,786432);
+      totalBytes+=blob.length;
+      if(totalBytes>8*1024*1024)fail('unsafe_tree_bytes');
+      const target=resolve(join(root,path));
+      if(!contained(root,target))fail('tree_path_escape');
+      mkdirSync(dirname(target),{recursive:true,mode:0o700});
+      writeFileSync(target,blob,{flag:'wx',mode:0o400});
+      chmodSync(target,0o400);
+      files[files.length-1]=path;
+    }
   }
-  const testFiles=files.filter(n=>n.startsWith('tests/')&&
-    n.split('/').length===2&&TEST.test(n.slice(6)));
+  walk(tree[1],'',0);
+  const testFiles=files.filter(name=>name.startsWith('tests/')&&
+    name.split('/').length===2&&TEST.test(name.slice(6)));
   if(!testFiles.length)fail('no_pinned_tests');
   return {testFiles,trackedCount:files.length};
 }
@@ -110,6 +128,13 @@ export function sandboxArgs({snapshot,testFiles,hosts}){
 }
 // Only the final TAP epilogue is authoritative; never accept nested test output
 // or a partial/faked pass count as full success.
+// Run the entire sandbox under a user-systemd cgroup, not just a timer.
+// The systemd-run scope is transient and carries bounded memory, tasks and CPU.
+export function resourceScopeArgs(args){
+  return ['--user','--scope','--collect','--quiet',
+    '-p','MemoryMax=1G','-p','TasksMax=64','-p','CPUQuota=100%',
+    BWRAP,...sandboxArgs(args)];
+}
 export function verifiedTapSummary(stdout,minTests=1){
   if(typeof stdout!=='string'||!Number.isSafeInteger(minTests)||minTests<1)return null;
   const lines=stdout.trimEnd().split(/\r?\n/);
@@ -133,6 +158,7 @@ export function verifiedTapSummary(stdout,minTests=1){
 export function runIsolatedRepoCheck({root,worktree,head,repoDir,timeoutMs=90000}){
   const scope=validateScope({root,worktree,head,repoDir});
   rootOwnedExecutable(BWRAP);rootOwnedExecutable(NODE);rootOwnedExecutable(GIT);
+  rootOwnedExecutable(SYSTEMD_RUN);
   if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)
     fail('invalid_timeout');
   const temp=mkdtempSync(join(tmpdir(),'mcp-dev-hub-snapshot-'));
@@ -145,7 +171,7 @@ export function runIsolatedRepoCheck({root,worktree,head,repoDir,timeoutMs=90000
     writeFileSync(hosts,[127,0,0,1].join('.')+' localhost\n::1 localhost\n',
       {flag:'wx',mode:0o400});
     chmodSync(hosts,0o400);
-    const r=spawnSync(BWRAP,sandboxArgs({snapshot:source,
+    const r=spawnSync(SYSTEMD_RUN,resourceScopeArgs({snapshot:source,
       testFiles:snapshot.testFiles,hosts}),{
       encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:timeoutMs,
       maxBuffer:524288,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'}
