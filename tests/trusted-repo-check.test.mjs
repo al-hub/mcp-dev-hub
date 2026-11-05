@@ -4,6 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,symlinkSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {sandboxArgs,validateScope,verifiedTapSummary} from '../scripts/trusted-repo-check.mjs';
+import {trustedRepoCheckRunner,canStartAiDevelopment} from '../scripts/worker.mjs';
 
 function git(cwd,...args){
  const r=spawnSync('/usr/bin/git',args,{cwd,encoding:'utf8',env:{
@@ -72,4 +73,9 @@ test('final TAP summary, not an earlier nested summary, controls the verdict',()
  assert.equal(verifiedTapSummary(final.replace('# fail 0','# fail 1'),20),null);
  assert.equal(verifiedTapSummary(final.replace('# skipped 0','# skipped 1'),20),null);
  assert.equal(verifiedTapSummary(final.replace('# tests 130','# tests 10'),20),null);
+});
+
+test('Worker keeps AI writes disabled and rejects missing trusted check launcher',()=>{
+ assert.equal(canStartAiDevelopment(),false);
+ assert.equal(trustedRepoCheckRunner({executionDir:process.cwd(),baseSha:'a'.repeat(40)}),null);
 });
