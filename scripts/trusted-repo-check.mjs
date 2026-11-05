@@ -75,7 +75,7 @@ export function sandboxArgs({worktree,testFiles,hosts}) {
     '--setenv','PATH','/usr/bin:/bin',
     '--setenv','HOME','/home/isolated',
     '--setenv','CI','1',
-    '--',NODE,'--test',...testFiles);
+    '--',NODE,'--test','--test-reporter=tap',...testFiles);
   return argv;
 }
 export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
