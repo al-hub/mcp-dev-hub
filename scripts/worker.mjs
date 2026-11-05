@@ -226,7 +226,7 @@ export function collectReviewResult(db,id) {
 }
 export function reconcile(db) {
   for(const job of jobs(db).filter(j=>j.state==='running'||
-       (j.kind==='ai-github-canary'&&j.state==='starting'))) {
+       (j.kind==='ai-github-canary'&&['starting','unknown'].includes(j.state)))) {
     const pane=job.kind==='ai-github-canary'?null:readPane(job.window);
     const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
     const nonce=db.prepare('SELECT nonce FROM job_run_nonces WHERE job_id=? AND attempt=?').get(job.id,attempt)?.nonce;
@@ -242,7 +242,7 @@ export function reconcile(db) {
       const validReview=job.kind!=='review-opencode' || (code===0 && reviewCollected);
       const terminal=job.kind==='ai-github-canary'&&code===76?'unknown':
         code===0&&validReview?'succeeded':'failed';
-      db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state IN ('starting','running')")
+      db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state IN ('starting','running','unknown')")
         .run(terminal,code===0&&!validReview?75:code,now(),job.id);
       // Persist terminal result before attempting pane retirement for every job.
       if(job.kind!=='ai-github-canary'&&
@@ -251,7 +251,7 @@ export function reconcile(db) {
     } else if(job.kind==='ai-github-canary'){
       // No tmux dependency. A missing proof becomes UNKNOWN after a bounded
       // deadline, never an automatic retry or a fabricated success.
-      if(Date.now()-Date.parse(job.updated_at)>900000)
+      if(job.state!=='unknown'&&Date.now()-Date.parse(job.updated_at)>900000)
        db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state IN ('starting','running')").run('unknown',now(),job.id);
     } else if(!windowAlive(job.window)) {
       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
