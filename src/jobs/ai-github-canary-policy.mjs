@@ -1,3 +1,4 @@
+import {openSync,closeSync,fstatSync,readSync,constants} from 'node:fs';
 // #23 narrowly authorized GitHub-only AI canary. No checkout-controlled
 // source, npm script, shell, or test may execute on the Worker host.
 export const CANARY_JOB_ID='canary-23-20261105';
@@ -72,6 +73,26 @@ export function verifiedStrictGitHubProtection(p){
   checks.checks.some(row=>row.context==='bootstrap'&&row.app_id===15368)&&
   p?.enforce_admins?.enabled===true&&
   p?.allow_force_pushes?.enabled===false;
+}
+// Read model-controlled output only as a bounded regular file without
+// following symlinks or reading special devices on the credentialed host.
+export function readBoundedModelOutput(path,maxBytes=6500){
+ if(typeof path!=='string'||!Number.isInteger(maxBytes)||maxBytes<1||maxBytes>6500)
+  throw Error('invalid_output_path_or_limit');
+ const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+ try{
+  const st=fstatSync(fd);
+  if(!st.isFile()||st.size<1||st.size>maxBytes)
+   throw Error('invalid_model_output_size_or_type');
+  const buf=Buffer.alloc(st.size);
+  let off=0;
+  while(off<buf.length){
+   const got=readSync(fd,buf,off,buf.length-off,off);
+   if(got<=0)throw Error('incomplete_model_output');
+   off+=got;
+  }
+  return buf.toString('utf8');
+ }finally{closeSync(fd);}
 }
 export function ensureCanaryTable(db){
  db.exec('CREATE TABLE IF NOT EXISTS ai_github_canary ('+
