@@ -222,7 +222,8 @@ export function collectReviewResult(db,id) {
   return result.status==='completed';
 }
 export function reconcile(db) {
-  for(const job of jobs(db).filter(j=>j.state==='running')) {
+  for(const job of jobs(db).filter(j=>j.state==='running'||
+       (j.kind==='ai-github-canary'&&j.state==='starting'))) {
     const pane=job.kind==='ai-github-canary'?null:readPane(job.window);
     const attempt=db.prepare('SELECT attempt FROM review_attempts WHERE job_id=?').get(job.id)?.attempt??1;
     const nonce=db.prepare('SELECT nonce FROM job_run_nonces WHERE job_id=? AND attempt=?').get(job.id,attempt)?.nonce;
@@ -236,7 +237,10 @@ export function reconcile(db) {
       const code=Number(rawCode);
       const reviewCollected=job.kind==='review-opencode' ? collectReviewResult(db,job.id) : true;
       const validReview=job.kind!=='review-opencode' || (code===0 && reviewCollected);
-      db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state='running'").run(code===0 && validReview?'succeeded':'failed',code===0 && !validReview?75:code,now(),job.id);
+      const terminal=job.kind==='ai-github-canary'&&code===76?'unknown':
+        code===0&&validReview?'succeeded':'failed';
+      db.prepare("UPDATE jobs SET state=?,exit_code=?,updated_at=? WHERE id=? AND state IN ('starting','running')")
+        .run(terminal,code===0&&!validReview?75:code,now(),job.id);
       // Persist terminal result before attempting pane retirement for every job.
       if(job.kind!=='ai-github-canary'&&
          db.prepare('SELECT state FROM jobs WHERE id=?').get(job.id)?.state!=='running')
@@ -245,7 +249,7 @@ export function reconcile(db) {
       // No tmux dependency. A missing proof becomes UNKNOWN after a bounded
       // deadline, never an automatic retry or a fabricated success.
       if(Date.now()-Date.parse(job.updated_at)>900000)
-       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
+       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state IN ('starting','running')").run('unknown',now(),job.id);
     } else if(!windowAlive(job.window)) {
       db.prepare("UPDATE jobs SET state=?,updated_at=? WHERE id=? AND state='running'").run('unknown',now(),job.id);
     }
@@ -287,6 +291,7 @@ export function reconcileManagedWorktrees(db) {
 }
 export function reconcileStarting(db,{at=Date.now()}={}) {
   for(const job of jobs(db).filter(j=>j.state==='starting')){
+    if(job.kind==='ai-github-canary')continue; // reconcile() checks this controller's durable proof.
     if(windowAlive(job.window))
       db.prepare("UPDATE jobs SET state='running',updated_at=? WHERE id=? AND state='starting'").run(new Date(at).toISOString(),job.id);
     else if(at-Date.parse(job.updated_at)>30000)
