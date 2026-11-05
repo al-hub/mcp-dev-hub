@@ -12,7 +12,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 
 const HEAD=/^[0-9a-f]{40}$/;
-const TEST=/^[a-z0-9][a-z0-9_.-]*\.test\.(?:mjs|js|cjs)$/;
+const TEST=/^[a-z0-9][a-z0-9_.-]*\.test\.(?:mjs|js|cjs|ts)$/;
 const OS_PATHS=['/usr','/bin','/lib','/lib64'];
 const NODE='/usr/bin/node',GIT='/usr/bin/git',BWRAP='/usr/bin/bwrap',SYSTEMD_RUN='/usr/bin/systemd-run';
 function fail(reason){throw new Error(reason);}
