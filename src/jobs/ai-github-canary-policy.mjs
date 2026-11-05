@@ -15,18 +15,37 @@ export function canaryAuthorized({job,scope,write,push,enabled}={}){
    job.target==='local'&&[job.project,job.target,job.workspace].join(':')===scope&&
    write==='1'&&push==='1'&&enabled==='1';
 }
+// The model returns DATA ONLY; source code is constructed exclusively from a
+// reviewed local template. No model-supplied JavaScript is ever executed.
 export function validateCandidate(source){
- if(typeof source!=='string'||source.length<150||source.length>7000||
-   source.includes('\0')||source.includes(String.fromCharCode(96).repeat(3))||source.includes('\r')||
-   !source.trimStart().startsWith('import ')||!source.includes('safeBearer')||
-   !source.includes('24')||!source.includes('23')||
-   !source.includes('test(')||!source.includes('assert.'))return false;
- if(/\b(?:process|globalThis|eval|Function|require|fetch|WebSocket|XMLHttpRequest|Buffer|child_process|exec|spawn|readFile|writeFile|import\s*\(|https?:\/\/)\b/i.test(source))
-  return false;
- const imports=[...source.matchAll(/\bfrom\s+(['"])([^'"]+)\1/g)].map(m=>m[2]);
- return imports.length===3&&new Set(imports).size===3&&
-  ['node:test','node:assert/strict','../src/dashboard/read-only-server.mjs']
-    .every(p=>imports.includes(p));
+ let item;
+ try{item=JSON.parse(source);}catch{return false;}
+ if(!item||typeof item!=='object'||Array.isArray(item))return false;
+ const keys=Object.keys(item).sort();
+ if(keys.join(',')!=='token23,token24')return false;
+ return typeof item.token24==='string'&&typeof item.token23==='string'&&
+  /^sample-public-[a-z]{10}$/.test(item.token24)&&
+  /^sample-public-[a-z]{9}$/.test(item.token23);
+}
+export function renderCandidate(source){
+ if(!validateCandidate(source))throw Error('candidate_rejected');
+ const {token24,token23}=JSON.parse(source);
+ return [
+  "import test from 'node:test';",
+  "import assert from 'node:assert/strict';",
+  "import {safeBearer} from '../src/dashboard/read-only-server.mjs';",
+  'const valid='+JSON.stringify(token24)+';',
+  'const short='+JSON.stringify(token23)+';',
+  "test('minimum 24-character public bearer token acceptance and 23 rejection',()=>{",
+  ' assert.equal(valid.length,24);',
+  ' assert.equal(short.length,23);',
+  " assert.equal(safeBearer('Bearer '+valid,valid),true);",
+  " assert.equal(safeBearer('Bearer '+short,short),false);",
+  " assert.equal(safeBearer('bearer '+valid,valid),false);",
+  " assert.equal(safeBearer('Bearer '+short,valid),false);",
+  '});',
+  ''
+ ].join('\n');
 }
 export function ensureCanaryTable(db){
  db.exec('CREATE TABLE IF NOT EXISTS ai_github_canary ('+
