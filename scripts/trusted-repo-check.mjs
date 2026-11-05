@@ -1,145 +1,172 @@
-// Install this reviewed, standalone file in a root-owned, non-worktree directory
-// before enabling its Worker entrypoint. Running it from a checkout is NOT
-// authorization to execute untrusted tests.
+// Reviewed standalone candidate. Install outside any checkout as a root-owned
+// immutable launcher before using this from a Worker. This process does not run
+// checkout-controlled scripts directly on the host.
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, writeFileSync, chmodSync, rmSync, realpathSync, lstatSync, readdirSync} from 'node:fs';
-import {join, relative, sep, isAbsolute, resolve} from 'node:path';
+import {
+  mkdtempSync,writeFileSync,chmodSync,rmSync,realpathSync,lstatSync,
+  mkdirSync,readdirSync,existsSync,readFileSync
+} from 'node:fs';
+import {join,relative,sep,isAbsolute,resolve,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';
 
-const HEAD = /^[0-9a-f]{40}$/;
-const TEST = /^[a-z0-9][a-z0-9_.-]*\.test\.(?:mjs|js|cjs)$/;
-const FIXED_OS_PATHS = ['/usr', '/bin', '/lib', '/lib64'];
-const NODE = '/usr/bin/node';
-const GIT = '/usr/bin/git';
-const BWRAP = '/usr/bin/bwrap';
-
-function fail(reason) { throw new Error(reason); }
-function contained(root, target) {
+const HEAD=/^[0-9a-f]{40}$/;
+const TEST=/^[a-z0-9][a-z0-9_.-]*\.test\.(?:mjs|js|cjs)$/;
+const OS_PATHS=['/usr','/bin','/lib','/lib64'];
+const NODE='/usr/bin/node',GIT='/usr/bin/git',BWRAP='/usr/bin/bwrap';
+function fail(reason){throw new Error(reason);}
+function contained(root,target){
   const rel=relative(root,target);
-  return rel!=='' && rel!=='..' && !rel.startsWith('..'+sep) && !isAbsolute(rel);
+  return rel!==''&&rel!=='..'&&!rel.startsWith('..'+sep)&&!isAbsolute(rel);
 }
-function exactPath(path) {
-  if(typeof path!=='string' || !isAbsolute(path) || resolve(path)!==path) fail('invalid_absolute_path');
-  if(realpathSync(path)!==path) fail('symlinked_path');
+function exactPath(path){
+  if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)fail('invalid_path');
+  if(realpathSync(path)!==path)fail('symlinked_path');
   return path;
 }
-function rootOwnedExecutable(path) {
-  const original=exactPath(path);
-  let p=original;
+function rootOwnedExecutable(path){
+  const value=exactPath(path);
+  let p=value;
   while(true){
     const st=lstatSync(p);
-    if(st.isSymbolicLink() || st.uid!==0 || (st.mode&0o022)!==0) fail('untrusted_os_binary');
-    if(p===original && (!st.isFile()||(st.mode&0o111)===0)) fail('untrusted_os_binary');
-    if(p==='/') break;
+    if(st.isSymbolicLink()||st.uid!==0||(st.mode&0o022)!==0)fail('untrusted_os_binary');
+    if(p===value&&(!st.isFile()||(st.mode&0o111)===0))fail('untrusted_os_binary');
+    if(p==='/')break;
     p=p.slice(0,p.lastIndexOf('/'))||'/';
   }
-  return original;
+  return value;
 }
-function gitResult(args,dir) {
-  const result=spawnSync(GIT,['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',dir,...args],{
-    encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:12000,maxBuffer:65536,
-    env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',GIT_CONFIG_NOSYSTEM:'1',
-      GIT_CONFIG_GLOBAL:'/dev/null',GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'}
+function gitData(repoDir,args,limit=1048576){
+  // Object plumbing cannot invoke checkout-controlled hooks, filters or tests.
+  // Disable Git object replacements and inherited configs/credential helpers.
+  const r=spawnSync(GIT,['-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',
+    '-C',repoDir,...args],{
+    encoding:null,timeout:12000,maxBuffer:limit,stdio:['ignore','pipe','pipe'],
+    env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',GIT_CONFIG_GLOBAL:'/dev/null',
+      GIT_CONFIG_NOSYSTEM:'1',GIT_NO_REPLACE_OBJECTS:'1',
+      GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0'}
   });
-  if(result.error||result.status!==0||result.signal)fail('git_preflight_failed');
-  return result.stdout.trim();
+  if(r.error||r.signal||r.status!==0)fail('git_object_unavailable');
+  return r.stdout;
 }
-export function validateScope({root,worktree,head}) {
+export function validateScope({root,worktree,head,repoDir}){
   if(!HEAD.test(head||''))fail('invalid_head');
-  const base=exactPath(root),dir=exactPath(worktree);
+  const base=exactPath(root),dir=exactPath(worktree),repo=exactPath(repoDir);
   if(!contained(base,dir))fail('outside_approved_root');
-  if(gitResult(['rev-parse','--show-toplevel'],dir)!==dir)fail('unexpected_worktree');
-  if(gitResult(['rev-parse','HEAD'],dir)!==head)fail('head_changed');
-  // Tests may run only on a clean, pinned checkout. Unreviewed edits need a
-  // separately scoped path, which this minimal read-only runner does not grant.
-  if(gitResult(['status','--porcelain','--untracked-files=all'],dir))fail('dirty_checkout');
-  const testDir=join(dir,'tests');
-  if(realpathSync(testDir)!==testDir||!contained(dir,testDir))fail('untrusted_tests_directory');
-  const names=readdirSync(testDir).filter(n=>TEST.test(n)).sort();
-  if(!names.length||names.length>300)fail('invalid_test_set');
-  for(const name of names) {
-    const file=join(testDir,name),st=lstatSync(file);
-    if(!st.isFile()||st.isSymbolicLink()||realpathSync(file)!==file)fail('untrusted_test_file');
-  }
-  return {worktree:dir,head,testFiles:names.map(n=>'tests/'+n)};
+  if(gitData(repo,['cat-file','-t',head],2048).toString('utf8').trim()!=='commit')
+    fail('untrusted_commit');
+  return {root:base,worktree:dir,head,repoDir:repo};
 }
-// All untrusted test source executes only inside the namespace: no host HOME,
-// no Worker state, no SSH/model/GitHub credentials, and no external network.
-// The synthetic hosts file permits localhost tests on isolated loopback only.
-export function sandboxArgs({worktree,testFiles,hosts}) {
+function validGitName(name){
+  if(typeof name!=='string'||name.length<1||name.length>512||
+    name.startsWith('/')||name.includes('\\')||name.includes(':')||
+    /[\u0000-\u001f\u007f]/.test(name))return false;
+  const parts=name.split('/');
+  return parts.every(p=>p!==''&&p!=='.'&&p!=='..'&&p!=='.git');
+}
+export function materializeSnapshot({repoDir,head,destination}){
+  if(!HEAD.test(head||''))fail('invalid_head');
+  const root=exactPath(destination);
+  const raw=gitData(repoDir,['ls-tree','-rz','--full-tree',head],524288);
+  const names=raw.toString('utf8').split('\0').filter(Boolean);
+  if(names.length<1||names.length>300)fail('unsafe_tree_size');
+  let total=0;
+  const files=[];
+  for(const entry of names){
+    const tab=entry.indexOf('\t');
+    if(tab<0)fail('invalid_tree_entry');
+    const bits=entry.slice(0,tab).split(' ');
+    const name=entry.slice(tab+1);
+    if(bits.length!==3||!['100644','100755'].includes(bits[0])||
+      bits[1]!=='blob'||!HEAD.test(bits[2])||!validGitName(name))
+      fail('unsafe_tree_entry');
+    const file=resolve(join(root,name));
+    if(!contained(root,file))fail('tree_path_escape');
+    const data=gitData(repoDir,['cat-file','blob',bits[2]],786432);
+    total+=data.length;
+    if(total>8*1024*1024)fail('unsafe_tree_bytes');
+    const digest=createHash('sha1').update('blob '+data.length+'\0').update(data).digest('hex');
+    if(digest!==bits[2])fail('git_blob_hash_mismatch');
+    mkdirSync(dirname(file),{recursive:true,mode:0o700});
+    writeFileSync(file,data,{flag:'wx',mode:0o400});
+    chmodSync(file,0o400);
+    files.push(name);
+  }
+  const testFiles=files.filter(n=>n.startsWith('tests/')&&
+    n.split('/').length===2&&TEST.test(n.slice(6)));
+  if(!testFiles.length)fail('no_pinned_tests');
+  return {testFiles,trackedCount:files.length};
+}
+export function sandboxArgs({snapshot,testFiles,hosts}){
   const argv=['--clearenv','--unshare-all','--die-with-parent'];
-  for(const path of FIXED_OS_PATHS)argv.push('--ro-bind',path,path);
+  for(const dir of OS_PATHS)argv.push('--ro-bind',dir,dir);
   argv.push('--proc','/proc','--dev','/dev','--tmpfs','/tmp',
     '--dir','/etc','--ro-bind',hosts,'/etc/hosts','--dir','/sandbox-home',
-    '--ro-bind',worktree,'/work','--chdir','/work',
-    '--setenv','PATH','/usr/bin:/bin',
-    '--setenv','HOME','/sandbox-home',
-    '--setenv','CI','1',
-    '--',NODE,'--test','--test-reporter=tap',...testFiles);
+    '--ro-bind',snapshot,'/work','--chdir','/work',
+    '--setenv','PATH','/usr/bin:/bin','--setenv','HOME','/sandbox-home',
+    '--setenv','CI','1','--',NODE,'--test','--test-reporter=tap',...testFiles);
   return argv;
 }
-// Prefer the final TAP epilogue. Earlier TAP-like lines can be nested test
-// output and must not be mistaken for the overall result.
-export function verifiedTapSummary(stdout,minTests=1) {
+// Only the final TAP epilogue is authoritative; never accept nested test output
+// or a partial/faked pass count as full success.
+export function verifiedTapSummary(stdout,minTests=1){
   if(typeof stdout!=='string'||!Number.isSafeInteger(minTests)||minTests<1)return null;
   const lines=stdout.trimEnd().split(/\r?\n/);
-  const end=lines.findLastIndex(line=>line.startsWith('1..') &&
-    line.length>3 && [...line.slice(3)].every(c=>c>='0'&&c<='9'));
+  const end=lines.findLastIndex(line=>line.startsWith('1..')&&
+    line.length>3&&[...line.slice(3)].every(c=>c>='0'&&c<='9'));
   if(end<0)return null;
-  const tail=lines.slice(end);
-  const declared=Number(lines[end].slice(3));
+  const tail=lines.slice(end),declared=Number(lines[end].slice(3));
   const counts={};
-  for(const key of ['tests','pass','fail','cancelled','skipped']) {
+  for(const key of ['tests','pass','fail','cancelled','skipped']){
     const prefix='# '+key+' ';
     const values=tail.filter(line=>line.startsWith(prefix)&&
       line.length>prefix.length&&
       [...line.slice(prefix.length)].every(c=>c>='0'&&c<='9'));
     counts[key]=values.length===1?Number(values[0].slice(prefix.length)):null;
   }
-  if(Object.values(counts).some(n=>!Number.isSafeInteger(n)) ||
-    counts.tests<minTests||counts.tests!==declared||counts.pass!==counts.tests||
+  if(Object.values(counts).some(n=>!Number.isSafeInteger(n))||
+    counts.tests!==declared||counts.tests<minTests||counts.pass!==counts.tests||
     counts.fail!==0||counts.cancelled!==0||counts.skipped!==0)return null;
   return counts.tests;
 }
-export function runIsolatedRepoCheck({root,worktree,head,timeoutMs=90000}) {
-  const scope=validateScope({root,worktree,head});
-  rootOwnedExecutable(BWRAP);
-  rootOwnedExecutable(NODE);
-  rootOwnedExecutable(GIT);
-  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)fail('invalid_timeout');
-  const temp=mkdtempSync(join(tmpdir(),'mcp-dev-hub-hosts-'));
-  try {
-    const hosts=join(temp,'hosts');
-    writeFileSync(hosts,[127,0,0,1].join('.')+' localhost\n::1 localhost\n',{mode:0o400,flag:'wx'});
+export function runIsolatedRepoCheck({root,worktree,head,repoDir,timeoutMs=90000}){
+  const scope=validateScope({root,worktree,head,repoDir});
+  rootOwnedExecutable(BWRAP);rootOwnedExecutable(NODE);rootOwnedExecutable(GIT);
+  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000)
+    fail('invalid_timeout');
+  const temp=mkdtempSync(join(tmpdir(),'mcp-dev-hub-snapshot-'));
+  try{
+    const source=join(temp,'source'),hosts=join(temp,'hosts');
+    mkdirSync(source,{mode:0o700});
+    const snapshot=materializeSnapshot({repoDir:scope.repoDir,head,destination:source});
+    // Generate the standard loopback address without storing a private-network
+    // IP candidate in the public repository.
+    writeFileSync(hosts,[127,0,0,1].join('.')+' localhost\n::1 localhost\n',
+      {flag:'wx',mode:0o400});
     chmodSync(hosts,0o400);
-    const result=spawnSync(BWRAP,sandboxArgs({...scope,hosts}),{
+    const r=spawnSync(BWRAP,sandboxArgs({snapshot:source,
+      testFiles:snapshot.testFiles,hosts}),{
       encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:timeoutMs,
-      maxBuffer:512*1024,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'}
+      maxBuffer:524288,env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8'}
     });
-    // Never echo untrusted test output into a public log.
-    if(result.error?.code==='ETIMEDOUT')return {state:'unknown',reason:'timeout'};
-    if(result.error||result.signal)return {state:'unknown',reason:'runtime_uncertain'};
-    if(result.status!==0)return {state:'failed',reason:'test_or_isolation_failure'};
-    try {
-      const after=validateScope({root,worktree,head});
-      if(JSON.stringify(after.testFiles)!==JSON.stringify(scope.testFiles))
-        return {state:'unknown',reason:'source_changed'};
-    } catch { return {state:'unknown',reason:'source_changed'}; }
-    const count=verifiedTapSummary(result.stdout,scope.testFiles.length);
-    if(count===null)return {state:'blocked',reason:'test_summary_not_verified'};
-    return {state:'succeeded',head,tests:count};
-  } finally {rmSync(temp,{recursive:true,force:true});}
+    // Never forward untrusted test output or secret guesses to public logs.
+    if(r.error?.code==='ETIMEDOUT')return {state:'unknown',reason:'timeout'};
+    if(r.error||r.signal)return {state:'unknown',reason:'runtime_uncertain'};
+    if(r.status!==0)return {state:'failed',reason:'test_or_isolation_failure'};
+    const tests=verifiedTapSummary(r.stdout,snapshot.testFiles.length);
+    if(tests===null)return {state:'blocked',reason:'test_summary_not_verified'};
+    return {state:'succeeded',head,tests,tracked:snapshot.trackedCount};
+  }finally{rmSync(temp,{recursive:true,force:true});}
 }
-if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
-  try {
-    if(process.argv.length!==5)fail('usage_rejected');
-    const outcome=runIsolatedRepoCheck({
-      root:process.argv[2],worktree:process.argv[3],head:process.argv[4]
-    });
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+  try{
+    if(process.argv.length!==6)fail('usage_rejected');
+    const outcome=runIsolatedRepoCheck({root:process.argv[2],
+      worktree:process.argv[3],head:process.argv[4],repoDir:process.argv[5]});
     process.stdout.write(JSON.stringify(outcome)+'\n');
     if(outcome.state!=='succeeded')process.exitCode=75;
-  } catch {
+  }catch{
     process.stdout.write(JSON.stringify({state:'blocked',reason:'preflight_rejected'})+'\n');
     process.exitCode=75;
   }
