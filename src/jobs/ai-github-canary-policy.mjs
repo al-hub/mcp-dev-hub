@@ -1,9 +1,9 @@
 import {openSync,closeSync,fstatSync,readSync,constants} from 'node:fs';
 // #23 narrowly authorized GitHub-only AI canary. No checkout-controlled
 // source, npm script, shell, or test may execute on the Worker host.
-export const CANARY_JOB_ID='canary-23-20261105';
+export const CANARY_JOB_ID='canary-23-20261105-v2';
 export const CANARY_REPO='al-hub/mcp-dev-hub';
-export const CANARY_BRANCH='test/23-worker-canary-20261105';
+export const CANARY_BRANCH='test/23-worker-canary-20261105-v2';
 export const CANARY_PATH='tests/dashboard-bearer-minimum-24.test.mjs';
 export const SHA=/^[0-9a-f]{40}$/;
 const stages=['started','branch_dispatching','branch_created','source_generated',
@@ -93,6 +93,24 @@ export function readBoundedModelOutput(path,maxBytes=6500){
   }
   return buf.toString('utf8');
  }finally{closeSync(fd);}
+}
+// The newly-created GitHub PR may report mergeable_state=unknown while
+// GitHub calculates mergeability. This is NOT a scope/HEAD mismatch. Always
+// verify immutable PR identity and file allowlist; demand clean only after CI.
+export function verifyCanaryPullRequest({pr,files,head,base,requireClean=false}={}){
+ if(!SHA.test(head||'')||!SHA.test(base||'')||
+    pr?.state!=='open'||pr?.draft!==false||
+    pr?.head?.sha!==head||pr?.head?.ref!==CANARY_BRANCH||
+    pr?.base?.ref!=='main'||pr?.base?.sha!==base)
+  throw Error('pr_head_or_scope_changed');
+ if(!Array.isArray(files)||files.length!==1||
+    files[0]?.filename!==CANARY_PATH||
+    files[0]?.status!=='added'||typeof files[0]?.patch!=='string')
+  throw Error('unauthorized_pr_files');
+ if(requireClean && (pr.mergeable!==true||
+    !['clean','has_hooks'].includes(pr.mergeable_state)))
+  throw Error('pr_mergeability_pending');
+ return files[0].patch;
 }
 export function ensureCanaryTable(db){
  db.exec('CREATE TABLE IF NOT EXISTS ai_github_canary ('+
