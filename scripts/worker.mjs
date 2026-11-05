@@ -26,7 +26,7 @@ export function canStartAiDevelopment(){return false;}
 export const ALLOWED = Object.freeze({
   'synthetic-one': ['node', '-e', 'console.log("synthetic task one")'],
   'synthetic-two': ['node', '-e', 'console.log("synthetic task two")'],
-  'ai-github-canary': ['node', 'scripts/ai-github-canary.mjs'],
+  'ai-github-canary': ['/usr/bin/node', '/usr/local/lib/mcp-dev-hub/ai-github-canary.mjs'],
   'repo-check': ['npm', 'run', 'check'],
   'cli-smoke': ['node', 'scripts/cli-smoke.mjs'],
   'review-opencode': ['node', '__trusted_runner_required__'],
@@ -46,6 +46,23 @@ function immutableTrustedPath(path){
    current=dirname(current);
   }
  }catch{return false;}
+}
+// Only an installed, immutable root-owned controller AND its policy module
+// can hold Worker GitHub write authority. No checkout-relative source permitted.
+export function trustedCanaryRunner(){
+ const root='/usr/local/lib/mcp-dev-hub';
+ const files=[join(root,'ai-github-canary.mjs'),join(root,'ai-github-canary-policy.mjs')];
+ try{
+  const dir=lstatSync(root);
+  if(!dir.isDirectory()||!immutableTrustedPath(root))return null;
+  for(const file of files){
+   const st=lstatSync(file);
+   if(!st.isFile()||st.isSymbolicLink()||!immutableTrustedPath(file))return null;
+  }
+  const node='/usr/bin/node',bwrap='/usr/bin/bwrap';
+  if(!immutableTrustedPath(node)||!immutableTrustedPath(bwrap))return null;
+  return files[0];
+ }catch{return null;}
 }
 // Fail closed unless the trusted reviewer launcher was deployed outside any
 // checkout or PR-controlled worktree, with non-symlink regular files.
@@ -318,7 +335,13 @@ export function tick(db) {
    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
    return false;
   }
-  const argv=trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
+  const canaryRunner=job.kind==='ai-github-canary'?trustedCanaryRunner():null;
+  if(job.kind==='ai-github-canary'&&!canaryRunner){
+    db.prepare("UPDATE jobs SET state='blocked',updated_at=? WHERE id=? AND state='queued'").run(now(),job.id);
+    return false;
+  }
+  const argv=canaryRunner?['/usr/bin/node',canaryRunner]:
+    trustedRunner?['node',trustedRunner]:ALLOWED[job.kind];
   const cmd=argv.map(s=>"'"+s.replaceAll("'","'\\''")+"'").join(' ');
   const quoteShell=(s)=>"'" + String(s).replaceAll("'","'\\''") + "'";
   const reviewEnv=job.kind==='review-opencode' ? 'MCP_DEV_HUB_REVIEW_JOB_ID='+quoteShell(job.id)+' MCP_DEV_HUB_REVIEW_ATTEMPT='+quoteShell(attempt)+' MCP_DEV_HUB_REVIEW_RESULT_DIR='+quoteShell(join(stateDir(),'review-results'))+
