@@ -1,5 +1,33 @@
 # Handoff status
 
+## 2026-11-06 #35 — Authenticated evidence candidate (2026-11-06)
+
+- Existing Draft PR #39 reused. Candidate fixed HTTPS GitHub API reader now
+  validates the exact PR HEAD/BASE, required workflow ID/path, successful
+  required bootstrap job, strict branch protection, and associated CI run's
+  exact tested HEAD and BASE.
+- Added canonical short-lived independent Codex **signed** review evidence
+  with a reviewer signing principal distinct from the updater approval
+  principal. Root-side read-only preflight loads the two pinned public keys
+  and GitHub credential exclusively from a fixed root-owned directory;
+  it never accepts arbitrary Worker-supplied key paths or network URLs.
+- Candidate controller/policy bytes are fetched only from two fixed GitHub
+  content paths at the approved immutable commit and SHA-256/size verified.
+- An independent Codex review found two defects: unrelated/stale-base CI
+  acceptance and rollback-restage conflict. Both were fixed; new tests
+  verify stale CI base refusal, exact immutable release reuse after rollback,
+  and early block of damaged existing versions.
+- [Strict CI #42209694816](https://github.com/al-hub/mcp-dev-hub/actions/runs/42209694816)
+  completed SUCCESS for the revised source and tests. A **new final-HEAD
+  independent Codex review** is required after the documentation update.
+- **Not deployed:** No root-owned immutable verified updater entrypoint,
+  independent private signer/review attestor or installed root trust
+  configuration. Noninteractive sudo cannot be assumed. No actual
+  privileged A→B→C revisions or reboot/disconnect recovery evidence.
+- #35/#36/#37 remain OPEN. Keep `AI_WRITE=0`, `AI_PUSH=0` globally and
+  branch protection, Worker/Dashboard and private data unchanged.
+
+
 ## 2026-11-06 #35 candidate protected release chain — CODE ONLY
 
 - Existing Draft PR #39 reused; introduced signed approval + persistent journal
