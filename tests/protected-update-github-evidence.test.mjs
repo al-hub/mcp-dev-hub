@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {
   INDEPENDENT_REVIEW_DOMAIN,verifyIndependentSignedReview,
-  validateGitHubEvidenceShape,fetchAndVerifyGitHubUpdateEvidence
+  validateGitHubEvidenceShape,fetchAndVerifyGitHubUpdateEvidence,
+  validateGitHubControllerSource,fetchAndVerifyGitHubControllerPair
 } from '../src/ops/protected-update-github-evidence.mjs';
 
 const head='a'.repeat(40),base='b'.repeat(40);
@@ -145,5 +146,48 @@ test('live GitHub fetch fails before network for unsigned or invalid evidence',a
   await assert.rejects(fetchAndVerifyGitHubUpdateEvidence({
     ...good,reviewSignatureBase64:good.signatureBase64,
     githubToken:'not-a-real-token',ciRunId,prNumber:0
+  }),/protected_evidence_denied/);
+});
+
+test('fixed GitHub controller bytes are bound to signed file hash and path',()=>{
+  const data=Buffer.from('synthetic-fixed-controller\n');
+  const file='ai-github-canary.mjs';
+  const args={
+    name:file,head,bytes:data.length,sha256:createHash('sha256')
+      .update(data).digest('hex')
+  };
+  const blob={
+    type:'file',path:'scripts/ai-github-canary.mjs',
+    name:file,encoding:'base64',size:data.length,
+    sha:'f'.repeat(40),content:data.toString('base64')+'\n'
+  };
+  assert.deepEqual(validateGitHubControllerSource(blob,args),data);
+  for(const mutation of [
+    {path:'../private-file'},
+    {type:'symlink'},
+    {name:'bad.mjs'},
+    {encoding:'utf-8'},
+    {size:data.length+1},
+    {sha:'invalid'},
+    {content:Buffer.from('changed').toString('base64')}
+  ])assert.throws(()=>validateGitHubControllerSource({
+    ...blob,...mutation
+  },args),/protected_evidence_denied/);
+  assert.throws(()=>validateGitHubControllerSource(blob,{
+    ...args,sha256:'0'.repeat(64)
+  }),/protected_evidence_denied/);
+});
+test('untrusted manifest allowlist and hashes are denied before GitHub fetch',async()=>{
+  const good=[
+    {name:'ai-github-canary.mjs',bytes:20,sha256:'a'.repeat(64)},
+    {name:'ai-github-canary-policy.mjs',bytes:20,sha256:'b'.repeat(64)}
+  ];
+  for(const list of [
+    [good[0]],
+    [good[0],{...good[0]}],
+    [{...good[0],name:'../../../etc/passwd'},good[1]],
+    [good[0],{...good[1],sha256:'invalid'}]
+  ])await assert.rejects(fetchAndVerifyGitHubControllerPair({
+    head,manifestFiles:list,githubToken:'not-a-real-token'
   }),/protected_evidence_denied/);
 });
