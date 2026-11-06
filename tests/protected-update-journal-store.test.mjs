@@ -1,8 +1,9 @@
+import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync,
-  unlinkSync, writeFileSync
+  unlinkSync, writeFileSync, renameSync
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -120,4 +121,32 @@ test('state directory symlink and permissive mode are rejected',t=>{
   assert.throws(()=>beginStoredProtectedUpdateJournal(alias,args()));
   chmodSync(dir,0o777);
   assert.throws(()=>beginStoredProtectedUpdateJournal(dir,args()));
+});
+
+test('journal filename must match canonical embedded operation ID',t=>{
+  const dir=tempState(t);
+  let j=beginStoredProtectedUpdateJournal(dir,args());
+  j=move(dir,idA,j,'switch_pending');
+  j=move(dir,idA,j,'switched',{observedHashes:newHashes});
+  j=move(dir,idA,j,'verified',{
+    observedHashes:newHashes,serviceHealthVerified:true
+  });
+  // Simulate a copied/misnamed durable record, without authorizing replay.
+  renameSync(join(dir,idA+'.json'),join(dir,idB+'.json'));
+  assert.throws(()=>readStoredProtectedUpdateJournal(dir,idB),
+    /protected_journal_store_guard_failed/);
+  assert.throws(()=>beginStoredProtectedUpdateJournal(dir,args(idA)),
+    /protected_journal_store_guard_failed/);
+  assert.equal(readStoredProtectedUpdateJournal(dir,idA),null);
+});
+test('journal-shaped FIFO fails closed before a blocking read',t=>{
+  const dir=tempState(t);
+  const fifo=join(dir,idA+'.json');
+  const result=spawnSync('/usr/bin/mkfifo',[fifo],{timeout:2000});
+  assert.equal(result.status,0);
+  assert.throws(()=>readStoredProtectedUpdateJournal(dir,idA),
+    /protected_journal_store_guard_failed/);
+  assert.throws(()=>beginStoredProtectedUpdateJournal(
+    dir,args(idB,newHashes,newerHashes)
+  ),/protected_journal_store_guard_failed/);
 });
