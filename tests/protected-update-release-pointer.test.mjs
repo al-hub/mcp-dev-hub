@@ -176,5 +176,25 @@ test('unexpected file in current release refuses protected snapshot',t=>{
   chmodSync(join(root,'versions',A),0o555);
   assert.throws(()=>inspectProtectedCurrentSnapshot(root),
     /protected_release_guard_failed/);
-  assert.equal(inspectProtectedRelease(root,{files:expected}),A);
+  assert.throws(()=>inspectProtectedRelease(root,{files:expected}),
+    /protected_release_guard_failed/);
+  assert.equal(inspectProtectedRelease(root),A);
+});
+
+test('extra entry in a staged version rejects reuse and CAS before activation',t=>{
+  const root=layout(t),af=fixture(root,A,'A'),bf=fixture(root,B,'B');
+  switchProtectedRelease(root,{
+    expectedCommit:null,nextCommit:A,nextFiles:af
+  });
+  chmodSync(join(root,'versions',B),0o700);
+  writeFileSync(join(root,'versions',B,'unexpected-module.mjs'),'unreviewed');
+  chmodSync(join(root,'versions',B),0o555);
+  assert.throws(()=>stageProtectedRelease(root,{
+    commit:B,files:bf,contents:bytes('B')
+  }),/protected_release_guard_failed/);
+  assert.throws(()=>switchProtectedRelease(root,{
+    expectedCommit:A,nextCommit:B,nextFiles:bf
+  }),/protected_release_guard_failed/);
+  assert.equal(readlinkSync(join(root,'current')),'versions/'+A);
+  assert.deepEqual(inspectProtectedCurrentSnapshot(root).files,af);
 });
