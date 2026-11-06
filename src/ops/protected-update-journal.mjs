@@ -30,10 +30,12 @@ const cloneHashes = h=>Object.freeze(Object.fromEntries(
   PROTECTED_PAIR.map(name=>[name,h[name]])
 ));
 function validate(j) {
-  if(!exact(j,FIELDS) || j.version!==1 || !OP.test(j.operationId||'') ||
-     !SHA.test(j.head||'') || !SHA.test(j.base||'') || j.head===j.base ||
+  if(!exact(j,FIELDS) || j.version!==1 ||
+     typeof j.operationId!=='string' || !OP.test(j.operationId) ||
+     typeof j.head!=='string' || !SHA.test(j.head) ||
+     typeof j.base!=='string' || !SHA.test(j.base) || j.head===j.base ||
      !validHashes(j.oldHashes) || !validHashes(j.newHashes) ||
-     !Object.hasOwn(MOVES,j.phase) ||
+     typeof j.phase!=='string' || !Object.hasOwn(MOVES,j.phase) ||
      !Number.isSafeInteger(j.sequence) || j.sequence<0 ||
      !Number.isSafeInteger(j.createdAtMs) ||
      !Number.isSafeInteger(j.updatedAtMs) ||
