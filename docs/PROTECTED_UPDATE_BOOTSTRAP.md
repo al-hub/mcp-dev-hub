@@ -80,3 +80,40 @@ current candidate is **NOT safe to install as a root service**.
 
 The earlier single-file Codex companion repair and these synthetic two
 revisions are **not** evidence for either physical protected-file update.
+
+
+## Authenticated read-only root evidence preflight (candidate source)
+
+The branch now contains a **non-deployed** fixed root-trust reader and
+GitHub evidence adapter:
+
+- `src/ops/protected-update-root-evidence.mjs`: rejects non-root callers,
+  checks fixed root-owned, non-writable ancestors, reads bounded no-follow
+  credential/Ed25519 **public-key** files exclusively from the fixed
+  `/etc/mcp-dev-hub/protected-update` location. No caller-supplied token,
+  trusted key path, GitHub URL or arbitrary execution input is accepted.
+- `src/ops/protected-update-github-evidence.mjs`: fixed TLS GitHub REST API
+  origin, fixed repo/workflow identity (`.github/workflows/ci.yml` and
+  workflow ID), exact PR HEAD/BASE, required `bootstrap` success, strict
+  branch protection, and separately signed short-lived exact-HEAD Codex
+  review. Separate pinned reviewer and approval Ed25519 public keys are
+  mandatory. The updater's candidate pair source is fetched by **fixed**
+  repo content paths and compared byte-for-byte by size and SHA-256 to
+  signed manifest values.
+- The read-only root preflight combines these with existing signed approval,
+  but intentionally has **no installation/switch/sudo/retry entrypoint**.
+  Pure test fixtures are not live authenticated evidence.
+
+A future separately vetted root-owned signer/reviewer launcher must issue
+the signed approval and independent review attestations. **Their private
+keys and GitHub token must never enter the public repository, Worker request,
+PR/Issue, or assistant response.** No trust-config directory, key, token,
+reviewer-signer, root service, sudoers rule or installer is created by this
+PR. The fixed paths are a source contract only.
+
+The real root bootstrap gate remains **BLOCKED** until independently
+authenticated identity/issuer policy, immutable code hash, operating update
+entrypoint, OS ancestor/TOCTOU review, version migration/recovery and
+least-privileged sudo wiring have been reviewed and explicitly provisioned.
+Reviewing source code or seeing a successful CI alone cannot authorize it.
+
