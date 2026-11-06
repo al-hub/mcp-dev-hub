@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
-  readlinkSync, rmSync, symlinkSync, writeFileSync
+  readlinkSync, readdirSync, rmSync, symlinkSync, writeFileSync
 } from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -23,7 +23,15 @@ const files=contents=>RELEASE_FILES.map(name=>({
 function layout(t){
   const root=mkdtempSync(join(tmpdir(),'protected-pointer-'));
   mkdirSync(join(root,'versions'),{mode:0o700});
-  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  // Release folders are intentionally read-only; restore test-fixture
+  // permissions before cleanup, without touching any protected OS path.
+  t.after(()=>{
+    for(const name of readdirSync(join(root,'versions'))){
+      const dir=join(root,'versions',name);
+      if(lstatSync(dir).isDirectory())chmodSync(dir,0o700);
+    }
+    rmSync(root,{recursive:true,force:true});
+  });
   return root;
 }
 const fixture=(root,sha,tag)=>{
