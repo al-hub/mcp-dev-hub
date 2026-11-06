@@ -1,5 +1,16 @@
 # Handoff status
 
+## 2026-11-07 #35 protected-update candidate continuation (NOT DEPLOYED)
+
+- Reused existing Draft PR #39 and the exact fixed two-file protected-update scope. No administrator rights, new trust policy, root installation, service restart, data reset, branch-protection change, or global AI_WRITE/AI_PUSH change.
+- Added **read-only original installed pair capture** with exact legacy owner/mode/regular-file/nlink/size checks, no-follow and nonblocking access, inode consistency and SHA-256 evidence. This is **not** a deployed root backup, trust-issuer or updater.
+- Actual independent read-only Codex review of prior candidate HEAD `cb63e95918e5f421143a2760e509572c7bd975e3` found a P2 release directory allowlist inconsistency. On the same PR branch, activation now rejects unexpected version entries before reusing/activating a release; regression tests cover refused staging/CAS and preserved current pointer.
+- Source HEAD `2a6a93316d52673b2d9fbd1871c95c4b1759eae3`: authenticated WSL Node 24.15 run **222/222 PASS** and privacy scan **PASS** (manual staged-diff review still required). Exact-head strict GitHub [CI #42259651189](https://github.com/al-hub/mcp-dev-hub/actions/runs/42259651189) **SUCCESS**, `bootstrap` job `npm run check` SUCCESS.
+- Fresh independent protected Codex CLI read-only review on this code HEAD and exact BASE `175ba1a481d9a55c0567402a2c905f457c7601e5`: **no actionable defects within the explicitly non-deployed candidate scope**. Reviewer ran 39 supported read-only tests; filesystem-mutating and child-process tests were constrained by its sandbox, separately covered by the real WSL/GitHub checks. This is not GitHub formal APPROVED or privileged installation acceptance.
+- Operating read-only observation: legacy controller/policy root-owned, protected original version layout not migrated; Worker-14 and Dashboard both active. Existing main workspace was not changed; validation used a separate clean worktree.
+- **NO-GO for the one-time admin action:** independent live review/approval signing principals and protected private-key provision, immutable root updater, original migration/rollback installer, minimum policy wiring and a separate full privileged-code independent audit remain missing. Physical updates **0/2**, broad Issue-development E2Es **0/3**. Keep PR #39 Draft and Issues #35/#36/#37 OPEN. Never infer root authority from candidate CI.
+
+---
 ## 2026-11-06 #35 — One-time bootstrap readiness inventory (no deployment)
 
 - Rechecked AGENTS.md, SECURITY.md, the current ops constraints, and Issues
