@@ -80,6 +80,8 @@ export function validateGitHubEvidenceShape({
      pr.base?.sha!==base||pr.base?.ref!=='main'||
      pr.base?.repo?.full_name!==REPO)fail();
   if(run?.id!==ciRunId||run.name!=='CI'||
+     run.path!=='.github/workflows/ci.yml'||
+     run.workflow_id!==402358309||
      run.event!=='pull_request'||run.status!=='completed'||
      run.conclusion!=='success'||run.head_sha!==head||
      run.repository?.full_name!==REPO||
