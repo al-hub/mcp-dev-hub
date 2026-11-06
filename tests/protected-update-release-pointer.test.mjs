@@ -145,5 +145,8 @@ test('untraversable root or version directory fails closed',t=>{
   assert.throws(()=>stageProtectedRelease(root,{
     commit:A,files:expected,contents
   }),/protected_release_guard_failed/);
+  assert.throws(()=>inspectProtectedRelease(root),
+    /protected_release_guard_failed/);
+  chmodSync(join(root,'versions'),0o755);
   assert.equal(inspectProtectedRelease(root),null);
 });
