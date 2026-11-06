@@ -52,7 +52,7 @@ export function verifySignedProtectedUpdateApproval({
       a.head===a.base || a.ciHead!==a.head ||
       a.reviewHead!==a.head || a.reviewBase!==a.base ||
       a.reviewVerdict!=='PASS' ||
-      !DIGEST.test(a.reviewDigest||'') ||
+      typeof a.reviewDigest!=='string' || !DIGEST.test(a.reviewDigest) ||
       a.operationId!==trustedOperationId ||
       !Number.isSafeInteger(a.ciRunId) || a.ciRunId<=0 ||
       !Number.isSafeInteger(a.issuedAtMs) ||
