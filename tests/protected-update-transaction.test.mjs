@@ -30,7 +30,9 @@ const meta=data=>RELEASE_FILES.map(name=>({
 }));
 function dirs(t){
   const root=mkdtempSync(join(tmpdir(),'protected-txn-root-'));
-  mkdirSync(join(root,'versions'),{mode:0o700});
+  mkdirSync(join(root,'versions'),{mode:0o755});
+  chmodSync(root,0o755);
+  chmodSync(join(root,'versions'),0o755);
   const stateDir=mkdtempSync(join(tmpdir(),'protected-txn-state-'));
   t.after(()=>{
     for(const name of readdirSync(join(root,'versions'))){
