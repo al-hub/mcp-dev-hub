@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PROTECTED_PAIR,startProtectedUpdateJournal,advanceProtectedUpdateJournal}
+import {PROTECTED_PAIR,startProtectedUpdateJournal,advanceProtectedUpdateJournal,
+  parseProtectedUpdateJournal}
   from '../src/ops/protected-update-journal.mjs';
 const oldHashes=Object.fromEntries(PROTECTED_PAIR.map(n=>[n,'a'.repeat(64)]));
 const newHashes=Object.fromEntries(PROTECTED_PAIR.map(n=>[n,'b'.repeat(64)]));
@@ -78,4 +79,29 @@ test('untrusted scope, malformed fields, no-op and prototype keys denied',()=>{
   const j=make();
   assert.throws(()=>step({...j,__proto_exploit:1},'switch_pending'));
   assert.throws(()=>step({...j,phase:'garbage'},'switch_pending'));
+});
+
+test('rejects coerced arrays in every journal identifier before freeze and readback',()=>{
+  const j=make();
+  const cases=[
+    {operationId:[operationId]},
+    {head:['d'.repeat(40)]},
+    {base:['e'.repeat(40)]},
+    {phase:['prepared']},
+    {head:['d'.repeat(40)],base:['d'.repeat(40)]}
+  ];
+  for(const changes of cases){
+    const malformed={...j,...changes};
+    assert.throws(()=>parseProtectedUpdateJournal(JSON.stringify(malformed)),
+      /invalid_protected_update_journal/);
+    assert.throws(()=>advanceProtectedUpdateJournal(malformed,{
+      operationId,expectedSequence:0,to:'switch_pending',nowMs:1001
+    }),/invalid_protected_update_journal/);
+    if(Object.hasOwn(changes,'operationId')||
+       Object.hasOwn(changes,'head')||Object.hasOwn(changes,'base'))
+      assert.throws(()=>startProtectedUpdateJournal({
+        operationId:malformed.operationId,head:malformed.head,
+        base:malformed.base,oldHashes,newHashes,nowMs:1000
+      }),/invalid_protected_update_journal/);
+  }
 });
