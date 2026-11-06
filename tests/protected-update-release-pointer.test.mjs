@@ -8,7 +8,8 @@ import {
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {
-  RELEASE_FILES,inspectProtectedRelease,stageProtectedRelease,
+  RELEASE_FILES,inspectProtectedCurrentSnapshot,
+  inspectProtectedRelease,stageProtectedRelease,
   switchProtectedRelease
 } from '../src/ops/protected-update-release-pointer.mjs';
 
@@ -149,4 +150,31 @@ test('untraversable root or version directory fails closed',t=>{
     /protected_release_guard_failed/);
   chmodSync(join(root,'versions'),0o755);
   assert.equal(inspectProtectedRelease(root),null);
+});
+
+test('current snapshot derives trusted old pair without caller-supplied hashes',t=>{
+  const root=layout(t),contents=bytes('A'),expected=files(contents);
+  assert.throws(()=>inspectProtectedCurrentSnapshot(root),
+    /protected_release_guard_failed/);
+  stageProtectedRelease(root,{commit:A,files:expected,contents});
+  switchProtectedRelease(root,{
+    expectedCommit:null,nextCommit:A,nextFiles:expected
+  });
+  const current=inspectProtectedCurrentSnapshot(root);
+  assert.equal(current.commit,A);
+  assert.deepEqual(current.files,expected);
+  assert.equal(Object.isFrozen(current),true);
+  assert.equal(Object.isFrozen(current.files),true);
+});
+test('unexpected file in current release refuses protected snapshot',t=>{
+  const root=layout(t),expected=fixture(root,A,'A');
+  switchProtectedRelease(root,{
+    expectedCommit:null,nextCommit:A,nextFiles:expected
+  });
+  chmodSync(join(root,'versions',A),0o700);
+  writeFileSync(join(root,'versions',A,'unreviewed-file'),'unsafe');
+  chmodSync(join(root,'versions',A),0o555);
+  assert.throws(()=>inspectProtectedCurrentSnapshot(root),
+    /protected_release_guard_failed/);
+  assert.equal(inspectProtectedRelease(root,{files:expected}),A);
 });
