@@ -42,6 +42,7 @@ function githubFixture(){
     },
     run:{
       id:ciRunId,name:'CI',event:'pull_request',
+      path:'.github/workflows/ci.yml',workflow_id:402358309,
       status:'completed',conclusion:'success',head_sha:head,
       repository:{full_name:'al-hub/mcp-dev-hub'},
       pull_requests:[{number:prNumber}]
@@ -76,8 +77,10 @@ test('signed independent review binds exact SHA/base and distinct trust keys',()
 });
 test('signature, self-signing, wrong signer, subject and timestamps denied',()=>{
   const good=signed();
+  const tamperedSignature=Buffer.from(good.signatureBase64,'base64');
+  tamperedSignature[0]^=1;
   for(const patch of [
-    {signatureBase64:good.signatureBase64.replace(/^./,'A')},
+    {signatureBase64:tamperedSignature.toString('base64')},
     {pinnedReviewerPublicKeyPem:pem(other)},
     {pinnedApprovalPublicKeyPem:pem(independent)},
     {head:base},{base:head},{prNumber:40},
@@ -120,6 +123,8 @@ test('authenticated GitHub payload shape requires exact PR, CI job and protectio
     {...f,pr:{...f.pr,base:{...f.pr.base,sha:head}}},
     {...f,run:{...f.run,head_sha:base}},
     {...f,run:{...f.run,event:'workflow_dispatch'}},
+    {...f,run:{...f.run,path:'.github/workflows/unrelated.yml'}},
+    {...f,run:{...f.run,workflow_id:99999999}},
     {...f,run:{...f.run,conclusion:'failure'}},
     {...f,run:{...f.run,pull_requests:[]}},
     {...f,jobs:{...f.jobs,total_count:101}},
