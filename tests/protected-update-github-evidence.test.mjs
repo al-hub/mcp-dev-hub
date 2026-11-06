@@ -45,7 +45,7 @@ function githubFixture(){
       path:'.github/workflows/ci.yml',workflow_id:402358309,
       status:'completed',conclusion:'success',head_sha:head,
       repository:{full_name:'al-hub/mcp-dev-hub'},
-      pull_requests:[{number:prNumber}]
+      pull_requests:[{number:prNumber,head:{sha:head},base:{sha:base}}]
     },
     jobs:{
       total_count:1,
@@ -127,6 +127,12 @@ test('authenticated GitHub payload shape requires exact PR, CI job and protectio
     {...f,run:{...f.run,workflow_id:99999999}},
     {...f,run:{...f.run,conclusion:'failure'}},
     {...f,run:{...f.run,pull_requests:[]}},
+    {...f,run:{...f.run,pull_requests:[{
+      number:prNumber,head:{sha:head},base:{sha:'0'.repeat(40)}
+    }]}},
+    {...f,run:{...f.run,pull_requests:[{
+      number:prNumber,head:{sha:'0'.repeat(40)},base:{sha:base}
+    }]}},
     {...f,jobs:{...f.jobs,total_count:101}},
     {...f,jobs:{total_count:1,jobs:[
       {name:'bootstrap',status:'completed',conclusion:'success',steps:[]}
