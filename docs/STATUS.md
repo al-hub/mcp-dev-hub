@@ -1,5 +1,31 @@
 # Handoff status
 
+## 2026-11-06 #35 — One-time bootstrap readiness inventory (no deployment)
+
+- Rechecked AGENTS.md, SECURITY.md, the current ops constraints, and Issues
+  #35, #36 and #37. A single bounded administrator bootstrap is preferred
+  to repeated sudo prompts, but it must not be spent on incomplete code.
+- A new authenticated read-only mobile→Termux→SSH→WSL probe returned Linux /
+  exit 0. Existing protected controller/policy/AGY/Codex components were
+  present, with both Worker and Dashboard user services running. Protected
+  root directory is root-owned and non-group/other-writable.
+- Fixed-version `versions` migration and the proposed protected evidence trust
+  directory were absent. A bounded system-local executable inventory did not
+  find a preinstalled protected updater. This is *not* a complete OS permission
+  audit; existing narrow launcher privilege must be checked before a new rule.
+- Wrote the scope/admission/rollback decision and no-repeat-sudo acceptance
+  gates in [docs/PROTECTED_UPDATE_ONE_SHOT_BOOTSTRAP.md](PROTECTED_UPDATE_ONE_SHOT_BOOTSTRAP.md).
+  For new root policy, issuer keys or updater code, require a separate explicit
+  authorization **before** starting a job, not a surprise mid-run prompt.
+- [CI #42219429483](https://github.com/al-hub/mcp-dev-hub/actions/runs/42219429483)
+  succeeded for the new document-only scope commit. The previous independent
+  Codex review covers only the older uninstalled candidate code, not an
+  installed, independently audited root updater.
+- **Still NO-GO for administrator action:** separately trusted live issuers,
+  complete immutable root updater, reviewed migration/backup/rollback installer
+  and physical unattended updates 0/2 remain missing. Do not claim #35 complete
+  or proceed to #36/#37 acceptance. No credentials or protected files changed.
+
 ## 2026-11-06 #35 — Root current-release and request preflight (candidate only)
 
 - Added `inspectProtectedCurrentSnapshot` to derive the exact previous
