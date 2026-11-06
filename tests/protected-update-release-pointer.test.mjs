@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
-  readlinkSync, readdirSync, rmSync, symlinkSync, writeFileSync
+  readlinkSync, readdirSync, rmSync, symlinkSync, statSync, writeFileSync
 } from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -22,7 +22,9 @@ const files=contents=>RELEASE_FILES.map(name=>({
 }));
 function layout(t){
   const root=mkdtempSync(join(tmpdir(),'protected-pointer-'));
-  mkdirSync(join(root,'versions'),{mode:0o700});
+  mkdirSync(join(root,'versions'),{mode:0o755});
+  chmodSync(root,0o755);
+  chmodSync(join(root,'versions'),0o755);
   // Release folders are intentionally read-only; restore test-fixture
   // permissions before cleanup, without touching any protected OS path.
   t.after(()=>{
@@ -121,4 +123,27 @@ test('stale lock, left-over stage and pointer CAS fail closed',t=>{
     commit:C,files:files(bytes('C')),contents:bytes('C')
   }));
   assert.ok(existsSync(join(other,'versions','.stage-'+C)));
+});
+
+test('release bytes and directories stay Worker-readable under restrictive umask',t=>{
+  const root=layout(t),contents=bytes('A'),expected=files(contents);
+  const initial=process.umask(0o077);
+  try {
+    stageProtectedRelease(root,{commit:A,files:expected,contents});
+  }finally{process.umask(initial);}
+  for(const item of RELEASE_FILES){
+    assert.equal(statSync(join(root,'versions',A,item)).mode&0o777,0o444);
+  }
+  assert.equal(statSync(join(root,'versions',A)).mode&0o777,0o555);
+  assert.deepEqual(switchProtectedRelease(root,{
+    expectedCommit:null,nextCommit:A,nextFiles:expected
+  }),{from:null,to:A});
+});
+test('untraversable root or version directory fails closed',t=>{
+  const root=layout(t),contents=bytes('A'),expected=files(contents);
+  chmodSync(join(root,'versions'),0o700);
+  assert.throws(()=>stageProtectedRelease(root,{
+    commit:A,files:expected,contents
+  }),/protected_release_guard_failed/);
+  assert.equal(inspectProtectedRelease(root),null);
 });
