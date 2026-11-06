@@ -1,5 +1,30 @@
 # Handoff status
 
+## 2026-11-06 #35 candidate protected release chain — CODE ONLY
+
+- Existing Draft PR #39 reused; introduced signed approval + persistent journal
+  integration, staged fixed two-file versions, one atomic CAS release pointer,
+  compare-and-swap rollback, and a fixed controller wrapper candidate matching
+  the legacy controller's direct-invocation guard.
+- Exact code/tests CI: [run #42204022313](https://github.com/al-hub/mcp-dev-hub/actions/runs/42204022313)
+  SUCCESS for synthetic two consecutive updates, rollback on confirmed
+  negative health, and unknown-never-replay. Additional wrapper/docs candidate
+  [run #42204648331](https://github.com/al-hub/mcp-dev-hub/actions/runs/42204648331)
+  SUCCESS; code was not installed under root.
+- Physical read-only noninteractive sudo check returned password required.
+  No broad authority, protected files, root service, branch protections or
+  live Worker/Dashboard were modified.
+- **Critical pending trust gate**: the frozen proof used in candidate
+  transaction tests is NOT an authenticated independent GitHub/CI/Codex
+  attestation. A separately reviewed immutable root verifier and independent
+  signer/key bootstrap are required before installing any privileged entrypoint.
+  See docs/PROTECTED_UPDATE_BOOTSTRAP.md.
+- Missing: final-HEAD independent Codex review of the new candidate, root
+  authorization and install, two genuine unattended protected source updates,
+  failure/disconnect physical acceptance, PR/main CI after protected merge,
+  and #35 CLOSED. Dependent #36/#37 remain OPEN. AI_WRITE=0/AI_PUSH=0 globally.
+
+
 ## 2026-11-04 #10 reviewer-app preflight
 
 - Added a separately invoked, bounded GitHub App connection preflight using the existing scoped App client. Checks expected App bot identity, exact PR HEAD, PR author/base/state. No APPROVE endpoint and no background automation are exposed.
