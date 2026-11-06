@@ -86,7 +86,8 @@ export function validateGitHubEvidenceShape({
      run.conclusion!=='success'||run.head_sha!==head||
      run.repository?.full_name!==REPO||
      !Array.isArray(run.pull_requests)||
-     !run.pull_requests.some(p=>p?.number===prNumber))fail();
+     !run.pull_requests.some(p=>p?.number===prNumber&&
+       p.head?.sha===head&&p.base?.sha===base))fail();
   if(!Array.isArray(jobs?.jobs)||jobs.jobs.length<1||
      jobs.total_count!==jobs.jobs.length||
      jobs.jobs.filter(j=>j?.name==='bootstrap'&&
