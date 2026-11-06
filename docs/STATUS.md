@@ -1,5 +1,33 @@
 # Handoff status
 
+## 2026-11-06 #35 — Root current-release and request preflight (candidate only)
+
+- Added `inspectProtectedCurrentSnapshot` to derive the exact previous
+  controller pair hashes from the protected current version, rejecting
+  unexpected files, unsafe modes and no-follow violations. No previous hashes
+  are trusted solely from Worker input.
+- Added bounded canonical `parseProtectedUpdateRequest` with an exact
+  non-executable allowlist. Worker-supplied root paths, commands, trust keys,
+  credentials, privileges and policy updates are forbidden.
+- Added `preflightRootProtectedUpdateRequest`: fixed root-side read-only
+  composition of authenticated GitHub/review evidence, actual installed
+  release metadata and verified source bytes. Returns only bounded status;
+  deliberately has **no** privileged install/switch/retry entrypoint.
+- The first synthetic CI detected an internal missing owner argument in one
+  CAS pointer check; corrected before acceptance. Exact candidate
+  [CI #42211771953](https://github.com/al-hub/mcp-dev-hub/actions/runs/42211771953)
+  passed. Independent protected Codex read-only review on its exact SHA
+  returned no actionable defects within candidate scope. Reviewer could
+  not execute wrapper subprocess tests in its sandbox; CI covered them.
+- No root bootstrap was attempted. Missing: separately trusted reviewer and
+  approval signing issuers/private key protection, reviewed installed
+  immutable root updater, narrow administrator bootstrap, physical 2/2
+  unattended protected updates and rollback/unknown E2E, formal GitHub
+  APPROVED, protected merge/main CI. #35/#36/#37 remain OPEN.
+- Preserve old root-controlled files, operational services, private state,
+  branch protection and globally `AI_WRITE=0`, `AI_PUSH=0`.
+
+
 ## 2026-11-06 #35 — Authenticated evidence candidate (2026-11-06)
 
 - Existing Draft PR #39 reused. Candidate fixed HTTPS GitHub API reader now
