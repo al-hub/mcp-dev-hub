@@ -5,7 +5,7 @@
 import {createHash} from 'node:crypto';
 import {
   constants, chmodSync, closeSync, fchmodSync, fstatSync, fsyncSync, lstatSync,
-  mkdirSync, openSync, readFileSync, readlinkSync, renameSync,
+  mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync,
   symlinkSync, unlinkSync, writeSync
 } from 'node:fs';
 import {join, isAbsolute, resolve} from 'node:path';
@@ -149,11 +149,11 @@ export function stageProtectedRelease(root,{commit,files,contents}={}){
   verifyRelease(root,owner,commit,files);
   return Object.freeze({commit,files:files.map(f=>Object.freeze({...f}))});
 }
-function currentCommit(root) {
+function currentCommit(root,owner) {
   const path=join(root,'current');
   try {
     const st=lstatSync(path);
-    if(!st.isSymbolicLink())deny();
+    if(!st.isSymbolicLink()||st.uid!==owner)deny();
     const target=readlinkSync(path);
     const m=/^versions\/([a-f0-9]{40})$/.exec(target);
     if(!m)deny();
@@ -162,9 +162,38 @@ function currentCommit(root) {
 }
 export function inspectProtectedRelease(root,{files}={}){
   const owner=rootAndVersions(root);
-  const commit=currentCommit(root);
+  const commit=currentCommit(root,owner);
   if(commit!==null&&files)verifyRelease(root,owner,commit,files);
   return commit;
+}
+/** Read actual previously installed release metadata, never trust the
+ * caller to name the current release's files or supply their old hashes.
+ * This is metadata ONLY; pinning all trusted ancestors remains the immutable
+ * root bootstrap's responsibility. Refuse any special files or extras.
+ */
+export function inspectProtectedCurrentSnapshot(root) {
+  const owner=rootAndVersions(root);
+  const commit=currentCommit(root,owner);
+  if(commit===null)deny(); // initial migration needs explicit bootstrap
+  const dir=releaseDir(root,commit);
+  directory(dir,owner);
+  const entries=readdirSync(dir).sort();
+  if(entries.length!==RELEASE_FILES.length||
+     entries.join('\\0')!==RELEASE_FILES.slice().sort().join('\\0'))deny();
+  const files=RELEASE_FILES.map(name=>{
+    const fd=openSync(join(dir,name),constants.O_RDONLY|nofollow);
+    try{
+      const st=fstatSync(fd);
+      if(!st.isFile()||st.uid!==owner||
+         (st.mode&0o777)!==0o444||st.size<1||st.size>MAX_BYTES)deny();
+      const bytes=readFileSync(fd);
+      if(bytes.length!==st.size)deny();
+      return Object.freeze({
+        name,bytes:st.size,sha256:digest(bytes)
+      });
+    }finally{closeSync(fd);}
+  });
+  return Object.freeze({commit,files:Object.freeze(files)});
 }
 /** Compare-and-swap one symlink, never two live source files.
  * Caller must have durably persisted switch_pending BEFORE invocation and
@@ -183,7 +212,7 @@ export function switchProtectedRelease(root,{
   try{
     fsyncSync(lockFd);
     syncDirectory(root);
-    if(currentCommit(root)!==expectedCommit)deny();
+    if(currentCommit(root,owner)!==expectedCommit)deny();
     verifyRelease(root,owner,nextCommit,nextFiles);
     const pending=join(root,'.next-'+nextCommit);
     symlinkSync('versions/'+nextCommit,pending);
@@ -191,7 +220,7 @@ export function switchProtectedRelease(root,{
     if(currentCommit(root)!==expectedCommit)deny();
     renameSync(pending,join(root,'current'));
     syncDirectory(root);
-    if(currentCommit(root)!==nextCommit)deny();
+    if(currentCommit(root,owner)!==nextCommit)deny();
     // This is pointer switching, NOT service-health verification.
     return Object.freeze({from:expectedCommit,to:nextCommit});
   }finally {
