@@ -4,7 +4,7 @@
 // independent review, signer, approval, source bytes and ALL path ancestors.
 import {createHash} from 'node:crypto';
 import {
-  constants, chmodSync, closeSync, fstatSync, fsyncSync, lstatSync,
+  constants, chmodSync, closeSync, fchmodSync, fstatSync, fsyncSync, lstatSync,
   mkdirSync, openSync, readFileSync, readlinkSync, renameSync,
   symlinkSync, unlinkSync, writeSync
 } from 'node:fs';
@@ -25,7 +25,7 @@ const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 function directory(path,uid) {
   const st=lstatSync(path);
   if(!st.isDirectory()||st.isSymbolicLink()||
-    (st.mode&0o022)!==0||st.uid!==uid)deny();
+    (st.mode&0o022)!==0||(st.mode&0o005)!==0o005||st.uid!==uid)deny();
 }
 function rootAndVersions(root) {
   if(typeof root!=='string'||!isAbsolute(root)||resolve(root)!==root||
@@ -47,7 +47,7 @@ function fileBytes(path,owner,expectedBytes,expectedHash) {
   const fd=openSync(path,constants.O_RDONLY|nofollow);
   try{
     const st=fstatSync(fd);
-    if(!st.isFile()||st.uid!==owner||(st.mode&0o022)!==0||
+    if(!st.isFile()||st.uid!==owner||(st.mode&0o777)!==0o444||
        st.size!==expectedBytes||st.size<1||st.size>MAX_BYTES)deny();
     const bytes=readFileSync(fd);
     if(bytes.length!==expectedBytes||digest(bytes)!==expectedHash)deny();
@@ -104,6 +104,9 @@ export function stageProtectedRelease(root,{commit,files,contents}={}){
         if(n<=0)deny();
         written+=n;
       }
+      // O_EXCL creation mode is masked by umask; enforce public read-only
+      // for the existing non-root Worker, without granting write or exec.
+      fchmodSync(fd,0o444);
       fsyncSync(fd);
     }finally{closeSync(fd);}
     fileBytes(join(stage,f.name),owner,f.bytes,f.sha256);
