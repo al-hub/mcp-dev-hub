@@ -6,7 +6,8 @@
 import {verifySignedProtectedUpdateApproval}
   from './protected-update-approval.mjs';
 import {
-  stageProtectedRelease, inspectProtectedRelease, switchProtectedRelease,
+  stageProtectedRelease, inspectProtectedRelease,
+  inspectProtectedReleaseStaging, switchProtectedRelease,
   RELEASE_FILES
 } from './protected-update-release-pointer.mjs';
 import {
@@ -75,6 +76,11 @@ export async function applyProtectedUpdateCandidate({
   // Initial migration is separately bootstrapped and reviewed. We never
   // switch from an unknown/unbacked-up installed version.
   if(!previous||previous===signed.head)fail();
+  // Verify a previously rolled-back exact release or reject a stale stage
+  // BEFORE consuming a new operation ID in the persistent journal.
+  inspectProtectedReleaseStaging(root,{
+    commit:signed.head,files:signed.manifest.files,contents
+  });
   // The journal is durably created BEFORE stage or pointer side effects.
   let j=beginStoredProtectedUpdateJournal(stateDir,{
     operationId,head:signed.head,base:signed.base,
