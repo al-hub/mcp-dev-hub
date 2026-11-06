@@ -217,7 +217,7 @@ export function switchProtectedRelease(root,{
     const pending=join(root,'.next-'+nextCommit);
     symlinkSync('versions/'+nextCommit,pending);
     syncDirectory(root);
-    if(currentCommit(root)!==expectedCommit)deny();
+    if(currentCommit(root,owner)!==expectedCommit)deny();
     renameSync(pending,join(root,'current'));
     syncDirectory(root);
     if(currentCommit(root,owner)!==nextCommit)deny();
