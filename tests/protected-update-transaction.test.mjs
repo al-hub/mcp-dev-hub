@@ -144,3 +144,36 @@ test('isolated preflight requires pinned trusted key and immutable evidence',()=
       .publicKey.export({type:'spki',format:'pem'})
   }));
 });
+
+test('subsequent authenticated update may reuse exact rolled-back release',async t=>{
+  const env=dirs(t),first=request();
+  const rolled=await applyProtectedUpdateCandidate({
+    ...env,...first,observeHealth:async()=>false
+  });
+  assert.equal(rolled.phase,'rolled_back');
+  assert.equal(inspectProtectedRelease(env.root,{files:env.oldFiles}),A);
+  const second=request({head:B,base:A,id:ID2,word:'B'});
+  const result=await applyProtectedUpdateCandidate({
+    ...env,...second,observeHealth:async()=>true
+  });
+  assert.equal(result.phase,'verified');
+  assert.equal(inspectProtectedRelease(env.root,{files:second.files}),B);
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID1).phase,
+    'rolled_back');
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID2).phase,
+    'verified');
+});
+test('corrupt existing release denies next operation before journal write',async t=>{
+  const env=dirs(t),first=request();
+  await applyProtectedUpdateCandidate({
+    ...env,...first,observeHealth:async()=>false
+  });
+  const tampered=join(env.root,'versions',B);
+  chmodSync(tampered,0o700);
+  const second=request({head:B,base:A,id:ID2,word:'B'});
+  await assert.rejects(applyProtectedUpdateCandidate({
+    ...env,...second,observeHealth:async()=>true
+  }),/protected_release_guard_failed/);
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID2),null);
+  assert.equal(inspectProtectedRelease(env.root,{files:env.oldFiles}),A);
+});
