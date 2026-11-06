@@ -108,7 +108,7 @@ export function validateGitHubEvidenceShape({
   });
 }
 
-async function githubGet(path,token) {
+async function githubGet(path,token,maxBytes=262144) {
   if(typeof token!=='string'||token.length<8||token.length>4096||
      /[\r\n\t ]/.test(token)||typeof path!=='string'||
      !/^\/repos\/al-hub\/mcp-dev-hub\//.test(path))fail();
@@ -132,7 +132,7 @@ async function githubGet(path,token) {
       const chunks=[];
       res.on('data',chunk=>{
         size+=chunk.length;
-        if(size>262144){
+        if(size>maxBytes){
           req.destroy(Error('protected_evidence_denied'));return;
         }
         chunks.push(chunk);
@@ -185,4 +185,69 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
     reviewHead:review.head,reviewBase:review.base,
     reviewDigest:review.reviewDigest
   });
+}
+
+const FILEPATHS=Object.freeze({
+  'ai-github-canary-policy.mjs':'src/jobs/ai-github-canary-policy.mjs',
+  'ai-github-canary.mjs':'scripts/ai-github-canary.mjs'
+});
+const MAX_FILE_BYTES=256*1024;
+
+/** Pure parsing of an authenticated fixed GitHub Contents response.
+ * Caller MUST compare against a manifest authenticated by the independently
+ * pinned approval signer. This helper alone grants no authority.
+ */
+export function validateGitHubControllerSource(blob,{
+  name,head,bytes,sha256
+}={}){
+  if(typeof name!=='string'||!Object.hasOwn(FILEPATHS,name)||
+     typeof head!=='string'||!SHA.test(head)||
+     !Number.isSafeInteger(bytes)||bytes<1||bytes>MAX_FILE_BYTES||
+     typeof sha256!=='string'||!HASH.test(sha256))fail();
+  const expectedPath=FILEPATHS[name];
+  if(blob?.type!=='file'||blob.path!==expectedPath||
+     blob.name!==expectedPath.split('/').at(-1)||
+     blob.encoding!=='base64'||blob.size!==bytes||
+     typeof blob.sha!=='string'||!SHA.test(blob.sha)||
+     typeof blob.content!=='string')fail();
+  const encoded=blob.content.replace(/\r?\n/g,'');
+  if(!/^[a-zA-Z0-9+/]+={0,2}$/.test(encoded))fail();
+  const data=Buffer.from(encoded,'base64');
+  if(data.length!==bytes||data.toString('base64')!==encoded||
+     createHash('sha256').update(data).digest('hex')!==sha256)fail();
+  return data;
+}
+
+/** Obtain the exact fixed controller-pair source from GitHub TLS, never
+ * arbitrary caller paths or content. This is a candidate root-side fetcher,
+ * not a deployable root updater or proof of the signer trust bootstrap.
+ */
+export async function fetchAndVerifyGitHubControllerPair({
+  head,manifestFiles,githubToken
+}={}){
+  if(typeof head!=='string'||!SHA.test(head)||
+     !Array.isArray(manifestFiles)||manifestFiles.length!==2||
+     new Set(manifestFiles.map(f=>f?.name)).size!==2||
+     !Object.keys(FILEPATHS).every(name=>
+       manifestFiles.some(f=>f?.name===name)))fail();
+  const stem='/repos/al-hub/mcp-dev-hub';
+  const result=Object.create(null);
+  for(const name of Object.keys(FILEPATHS)){
+    const f=manifestFiles.find(file=>file.name===name);
+    // All untrusted fields are validated before any transport invocation.
+    if(!Number.isSafeInteger(f.bytes)||f.bytes<1||
+       f.bytes>MAX_FILE_BYTES||typeof f.sha256!=='string'||
+       !HASH.test(f.sha256))fail();
+  }
+  // These paths and hostname are literal, not drawn from PR/Issue text.
+  const rows=await Promise.all(Object.entries(FILEPATHS).map(
+    async ([name,sourcePath])=>{
+      const blob=await githubGet(
+        stem+'/contents/'+sourcePath+'?ref='+head,githubToken,500000);
+      const f=manifestFiles.find(file=>file.name===name);
+      return [name,validateGitHubControllerSource(blob,{...f,head})];
+    }
+  ));
+  for(const [name,bytes] of rows)result[name]=bytes;
+  return result;
 }
