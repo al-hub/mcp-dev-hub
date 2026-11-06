@@ -81,3 +81,10 @@ test('no trust key, non-Ed25519 trust key and unbounded approval are rejected',(
   assert.throws(()=>invoke(baseApproval(),{trustPublicKeyPem:'invalid'}),/invalid_trust_key/);
   assert.throws(()=>invoke('x'.repeat(2100)),/invalid_protected_approval/);
 });
+
+test('validly signed array-valued review digest cannot pass verification',()=>{
+  assert.throws(()=>invoke({...baseApproval(),reviewDigest:[digest]}),
+    /invalid_protected_approval/);
+  assert.throws(()=>invoke({...baseApproval(),reviewDigest:{0:digest}}),
+    /invalid_protected_approval/);
+});
