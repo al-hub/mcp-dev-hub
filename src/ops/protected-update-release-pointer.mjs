@@ -75,7 +75,14 @@ function releaseDir(root,sha) {
 function verifyRelease(root,owner,sha,files) {
   const dir=releaseDir(root,sha);
   directory(dir,owner);
-  for(const f of approvedFiles(files))
+  const approved=approvedFiles(files);
+  // Activation and current-release readback must accept the SAME exact
+  // allowlist: no extra file, directory, symlink or hidden entry may survive.
+  const names=approved.map(f=>f.name).sort();
+  const entries=readdirSync(dir).sort();
+  if(entries.length!==names.length||
+     entries.some((entry,i)=>entry!==names[i]))deny();
+  for(const f of approved)
     fileBytes(join(dir,f.name),owner,f.bytes,f.sha256);
   return dir;
 }
