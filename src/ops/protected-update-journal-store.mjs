@@ -17,7 +17,8 @@ const ID=/^[a-f0-9]{32}$/;
 const FILE=/^([a-f0-9]{32})\.json$/;
 const TERMINAL=new Set(['verified','rolled_back','aborted']);
 const fail=()=>{throw Error('protected_journal_store_guard_failed');};
-const readFlags=constants.O_RDONLY|constants.O_NOFOLLOW;
+// O_NONBLOCK ensures a journal-shaped FIFO cannot hang before fstat rejects it.
+const readFlags=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const writeFlags=constants.O_WRONLY|constants.O_CREAT|
   constants.O_EXCL|constants.O_NOFOLLOW;
 
@@ -82,7 +83,10 @@ export function readStoredProtectedUpdateJournal(stateDir,operationId) {
     const st=fstatSync(fd);
     if(!st.isFile()||st.uid!==owner||(st.mode&0o077)!==0||
         st.size<1||st.size>4096)fail();
-    return parseProtectedUpdateJournal(readFileSync(fd,{encoding:'utf8'}));
+    const journal=parseProtectedUpdateJournal(readFileSync(fd,{encoding:'utf8'}));
+    // A restored/cross-named record must never impersonate another request.
+    if(journal.operationId!==operationId)fail();
+    return journal;
   } finally {closeSync(fd);}
 }
 function atomicWrite(stateDir,operationId,journal) {
