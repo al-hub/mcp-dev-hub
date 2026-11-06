@@ -80,16 +80,47 @@ function verifyRelease(root,owner,sha,files) {
   return dir;
 }
 
-/** Stage only authenticated bytes from the future immutable root verifier.
- * Crashed/partial stages remain for explicit reconciliation (no auto-delete).
+function entryExists(path){
+  try{return lstatSync(path);}catch(e){
+    if(e.code==='ENOENT')return null;
+    throw e;
+  }
+}
+/** Pure pre-effect preflight for an approved, fixed two-file release.
+ * Existing exact versions are reusable after a verified rollback. A partial
+ * stage or mismatched existing version is a blocker BEFORE journal creation.
  */
-export function stageProtectedRelease(root,{commit,files,contents}={}){
+export function inspectProtectedReleaseStaging(root,{commit,files,contents}={}){
   const owner=rootAndVersions(root);
   validCommit(commit);
   approvedFiles(files);
   if(contents===null||typeof contents!=='object'||
      Array.isArray(contents)||Object.keys(contents).sort().join(',')!==
       RELEASE_FILES.slice().sort().join(','))deny();
+  for(const f of files){
+    const data=contents[f.name];
+    if(!Buffer.isBuffer(data)||data.length!==f.bytes||
+       digest(data)!==f.sha256)deny();
+  }
+  const stage=join(root,'versions','.stage-'+commit);
+  if(entryExists(stage))deny(); // unknown/partial: never auto-reclaim
+  const published=releaseDir(root,commit);
+  if(entryExists(published)){
+    verifyRelease(root,owner,commit,files);
+    return Object.freeze({commit,existing:true});
+  }
+  return Object.freeze({commit,existing:false});
+}
+/** Stage only authenticated bytes from the future immutable root verifier.
+ * Crashed/partial stages remain for explicit reconciliation (no auto-delete).
+ */
+export function stageProtectedRelease(root,{commit,files,contents}={}){
+  const inspected=inspectProtectedReleaseStaging(root,{
+    commit,files,contents
+  });
+  if(inspected.existing)
+    return Object.freeze({commit,files:files.map(f=>Object.freeze({...f}))});
+  const owner=rootAndVersions(root);
   const stage=join(root,'versions','.stage-'+commit);
   mkdirSync(stage,{mode:0o700});
   for(const f of files){
