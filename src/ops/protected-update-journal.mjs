@@ -73,3 +73,19 @@ export function advanceProtectedUpdateJournal(j,{
   return Object.freeze({...next,
     oldHashes:cloneHashes(j.oldHashes),newHashes:cloneHashes(j.newHashes)});
 }
+
+/**
+ * Validate a durable readback record before any transition. Exact JSON
+ * roundtrip denies duplicate keys, unnormalized numeric fields and ambiguous
+ * bytes. Parsing is NOT OS authorization or a replay-clearance mechanism.
+ */
+export function parseProtectedUpdateJournal(rawJson) {
+  if(typeof rawJson!=='string' || Buffer.byteLength(rawJson,'utf8')>4096)
+    deny();
+  let j;
+  try { j=JSON.parse(rawJson); } catch { deny(); }
+  if(JSON.stringify(j)!==rawJson) deny();
+  validate(j);
+  return Object.freeze({...j,oldHashes:cloneHashes(j.oldHashes),
+    newHashes:cloneHashes(j.newHashes)});
+}
