@@ -219,7 +219,9 @@ export function verifyProtectedBootstrapPack({outputPath,expectedManifestSha256}
   }
   if(total>MAX_PACKAGE)deny();
   return Object.freeze({head:m.head,manifestSha256:expectedManifestSha256,
-    fileCount:m.files.length,status:'source_only_unprivileged_no_go'});
+    fileCount:m.files.length,
+    files:Object.freeze(m.files.map(f=>Object.freeze({...f}))),
+    status:'source_only_unprivileged_no_go'});
 }
 export const PROTECTED_BOOTSTRAP_FILES=SOURCE;
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
