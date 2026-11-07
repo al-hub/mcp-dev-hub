@@ -36,7 +36,8 @@ const KEYGEN=String.raw`
 const {generateKeyPairSync}=require('node:crypto');
 const fs=require('node:fs');
 const [dest]=process.argv.slice(1);
-if(typeof dest!=='string'||!/^\\/var\\/lib\\/mcp-dev-hub-signers\\/issuer-(?:reviewer|approval)\\/private\\.ed25519\\.pem$/.test(dest))
+if(dest!=='/var/lib/mcp-dev-hub-signers/issuer-reviewer/private.ed25519.pem'&&
+   dest!=='/var/lib/mcp-dev-hub-signers/issuer-approval/private.ed25519.pem')
   process.exit(50);
 const {privateKey,publicKey}=generateKeyPairSync('ed25519');
 const bytes=Buffer.from(privateKey.export({format:'pem',type:'pkcs8'}));
