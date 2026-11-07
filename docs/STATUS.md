@@ -1,5 +1,64 @@
 # Handoff status
 
+## 2026-11-07 #35 one-time signer provisioning, root activation and real visudo checks — NO-GO
+
+- Continued development in the **existing Draft PR #39**, without root or
+  sudo operations, trust/credential/Worker DB changes, service restart,
+  global `AI_WRITE=0`/`AI_PUSH=0` relaxation or branch protection bypass.
+- Added `scripts/protected-update-bootstrap-restore.mjs`: fixed root
+  emergency restore entry (not granted via routine sudo), exact pinned
+  original controller backup/hash recovery with no unknown replay.
+- Added `src/ops/protected-update-issuer-boundary.mjs` and
+  `scripts/protected-update-issuer-provision.mjs`: two **dedicated distinct
+  OS identity** key-owner candidates. Each Ed25519 private key must be
+  generated under its own dropped nonroot UID/GID with mode `0400`
+  in a role-owned mode-`0700` directory beneath the separate root-owned
+  signer base. No private key bytes are returned; any existing
+  key/account/partial stage fails closed. **No actual accounts or keys
+  were created on this operating host.** The static child keygen program
+  passed syntax and arbitrary-path denial tests.
+- Added `src/ops/protected-update-sudo-policy.mjs` and
+  `scripts/protected-update-os-activate.mjs`: candidate one-time
+  root-only activation after externally pinned package, distinct
+  signer/approval/strict GitHub proofs, verified original backup and
+  real sandboxed controller startup. Sudoers permits **exactly two**
+  fixed root-owned Node entrypoints, no shell/wildcards, `env_reset`/
+  `!setenv`; actual WSL `/usr/sbin/visudo -cf` of synthetic
+  generated policy **PASS**. No sudo policy was installed.
+- Added pinned **official GitHub reviewer Bot** approval validation
+  for the exact PR/HEAD, including rejection of stale/dismissed/
+  foreign reviews. The actual PR #39 formal review API returned
+  **0 reviews**, so independent official APPROVED is still missing.
+  Running a Codex command or seeing green CI alone does not meet
+  that requirement.
+- Actual WSL tests on source HEAD
+  `39b42851a8e95548c96c38021e736eab9462e089`:
+  **351/351 PASS**, privacy candidate scan **168 files PASS**,
+  Worker and Dashboard user services both **active**. Corrected
+  an earlier flaky synthetic signature tamper test to guarantee an
+  actual changed byte.
+- Exact-HEAD [GitHub strict CI #42342740405](https://github.com/al-hub/mcp-dev-hub/actions/runs/42342740405):
+  **SUCCESS**, **355 tests PASS / 0 FAIL**, privacy candidate scan
+  **168 files PASS**.
+- Three independent 26-file, immutable-Git-blob **source-only**
+  bundles produced matching manifest SHA-256
+  `9ab59c1f8ceed4ada1ed452599ba4de8ae9cd2ed47cb6bfce1ef02c7e5f0e486`.
+  All remain explicitly `installAuthorized:false`. Hash equality
+  is not an approval signature or a privileged installer proof.
+- Independent Codex final privileged-source review was attempted
+  but **interrupted by the CLI usage limit**; no final PASS.
+  A retry after the indicated 16:09 KST quota reset is necessary.
+- **Unfinished blocking prerequisites:** independently operated,
+  provenance-verifying reviewer+approval signature **issuer services**
+  (not just different key verifier code); actual root trust/
+  dedicated signer key provisioning; immutable staged initial installer
+  with explicit single bounded owner administrator action and full
+  privileged OS audit; actual protected revisions **0/2** with
+  physical rollback/disconnect proof; formal GitHub APPROVED,
+  PR merge/main CI, Issue #35 Close. This work **does not complete**
+  root installation or achieve unattended root updates. PR #39
+  remains Draft and #35 OPEN.
+
 ## 2026-11-07 #35 live nonroot baseline and sandbox acceptance — corrected OS inventory
 
 - Existing Draft PR #39 and isolated clean WSL worktree reused; no root/sudo
