@@ -9,7 +9,7 @@
 // after the first identity is created is an UNKNOWN partial provision, not
 // something to blindly rerun or delete.
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,mkdirSync,
-  openSync,readFileSync,writeSync,chmodSync,chownSync} from 'node:fs';
+  openSync,readFileSync,writeSync,chmodSync,chownSync,fchownSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createPublicKey} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
@@ -133,6 +133,45 @@ function writeRootFile(name,value){
        (s.mode&0o777)!==0o400||s.size!==b.length)deny();
   }finally{closeSync(fd);}
 }
+// Root-only public reviewer key copy is the immutable approval issuer's
+// read-only verification anchor. Root's private trust copy remains 0400.
+// The two separately scoped read-only GitHub tokens are provided by the
+// owner bootstrap and copied ONLY into the owning issuer's private directory.
+function writePublicIssuerFile(name,value){
+  const b=Buffer.from(String(value),'utf8');
+  if(b.length<1||b.length>4096)deny();
+  const fd=openSync(BASE+'/'+name,WRITE,0o444);
+  try{
+    writeSync(fd,b,0,b.length,0);
+    fsyncSync(fd);
+    const s=fstatSync(fd);
+    if(!s.isFile()||s.uid!==0||s.nlink!==1||
+       (s.mode&0o777)!==0o444||s.size!==b.length)deny();
+  }finally{closeSync(fd);}
+}
+function copyIssuerReadonlyToken(role,uid,gid){
+  const token=trust(role+'-github-readonly-token');
+  if(!/^[a-zA-Z0-9_.-]{8,4096}$/.test(token))deny();
+  const bytes=Buffer.from(token,'utf8');
+  const path=BASE+'/issuer-'+role+'/github-readonly-token';
+  const fd=openSync(path,WRITE,0o600);
+  try{
+    let n=0;
+    while(n<bytes.length){
+      const w=writeSync(fd,bytes,n,bytes.length-n,n);
+      if(w<=0)deny();
+      n+=w;
+    }
+    // No private token is made world-readable even during staging.
+    fchownSync(fd,uid,gid);
+    fchmodSync(fd,0o400);
+    fsyncSync(fd);
+    const s=fstatSync(fd);
+    if(!s.isFile()||s.uid!==uid||s.gid!==gid||s.nlink!==1||
+       (s.mode&0o777)!==0o400||s.size!==bytes.length)deny();
+  }finally{closeSync(fd);}
+}
+
 export function verifyRootSignerProvisionPlan({
   workerUid,workerGid,accountNames,rootPackVerified
 }={}){
@@ -184,7 +223,9 @@ export function provisionIndependentProtectedIssuersOnce(){
      !/^[1-9][0-9]{0,14}$/.test(trust('approved-pr-number',48))||
      !/^[1-9][0-9]{0,14}$/.test(trust('approved-ci-run-id',48))||
      !/^[1-9][0-9]{0,14}$/.test(trust('reviewer-bot-id',48))||
-     trust('github-token').length<8)deny();
+     trust('github-token').length<8||
+     trust('reviewer-github-readonly-token').length<8||
+     trust('approval-github-readonly-token').length<8)deny();
   const identities=[];
   // NO root-owned private keys are generated: each issuer child receives a
   // fixed literal keygen program and drops to its own OS account identity.
@@ -233,6 +274,9 @@ export function provisionIndependentProtectedIssuersOnce(){
     writeRootFile(role+'-public.pem',created.stdout);
     writeRootFile(role+'-uid',String(uid));
     writeRootFile(role+'-gid',String(gid));
+    if(role==='reviewer')
+      writePublicIssuerFile('reviewer-public.pem',created.stdout);
+    copyIssuerReadonlyToken(role,uid,gid);
   }
   syncDir(BASE);syncDir(TRUST);
   assertFixedOperationalIssuerIsolation();
