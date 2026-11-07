@@ -77,7 +77,9 @@ test('reviewer signature cannot be used as approval issuer signature',()=>{
 test('signature bit flips, incorrect trust root and malformed base64 are denied',()=>{
   const f=fixture();
   denied(()=>verifyProtectedBootstrapAttestations({
-    ...f.args,reviewSignatureBase64:'A'+f.args.reviewSignatureBase64.slice(1)
+    ...f.args,reviewSignatureBase64:
+      (f.args.reviewSignatureBase64[0]==='A'?'B':'A')+
+      f.args.reviewSignatureBase64.slice(1)
   }));
   denied(()=>verifyProtectedBootstrapAttestations({
     ...f.args,approvalPublicKeyPem:pem(key())
