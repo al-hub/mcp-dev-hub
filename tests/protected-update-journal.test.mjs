@@ -8,7 +8,7 @@ const newHashes=Object.fromEntries(PROTECTED_PAIR.map(n=>[n,'b'.repeat(64)]));
 const operationId='c'.repeat(32);
 const make=()=>startProtectedUpdateJournal({
   operationId,head:'d'.repeat(40),base:'e'.repeat(40),
-  oldHashes,newHashes,nowMs:1000
+  previousCommit:'a'.repeat(40),oldHashes,newHashes,nowMs:1000
 });
 const step=(j,to,extra={})=>advanceProtectedUpdateJournal(j,{
   operationId,expectedSequence:j.sequence,to,nowMs:1001+j.sequence,
@@ -69,11 +69,11 @@ test('must exactly match persistent operation ID, sequence and clock',()=>{
 test('untrusted scope, malformed fields, no-op and prototype keys denied',()=>{
   assert.throws(()=>startProtectedUpdateJournal({
     operationId,head:'d'.repeat(40),base:'e'.repeat(40),
-    oldHashes,newHashes:oldHashes,nowMs:1000
+    previousCommit:'a'.repeat(40),oldHashes,newHashes:oldHashes,nowMs:1000
   }));
   assert.throws(()=>startProtectedUpdateJournal({
     operationId,head:'d'.repeat(40),base:'e'.repeat(40),
-    oldHashes:{...oldHashes,sudoers:'0'.repeat(64)},
+    previousCommit:'a'.repeat(40),oldHashes:{...oldHashes,sudoers:'0'.repeat(64)},
     newHashes,nowMs:1000
   }));
   const j=make();
@@ -87,6 +87,7 @@ test('rejects coerced arrays in every journal identifier before freeze and readb
     {operationId:[operationId]},
     {head:['d'.repeat(40)]},
     {base:['e'.repeat(40)]},
+    {previousCommit:['a'.repeat(40)]},
     {phase:['prepared']},
     {head:['d'.repeat(40)],base:['d'.repeat(40)]}
   ];
@@ -98,10 +99,36 @@ test('rejects coerced arrays in every journal identifier before freeze and readb
       operationId,expectedSequence:0,to:'switch_pending',nowMs:1001
     }),/invalid_protected_update_journal/);
     if(Object.hasOwn(changes,'operationId')||
-       Object.hasOwn(changes,'head')||Object.hasOwn(changes,'base'))
+       Object.hasOwn(changes,'head')||Object.hasOwn(changes,'base')||
+       Object.hasOwn(changes,'previousCommit'))
       assert.throws(()=>startProtectedUpdateJournal({
         operationId:malformed.operationId,head:malformed.head,
-        base:malformed.base,oldHashes,newHashes,nowMs:1000
+        base:malformed.base,previousCommit:malformed.previousCommit,
+        oldHashes,newHashes,nowMs:1000
       }),/invalid_protected_update_journal/);
   }
+});
+
+test('durable v2 journal preserves trusted previous release identity',()=>{
+  const j=make();
+  assert.equal(j.version,2);
+  assert.equal(j.previousCommit,'a'.repeat(40));
+  assert.equal(parseProtectedUpdateJournal(JSON.stringify(j)).previousCommit,
+    j.previousCommit);
+  assert.equal(step(j,'switch_pending').previousCommit,j.previousCommit);
+  const legacy={...j,version:1};
+  delete legacy.previousCommit;
+  assert.throws(()=>parseProtectedUpdateJournal(JSON.stringify(legacy)),
+    /invalid_protected_update_journal/);
+});
+test('same new and previous release or malformed previous commit is denied',()=>{
+  const j=make();
+  assert.throws(()=>startProtectedUpdateJournal({
+    operationId,head:j.head,base:j.base,previousCommit:j.head,
+    oldHashes,newHashes,nowMs:1000
+  }),/invalid_protected_update_journal/);
+  assert.throws(()=>startProtectedUpdateJournal({
+    operationId,head:j.head,base:j.base,previousCommit:'../invalid',
+    oldHashes,newHashes,nowMs:1000
+  }),/invalid_protected_update_journal/);
 });
