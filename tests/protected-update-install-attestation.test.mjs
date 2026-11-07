@@ -7,7 +7,7 @@ import {
 } from '../src/ops/protected-update-install-attestation.mjs';
 
 const H='a'.repeat(40),B='b'.repeat(40),C='c'.repeat(40);
-const P='d'.repeat(64),L='e'.repeat(64),CI=42334635648,T=1794023500000;
+const P='d'.repeat(64),L='e'.repeat(64),PR=39,CI=42334635648,T=1794023500000;
 const ID='f'.repeat(32);
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const key=()=>generateKeyPairSync('ed25519');
@@ -17,13 +17,13 @@ function fixture(){
   const review={
     version:1,repository:'al-hub/mcp-dev-hub',scope:'protected-bootstrap',
     head:H,base:B,packDigest:P,baselineCommit:C,baselineDigest:L,
-    ciRunId:CI,reviewRunId:ID,verdict:'PASS',findings:[],
+    prNumber:PR,ciRunId:CI,reviewRunId:ID,verdict:'PASS',findings:[],
     issuedAtMs:T-1000,expiresAtMs:T+30000
   };
   const approval={
     version:1,repository:'al-hub/mcp-dev-hub',scope:'protected-bootstrap',
     head:H,base:B,packDigest:P,baselineCommit:C,baselineDigest:L,
-    ciRunId:CI,reviewDigest:hash(JSON.stringify(review)),reviewRunId:ID,
+    prNumber:PR,ciRunId:CI,reviewDigest:hash(JSON.stringify(review)),reviewRunId:ID,
     issuedAtMs:T-500,expiresAtMs:T+20000
   };
   const reviewJson=JSON.stringify(review),approvalJson=JSON.stringify(approval);
@@ -38,7 +38,7 @@ function fixture(){
     reviewerPublicKeyPem:pem(reviewer),
     approvalPublicKeyPem:pem(approver),
     head:H,base:B,packDigest:P,baselineCommit:C,baselineDigest:L,
-    ciRunId:CI,nowMs:T
+    prNumber:PR,ciRunId:CI,nowMs:T
   };
   return {args,reviewer,approver,review,approval,signature};
 }
@@ -54,8 +54,8 @@ test('two unrelated issuer signatures bind exact reviewed source, CI, baseline',
 test('caller-chosen package digest or head/base/CI/baseline cannot be changed',()=>{
   const f=fixture();
   for(const field of ['head','base','packDigest','baselineCommit',
-    'baselineDigest','ciRunId']){
-    const value=field==='ciRunId'?CI+1:
+    'baselineDigest','prNumber','ciRunId']){
+    const value=field==='ciRunId'?CI+1:field==='prNumber'?PR+1:
       field.endsWith('Digest')||field==='packDigest'?'0'.repeat(64):
       '0'.repeat(40);
     denied(()=>verifyProtectedBootstrapAttestations({
