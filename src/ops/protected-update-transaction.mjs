@@ -84,6 +84,7 @@ export async function applyProtectedUpdateCandidate({
   // The journal is durably created BEFORE stage or pointer side effects.
   let j=beginStoredProtectedUpdateJournal(stateDir,{
     operationId,head:signed.head,base:signed.base,
+    previousCommit:previous,
     oldHashes:hashes(oldFiles),newHashes:hashes(signed.manifest.files),
     nowMs
   });
