@@ -55,6 +55,7 @@ try{
 }finally{fs.closeSync(fd);}
 process.stdout.write(publicKey.export({format:'pem',type:'spki'}));
 `;
+export const PROTECTED_ISSUER_KEYGEN_PROGRAM=KEYGEN;
 function dir(path,mode=null,owner=0){
   const s=lstatSync(path);
   if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==owner||
