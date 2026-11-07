@@ -4,6 +4,8 @@
 // the checkout and must verify all ancestors before any privileged mutation.
 import {parseProtectedUpdateRequest}
   from './protected-update-request.mjs';
+import {assertFixedRootProtectedUpdateLayout}
+  from './protected-update-root-layout.mjs';
 import {preflightAuthenticatedProtectedUpdate}
   from './protected-update-root-evidence.mjs';
 import {
@@ -19,6 +21,9 @@ const deny=()=>{throw Error('protected_root_preflight_denied');};
  */
 export async function preflightRootProtectedUpdateRequest(raw){
   const request=parseProtectedUpdateRequest(raw);
+  // Before reading root-held credentials or trusting any installed release,
+  // validate every fixed ancestor of both protected roots via real lstat.
+  assertFixedRootProtectedUpdateLayout();
   const nowMs=Date.now(); // immutable supervisor clock, not request-controlled
   const verified=await preflightAuthenticatedProtectedUpdate({
     ...request,nowMs
