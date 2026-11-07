@@ -49,9 +49,10 @@ function fixture(t){
   });
   return {root,stateDir,old,next};
 }
-function begin(f){
+function begin(f,previousCommit=A){
   return beginStoredProtectedUpdateJournal(f.stateDir,{
-    operationId:ID,head:B,base:A,oldHashes:hashes(f.old.files),
+    operationId:ID,head:B,base:A,previousCommit,
+    oldHashes:hashes(f.old.files),
     newHashes:hashes(f.next.files),nowMs:100
   });
 }
@@ -62,8 +63,7 @@ function advance(f,j,to,nowMs,extra={}){
 }
 function inspect(f){
   return reconcileProtectedUpdateCandidate({
-    root:f.root,stateDir:f.stateDir,operationId:ID,
-    expectedPreviousCommit:A
+    root:f.root,stateDir:f.stateDir,operationId:ID
   });
 }
 const denied=fn=>assert.throws(fn,/protected_update_reconciliation_denied|protected_release_guard_failed|protected_journal_store_guard_failed/);
@@ -172,13 +172,11 @@ test('terminal health verdict conflicts with old pointer and fails closed',t=>{
 
 test('unexpected previous SHA or invalid operation identity is refused',t=>{
   const f=fixture(t);
-  begin(f);
+  // A durable but incorrect previous release identity is not trusted
+  // merely because the active pointer matches another installed version.
+  begin(f,'f'.repeat(40));
+  denied(()=>inspect(f));
   denied(()=>reconcileProtectedUpdateCandidate({
-    root:f.root,stateDir:f.stateDir,operationId:ID,
-    expectedPreviousCommit:'f'.repeat(40)
-  }));
-  denied(()=>reconcileProtectedUpdateCandidate({
-    root:f.root,stateDir:f.stateDir,operationId:'../bad',
-    expectedPreviousCommit:A
+    root:f.root,stateDir:f.stateDir,operationId:'../bad'
   }));
 });
