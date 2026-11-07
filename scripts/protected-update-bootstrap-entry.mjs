@@ -88,7 +88,7 @@ export function bootstrapOneShotFixedRoot(){
   const verified=verifyProtectedBootstrapPack({
     outputPath:PACK,expectedManifestSha256:pinned
   });
-  const wrapperRow=JSON.parse(rootFileManifest()).files.find(
+  const wrapperRow=verified.files.find(
     row=>row.path==='scripts/protected-update-controller-wrapper.mjs');
   if(!wrapperRow||!HASH.test(wrapperRow.sha256))fail();
   const wrapperBytes=readFileSync(WRAPPER);
@@ -98,12 +98,6 @@ export function bootstrapOneShotFixedRoot(){
     root:ROOT,baselineCommit,expectedLegacyFiles,
     wrapperBytes,wrapperSha256:wrapperRow.sha256
   });
-}
-function rootFileManifest(){
-  // Read-only package verifier already checked canonical manifest and every
-  // file before this call. This repeated read is NOT an authority source:
-  // migration hashes the wrapper again against the pinned manifest.
-  return readFileSync(PACK+'/MANIFEST.json','utf8');
 }
 // Direct invocation from a checkout is a hard failure, never a successful
 // no-op. Imported modules (e.g. nonroot tests) perform no side effects.
