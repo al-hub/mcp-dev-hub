@@ -100,6 +100,58 @@ runtime unchanged. Do not ask for administrator authentication yet.
   generic Issue development and prove #37's **three independent** unattended
   E2Es without additional user intervention.
 
+## 2026-11-07 reproducible source-only package and recovery rehearsal
+
+The current Draft PR #39 provides a **source package candidate**, not an
+authorized live root installer. It is intentionally **fail-closed** until
+independent operational issuers, pinned review evidence, immutable root policy
+and a separately approved installation adapter are ready. In particular, the
+candidate bundle manifest sets `installAuthorized:false`, and the fixed
+no-argument root entrypoint refuses such a bundle even if two distinct public
+keys happen to exist locally. **Do not run the entrypoint as administrator.**
+
+Only after the final candidate Git HEAD is reviewed, an unprivileged WSL
+operator can stage an isolated, reproducible private handoff directory:
+
+```sh
+node scripts/protected-update-bootstrap-pack.mjs build \
+  /absolute/clean/detached/worktree <reviewed-40-hex-head> \
+  /absolute/new/private/output-directory
+node scripts/protected-update-bootstrap-pack.mjs verify \
+  /absolute/new/private/output-directory \
+  <independently-pinned-64-hex-manifest-digest>
+```
+
+- The builder requires an exact clean Git HEAD, reads only allowlisted
+  immutable Git blobs, refuses symlinks, overwrites and dirty worktrees, and
+  writes owner-private directories / read-only checked files. It executes
+  **none** of the included JavaScript and performs **no privileged action**.
+- The checker fails closed on missing external digest, extras, symlinks,
+  FIFOs, oversized manifest/source, chmod changes and tampered bytes. Its
+  source checksum is **not** a signature or independent security approval.
+- A synthetic migration candidate verifies the original flat controller and
+  policy bytes before creating a private recoverable backup; only afterwards
+  does it stage a two-file version and atomically replace the controller with
+  a digest-checked wrapper. Its restore candidate verifies the original
+  backup, active baseline and exact wrapper digest before restoring the
+  original controller. Crash/unknown stages are preserved and never replayed.
+- The separately packaged root entrypoint has fixed OS paths, rejects
+  checkout execution and arguments, and refuses the current unsigned/
+  source-only package; it is not yet an operating approved updater.
+- Unit and integration tests cover **three distinct synthetic
+  package→backup→wrapper→original-restore runs**. These are **not**
+  the two required live root-protected updates and are not evidence
+  of production service acceptance.
+
+**Remaining one-shot install blockers:** an authenticated, issuer-separated
+approval for the exact installation package, actual immutable root installer
+and least-privilege authorization provisioning, verified as-built original
+baseline binding, review of the *complete privileged* implementation, and
+post-install owner/mode/hash/rollback/Worker health acceptance. The owner
+must not be asked to spend their one administrator action while these
+conditions are unsatisfied. The user-facing outcome is **NO-GO**, not
+"installation completed".
+
 ## Current go/no-go
 
 **NO-GO for administrator installation.** The immutable privileged updater,
