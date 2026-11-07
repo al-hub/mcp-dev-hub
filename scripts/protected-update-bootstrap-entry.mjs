@@ -6,6 +6,9 @@
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync}
   from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {assertFixedOperationalIssuerIsolation}
+  from '../src/ops/protected-update-issuer-boundary.mjs';
+
 import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {verifyProtectedBootstrapPack}
@@ -88,6 +91,7 @@ export async function bootstrapOneShotFixedRoot(){
   const expectedLegacyFiles=parseBaseFiles(rootFile(BASE_FILES,4096));
   if(!HASH.test(pinned)||!SHA.test(baselineCommit))fail();
   const trust=readRootProtectedUpdateTrust();
+  assertFixedOperationalIssuerIsolation();
   const verified=verifyProtectedBootstrapPack({
     outputPath:PACK,expectedManifestSha256:pinned
   });
