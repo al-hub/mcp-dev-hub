@@ -45,7 +45,7 @@ export function verifyProtectedIssuerIsolationEvidence({
        (p.mode&0o022)===0))deny();
   const identities=[reviewer,approval];
   if(!identities.every(r=>r&&Number.isSafeInteger(r.uid)&&r.uid>0&&
-       Number.isSafeInteger(r.gid)&&r.gid>=0&&r.uid!==workerUid&&
+       Number.isSafeInteger(r.gid)&&r.gid>0&&r.uid!==workerUid&&
        r.dir?.directory===true&&r.dir?.symlink===false&&
        r.dir.uid===r.uid&&r.dir.mode===0o700&&
        r.key?.regular===true&&r.key?.symlink===false&&
