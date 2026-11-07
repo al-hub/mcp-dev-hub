@@ -10,7 +10,7 @@ import {
 import {isAbsolute, join, resolve} from 'node:path';
 import {
   startProtectedUpdateJournal, advanceProtectedUpdateJournal,
-  parseProtectedUpdateJournal
+  parseProtectedUpdateJournal,PROTECTED_PAIR
 } from './protected-update-journal.mjs';
 
 const ID=/^[a-f0-9]{32}$/;
@@ -53,6 +53,40 @@ function listJournalIds(stateDir) {
   }
   return ids;
 }
+function matchesHashes(a,b){
+  return PROTECTED_PAIR.every(name=>a[name]===b[name]);
+}
+function timeline(stateDir,ids){
+  const records=ids.map(id=>readStoredProtectedUpdateJournal(stateDir,id));
+  if(records.some(record=>record===null))fail();
+  records.sort((a,b)=>a.createdAtMs-b.createdAtMs);
+  for(let i=1;i<records.length;i++){
+    const prev=records[i-1],next=records[i];
+    if(!TERMINAL.has(prev.phase)||
+       next.createdAtMs<=prev.updatedAtMs)fail();
+    const commit=prev.phase==='verified'?prev.head:prev.previousCommit;
+    const hashes=prev.phase==='verified'?prev.newHashes:prev.oldHashes;
+    if(next.previousCommit!==commit||
+       !matchesHashes(next.oldHashes,hashes))fail();
+  }
+  return records;
+}
+/** Consistent read-only history for operation-ID reconciliation.
+ * An active/stale lock, missing record, noncanonical order, broken chain or
+ * abandoned stage blocks confident historical recovery; no replay occurs.
+ */
+export function readStoredProtectedUpdateHistory(stateDir){
+  checkedDir(stateDir);
+  const names=readdirSync(stateDir);
+  if(names.includes('.lock'))fail();
+  const ids=listJournalIds(stateDir);
+  const records=timeline(stateDir,ids);
+  const after=readdirSync(stateDir);
+  if(after.includes('.lock')||
+     after.slice().sort().join(',')!==names.slice().sort().join(','))fail();
+  return Object.freeze(records);
+}
+
 function withLock(stateDir,fn) {
   checkedDir(stateDir);
   let fd;
@@ -107,10 +141,20 @@ export function beginStoredProtectedUpdateJournal(stateDir,args) {
     const j=startProtectedUpdateJournal(args);
     const ids=listJournalIds(stateDir);
     if(ids.length>=128||ids.includes(j.operationId))fail();
-    // Never begin another revision over an unresolved or unknown update.
-    for(const id of ids) {
-      const prior=readStoredProtectedUpdateJournal(stateDir,id);
-      if(!prior||!TERMINAL.has(prior.phase))fail();
+    // Bind each revision to the actual previous durable terminal state.
+    // A clock rollback, ambiguous ordering, incompatible old hashes or a
+    // pending operation blocks admission BEFORE consuming a new ID.
+    const records=timeline(stateDir,ids);
+    const prior=records.at(-1);
+    if(prior){
+      if(!TERMINAL.has(prior.phase)||
+         j.createdAtMs<=prior.updatedAtMs)fail();
+      const expectedCommit=prior.phase==='verified'?prior.head:
+        prior.previousCommit;
+      const expectedHashes=prior.phase==='verified'?prior.newHashes:
+        prior.oldHashes;
+      if(j.previousCommit!==expectedCommit||
+         !matchesHashes(j.oldHashes,expectedHashes))fail();
     }
     atomicWrite(stateDir,j.operationId,j);
     return j;
