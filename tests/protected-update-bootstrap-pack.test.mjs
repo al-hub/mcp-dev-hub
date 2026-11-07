@@ -137,6 +137,6 @@ test('unsafe ancestor or non-canonical output path is refused',t=>{
   const f=fixture(t);
   denied(()=>buildProtectedBootstrapPack({
     repositoryPath:f.source,head:f.head,
-    outputPath:join(f.top,'..','noncanonical')
+    outputPath:f.top+'/../noncanonical'
   }));
 });
