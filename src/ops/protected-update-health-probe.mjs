@@ -39,8 +39,8 @@ export function evaluateProtectedReadinessResult({
 }={}){
   if(error||signal||!Number.isSafeInteger(status)||
      typeof stdout!=='string')deny();
-  if(status===0&&stdout==='PROTECTED_READY\\n')return true;
-  if(status===23&&stdout==='PROTECTED_BROKEN\\n')return false;
+  if(status===0&&stdout==='PROTECTED_READY\n')return true;
+  if(status===23&&stdout==='PROTECTED_BROKEN\n')return false;
   deny();
 }
 function sandboxedControllerStartup(uid,gid,commit){
