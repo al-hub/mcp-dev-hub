@@ -98,7 +98,8 @@ export function observeProtectedWorkerHealth({
      typeof expectedCommit!=='string'||!/^[a-f0-9]{40}$/.test(expectedCommit)||
      !expectedHashes||typeof expectedHashes!=='object')deny();
   const uid=Number(pinnedWorkerUid),gid=Number(pinnedWorkerGid);
-  if(!Number.isSafeInteger(uid)||!Number.isSafeInteger(gid))deny();
+  if(!Number.isSafeInteger(uid)||!Number.isSafeInteger(gid)||
+     uid<=0||gid<=0)deny();
   const snap=inspectProtectedCurrentSnapshot(ROOT);
   if(snap.commit!==expectedCommit||snap.files.length!==2||
      !snap.files.every(f=>f.sha256===expectedHashes[f.name]))deny();
