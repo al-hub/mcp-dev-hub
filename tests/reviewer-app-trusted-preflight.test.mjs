@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {parseTrustedAppConfiguration,checkTrustedAppConnection}
  from '../scripts/reviewer-app-trusted-preflight.mjs';
 const sha='a'.repeat(40);
-const config={appId:42,expectedHead:sha,
+const config={appId:5576601,expectedHead:sha,
  keyFile:'/etc/mcp-dev-hub/reviewer-app.pem'};
 const canonical=JSON.stringify(config);
 test('only fixed root credential leaf and exact SHA are allowed',()=>{
@@ -14,6 +14,8 @@ test('only fixed root credential leaf and exact SHA are allowed',()=>{
   {...config,keyFile:'/etc/mcp-dev-hub/nested/key.pem'},
   {...config,expectedHead:'bad'},
   {...config,appId:0},
+  {...config,appId:42},
+  {...config,appId:5576602},
   {...config,unexpected:true}
  ])assert.throws(()=>parseTrustedAppConfiguration(JSON.stringify(bad)));
  assert.throws(()=>parseTrustedAppConfiguration(canonical+'\n{}'));
@@ -43,10 +45,10 @@ test('the trusted preflight only authenticates the fixed App and reads PR39',asy
   },
   readKey:path=>{assert.equal(path,config.keyFile);return key;},
   installationLookup:async o=>{
-   assert.equal(o.appId,42);assert.equal(o.key,key);return 123;
+   assert.equal(o.appId,5576601);assert.equal(o.key,key);return 123;
   },
   createClient:async o=>{
-   assert.equal(o.appId,42);assert.equal(o.installationId,123);
+   assert.equal(o.appId,5576601);assert.equal(o.installationId,123);
    assert.equal(o.prNumber,39);assert.equal(o.repositoryId,1440361577);
    return {actor:'mcp-dev-hub-ai-reviewer[bot]',api:async(method,path)=>{
     calls.push([method,path]);

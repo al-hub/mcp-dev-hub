@@ -13,6 +13,8 @@ const CONFIG='/etc/mcp-dev-hub/reviewer-app-preflight.json';
 const KEY_PREFIX='/etc/mcp-dev-hub/';
 const REPO='al-hub/mcp-dev-hub';
 const REPO_ID=1440361577;
+// Public App ID confirmed by the owning GitHub App's General settings.
+const APP_ID=5576601;
 const BOT='mcp-dev-hub-ai-reviewer[bot]';
 const SHA=/^[a-f0-9]{40}$/;
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
@@ -59,7 +61,7 @@ export function parseTrustedAppConfiguration(raw){
  if(!c||typeof c!=='object'||Array.isArray(c)||
    Object.keys(c).sort().join(',')!=='appId,expectedHead,keyFile'||
    JSON.stringify(c)!==raw.trim()||
-   !Number.isSafeInteger(c.appId)||c.appId<1||
+   !Number.isSafeInteger(c.appId)||c.appId!==APP_ID||
    typeof c.expectedHead!=='string'||!SHA.test(c.expectedHead)||
    typeof c.keyFile!=='string'||!c.keyFile.startsWith(KEY_PREFIX)||
    !/^[a-zA-Z0-9._-]+\.pem$/.test(c.keyFile.slice(KEY_PREFIX.length)))deny();
