@@ -17,6 +17,7 @@ const MAX_FILE=256*1024;
 const MAX_PACKAGE=2*1024*1024;
 const SOURCE=Object.freeze([
   'scripts/protected-update-bootstrap-entry.mjs',
+  'scripts/protected-update-os-activate.mjs',
   'scripts/protected-update-bootstrap-restore.mjs',
   'scripts/protected-update-bootstrap-pack.mjs',
   'scripts/protected-update-controller-wrapper.mjs',
@@ -38,6 +39,7 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-root-evidence.mjs',
   'src/ops/protected-update-root-layout.mjs',
   'src/ops/protected-update-root-preflight.mjs',
+  'src/ops/protected-update-sudo-policy.mjs',
   'src/ops/protected-update-transaction.mjs'
 ]);
 const deny=()=>{throw Error('protected_bootstrap_pack_denied');};
