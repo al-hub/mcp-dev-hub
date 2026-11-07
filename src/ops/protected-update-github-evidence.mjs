@@ -147,7 +147,7 @@ export function validateOfficialReviewerApproval({
   // A textual evidence ID is never itself proof of actual Codex execution;
   // the trusted App publisher must validate the real Codex receipt first.
   const receipt=typeof latest.body==='string'
-    ? /^AI-assisted independent Codex technical review \\(not a human review\\)\\. Evidence: (verified-[a-z0-9-]{6,100})$/.exec(latest.body)
+    ? /^AI-assisted independent Codex technical review \(not a human review\)\. Evidence: (verified-[a-z0-9-]{6,100})$/.exec(latest.body)
     : null;
   return Object.freeze({
     state:'official_github_bot_review_confirmed',
