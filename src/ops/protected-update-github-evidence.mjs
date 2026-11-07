@@ -95,6 +95,15 @@ export function validateGitHubEvidenceShape({
        Array.isArray(j.steps)&&j.steps.some(step=>
          step.name==='Run npm run check'&&step.conclusion==='success')
      ).length!==1)fail();
+  const reviews=protection?.required_pull_request_reviews;
+  // The official Bot approval alone is NOT enough if main branch review
+  // protection has been weakened. Re-check these actual GitHub settings on
+  // each privileged admission, not only in the App publisher's own probe.
+  if(!reviews||
+     !Number.isSafeInteger(reviews.required_approving_review_count)||
+     reviews.required_approving_review_count<1||
+     reviews.dismiss_stale_reviews!==true||
+     reviews.require_last_push_approval!==true)fail();
   const checks=protection?.required_status_checks;
   if(checks?.strict!==true||
      !Array.isArray(checks.contexts)||
