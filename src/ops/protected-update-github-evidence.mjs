@@ -143,10 +143,17 @@ export function validateOfficialReviewerApproval({
   parsed.sort((a,b)=>a.t-b.t||a.review.id-b.review.id);
   const latest=parsed.at(-1).review;
   if(latest.state!=='APPROVED'||latest.commit_id!==head)fail();
+  // Only the independently authenticated Bot can author this API field.
+  // A textual evidence ID is never itself proof of actual Codex execution;
+  // the trusted App publisher must validate the real Codex receipt first.
+  const receipt=typeof latest.body==='string'
+    ? /^AI-assisted independent Codex technical review \\(not a human review\\)\\. Evidence: (verified-[a-z0-9-]{6,100})$/.exec(latest.body)
+    : null;
   return Object.freeze({
     state:'official_github_bot_review_confirmed',
     prNumber,head,reviewerBotId,reviewId:latest.id,
     reviewActor:latest.user.login,
+    reviewEvidenceId:receipt?.[1]??null,
     signerProvenanceVerified:false
   });
 }
