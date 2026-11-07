@@ -130,7 +130,7 @@ export function validateOfficialReviewerApproval({
   const parsed=selected.map(r=>{
     if(!Number.isSafeInteger(r.id)||r.id<=0||
        r.user?.type!=='Bot'||typeof r.user.login!=='string'||
-       !/^[a-zA-Z0-9_-]+\\[bot\\]$/.test(r.user.login)||
+       !/^[a-zA-Z0-9_-]+\[bot\]$/.test(r.user.login)||
        typeof r.submitted_at!=='string')fail();
     const t=Date.parse(r.submitted_at);
     if(!Number.isFinite(t)||t>nowMs||t<nowMs-7*86400000)
