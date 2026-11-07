@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {applyOneProtectedUpdateFixedRoot}
+import {applyOneProtectedUpdateFixedRoot,rootSupplementaryGroupsCleared}
   from '../scripts/protected-update-root-apply.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
@@ -33,4 +33,12 @@ test('root update command rejects all caller supplied CLI arguments',()=>{
   });
   assert.equal(r.status,1);
   assert.match(r.stderr,/protected_root_apply_denied_or_unknown/);
+});
+
+test('Codex P1: root effective GID stays visible after groups are cleared',()=>{
+  assert.equal(rootSupplementaryGroupsCleared([0],0),true);
+  assert.equal(rootSupplementaryGroupsCleared([],0),true);
+  assert.equal(rootSupplementaryGroupsCleared([0,1000],0),false);
+  assert.equal(rootSupplementaryGroupsCleared([1000],0),false);
+  assert.equal(rootSupplementaryGroupsCleared([0,0],0),false);
 });
