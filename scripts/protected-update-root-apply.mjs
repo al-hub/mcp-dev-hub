@@ -87,6 +87,13 @@ async function readRequest(){
  */
 export async function applyOneProtectedUpdateFixedRoot(){
   requireFixedRoot();
+  // Child health probes run under the pinned Worker identity; never leave
+  // inherited root supplementary groups accessible inside their sandbox.
+  try{
+    if(typeof process.setgroups!=='function')deny();
+    process.setgroups([]);
+    if(process.getgroups().includes(0))deny();
+  }catch{deny();}
   const raw=await readRequest();
   const req=parseProtectedUpdateRequest(raw);
   assertFixedRootProtectedUpdateLayout();
