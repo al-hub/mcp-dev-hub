@@ -111,6 +111,58 @@ export function validateGitHubEvidenceShape({
   });
 }
 
+/** Verify the ACTUAL GitHub review API, not PR body text, a Worker
+ * assertion, or a Codex CLI exit status. The official reviewer bot ID must
+ * be pinned by the root administrator outside the repository.
+ * A bot approval alone does not prove model independence; the separately
+ * held Ed25519 reviewer signature is still mandatory.
+ */
+export function validateOfficialReviewerApproval({
+  reviews,head,prNumber,reviewerBotId,nowMs
+}={}){
+  if(!Array.isArray(reviews)||reviews.length===0||reviews.length>=100||
+     typeof head!=='string'||!SHA.test(head)||
+     !Number.isSafeInteger(prNumber)||prNumber<1||
+     !Number.isSafeInteger(reviewerBotId)||reviewerBotId<=0||
+     !Number.isSafeInteger(nowMs)||nowMs<=0)fail();
+  const selected=reviews.filter(r=>r&&r.user?.id===reviewerBotId);
+  if(selected.length===0)fail();
+  const parsed=selected.map(r=>{
+    if(!Number.isSafeInteger(r.id)||r.id<=0||
+       r.user?.type!=='Bot'||typeof r.user.login!=='string'||
+       !/^[a-zA-Z0-9_-]+\\[bot\\]$/.test(r.user.login)||
+       typeof r.submitted_at!=='string')fail();
+    const t=Date.parse(r.submitted_at);
+    if(!Number.isFinite(t)||t>nowMs||t<nowMs-7*86400000)
+      fail();
+    if(r.pull_request_url!==
+       'https://api.github.com/repos/al-hub/mcp-dev-hub/pulls/'+
+         prNumber)fail();
+    return {review:r,t};
+  });
+  parsed.sort((a,b)=>a.t-b.t||a.review.id-b.review.id);
+  const latest=parsed.at(-1).review;
+  if(latest.state!=='APPROVED'||latest.commit_id!==head)fail();
+  return Object.freeze({
+    state:'official_github_bot_review_confirmed',
+    prNumber,head,reviewerBotId,reviewId:latest.id,
+    reviewActor:latest.user.login,
+    signerProvenanceVerified:false
+  });
+}
+export async function fetchAndVerifyOfficialReviewerApproval({
+  head,prNumber,reviewerBotId,githubToken,nowMs
+}={}){
+  if(!Number.isSafeInteger(prNumber)||prNumber<1||
+     !Number.isSafeInteger(reviewerBotId)||reviewerBotId<1||
+     typeof head!=='string'||!SHA.test(head))fail();
+  const reviews=await githubGet('/repos/al-hub/mcp-dev-hub/pulls/'+
+    prNumber+'/reviews?per_page=100',githubToken);
+  return validateOfficialReviewerApproval({
+    reviews,head,prNumber,reviewerBotId,nowMs
+  });
+}
+
 async function githubGet(path,token,maxBytes=262144) {
   if(typeof token!=='string'||token.length<8||token.length>4096||
      /[\r\n\t ]/.test(token)||typeof path!=='string'||
