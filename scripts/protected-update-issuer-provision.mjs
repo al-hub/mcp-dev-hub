@@ -146,6 +146,8 @@ function writePublicIssuerFile(name,value){
   const fd=openSync(BASE+'/'+name,WRITE,0o444);
   try{
     writeSync(fd,b,0,b.length,0);
+    // The owner umask can restrict 0444 at creation; enforce exact mode.
+    fchmodSync(fd,0o444);
     fsyncSync(fd);
     const s=fstatSync(fd);
     if(!s.isFile()||s.uid!==0||s.nlink!==1||

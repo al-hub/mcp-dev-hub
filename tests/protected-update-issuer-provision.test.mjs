@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Script} from 'node:vm';
 import {
@@ -68,4 +70,32 @@ test('privileged token copier imports fchmodSync before any account effects',()=
   const fsImport=source.match(/import\s*\{([^}]*)\}\s*from\s*'node:fs';/);
   assert.ok(fsImport);
   assert.ok(fsImport[1].split(',').map(s=>s.trim()).includes('fchmodSync'));
+});
+
+test('public issuer writer enforces exact mode despite restrictive admin umask',()=>{
+  const source=readFileSync(new URL(
+    '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+  const writer=source.split('function writePublicIssuerFile(name,value){')[1]
+    ?.split('function copyIssuerReadonlyToken(')[0];
+  assert.ok(writer);
+  assert.match(writer,/fchmodSync\\(fd,0o444\\);/);
+  assert.ok(writer.indexOf('fchmodSync(fd,0o444)')<
+    writer.indexOf('fsyncSync(fd)'));
+  const dir=mkdtempSync(join(tmpdir(),'mcp35-issuer-mode-'));
+  const childCode=String.raw`const fs=require('node:fs');
+process.umask(Number(process.argv[2]));
+const fd=fs.openSync(process.argv[1],fs.constants.O_WRONLY|
+  fs.constants.O_CREAT|fs.constants.O_EXCL,0o444);
+try{fs.writeSync(fd,'synthetic');fs.fchmodSync(fd,0o444);
+  fs.fsyncSync(fd);process.stdout.write(String(fs.fstatSync(fd).mode&0o777));}
+finally{fs.closeSync(fd);}`;
+  try{
+    for(const umask of [0o027,0o077]){
+      const r=spawnSync(process.execPath,[
+        '-e',childCode,join(dir,'issuer-'+umask),String(umask)
+      ],{encoding:'utf8',timeout:5000,maxBuffer:1024});
+      assert.equal(r.status,0,r.stderr);
+      assert.equal(r.stdout,String(0o444));
+    }
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
