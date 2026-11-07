@@ -116,7 +116,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
   assertFixedOperationalIssuerIsolation();
   const uid=privateDecimal('worker-uid');
   const gid=privateDecimal('worker-gid');
-  if(uid===0)deny();
+  if(uid===0||gid===0)deny();
   const nowMs=Date.now();
   const verified=await preflightAuthenticatedProtectedUpdate({
     ...req,nowMs
