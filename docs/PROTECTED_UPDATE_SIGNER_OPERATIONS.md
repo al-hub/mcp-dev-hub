@@ -5,6 +5,38 @@ bootstrap and the independent evidence requirements. It contains **no
 secret, owner identity, device path or installation authorization**.
 No source checkout may be run as root.
 
+## 2026-11-07 source handoff refinement: exact PR #39
+
+The existing GitHub reviewer App publisher previously hardcoded only
+PR #17. It now supports **only PR #17 or PR #39**. For PR #39 the
+publisher requires an authenticated independent Codex review,
+non-Draft exact-HEAD main PR, strict existing gates **plus**
+`root_security` and `original_restore` evidence gates.
+It rejects arbitrary PR numbers, stale HEAD, missing trusted evidence
+and unapproved branch protection. Existing PR #17 behavior is preserved.
+The connection preflight similarly permits only these two PR IDs and
+does not create another GitHub App or account.
+
+The root signing code has three distinct trust boundaries:
+
+1. An immutable root-owned 0700 bootstrap package with an
+   independently pinned manifest digest (source-only, NOT authorized).
+2. A separate **root-owned 0555 directory / 0444 immutable 6-file**
+   issuer runtime for distinct nonroot signer accounts, prepared by
+   the owner-controlled one-shot staging primitive.
+3. Root-owned canonical public signing context and a root-only
+   orchestrator that independently authenticates exact PR/HEAD/CI
+   and the GitHub Bot review and stores BOTH resulting signatures
+   in root-only trust files. Unknown/partial output is preserved,
+   not retried, deleted or treated as PASS.
+
+Unit and unprivileged full-suite success is NOT evidence of real
+privileged signer provisioning or Codex independence; the actual
+authoritative proof requires genuine delegated UID/GID execution and
+GitHub Codex-approved App review. PR #39 is currently Draft with no
+official APPROVED review, and the independent Codex CLI review was
+blocked by a quota limit. **Do not run initial sudo setup yet.**
+
 ## Current, independently observed facts (2026-11-07)
 
 - Existing flat protected controller/policy match the baseline Git blobs
@@ -30,6 +62,10 @@ No source checkout may be run as root.
 | Component | Source | Security scope |
 | --- | --- | --- |
 | Key provisioning | `scripts/protected-update-issuer-provision.mjs` | One-time root-only, two distinct system users, separate Ed25519 keygen under each dropped UID; private keys never returned |
+| Reviewed issuer runtime staging | `scripts/protected-update-issuer-stage.mjs` | Exact six-file read-only root-owned copy of reviewed source; no user-writable imports |
+| Reviewer issuer | `scripts/protected-update-review-issuer.mjs` | Separate reviewer UID/GID, own-only key and readonly GitHub credential; independently re-queries strict PR/CI and official reviewer Bot before Ed25519 review signature |
+| Approval issuer | `scripts/protected-update-approval-issuer.mjs` | Different approval UID/GID, verifies first signed review, independently rechecks PR/CI and then signs approval |
+| Root signed-evidence collector | `scripts/protected-update-issuer-collect.mjs` | Explicit root-only no-arg collector runs each signer under dedicated role UID/GID, verifies both signatures, writes root-only signed attestations, preserves unknown partial state |
 | Role isolation | `src/ops/protected-update-issuer-boundary.mjs` | Actual OS owner/group/mode/parent/symlink checks; reject Worker overlap and shared issuer groups |
 | Actual review provenance | `src/ops/protected-update-github-evidence.mjs` | HTTPS GitHub official reviewer Bot ID, latest APPROVED and exact commit check; rejects stale/dismissed approval |
 | Signed evidence binding | `src/ops/protected-update-install-attestation.mjs` | Distinct Ed25519 signatures binding exact reviewed bundle, commit, CI, baseline and short expiry |
@@ -66,13 +102,23 @@ A future reviewed, bounded **single administrator session** must, in order:
    private directory below a distinct root-owned signer base.
    The Worker must have neither key and no authority to invoke
    either signing operation.
-5. **Still to implement and audit:** actual reviewer and approval issuer
-   services. They must themselves obtain and authenticate live official
-   review and CI evidence, sign only fixed canonical bounded claims under
-   their **distinct** private keys, and deliver the resulting public
-   signatures to the fixed root trust store. Two separate keys alone do
-   **not** prove an independent Codex run. They must never accept
-   Worker-supplied `PASS` or an unsigned approval as authority.
+5. **Candidate issuance code now implemented, but NOT DEPLOYED:** the
+   reviewed exact package is staged into a separate root-owned six-file
+   readonly issuer runtime, the reviewer and approval runners operate
+   under **distinct** UID/GID/0400 private-key folders, each queries real
+   GitHub strict CI/branch-protection and the exact independent reviewer
+   Bot over TLS. The reviewer signs first; the approval service
+   independently verifies that Ed25519 signature and repeats the live
+   evidence checks; the fixed root collector verifies both and stores
+   signed proofs as root-only files. This has only synthetic/readonly
+   acceptance. No account, token, private key, signer service or root
+   collector has been activated.
+   The official Bot must FIRST publish an actual APPROVED on exact HEAD
+   based on a separately authenticated **real Codex** review. A published
+   review evidence ID is not by itself proof of Codex execution; do not
+   skip the independently audited Bot publisher's provenance gate.
+   A root-approved one-time operator must supply both minimally scoped
+   role-readonly GitHub tokens without copying them to the PR/Issue.
 6. Only after independently signed review+approval, strict GitHub CI,
    latest official GitHub APPROVED, exact source/baseline and
    unexpired evidence should the installed root activation migrate the
@@ -88,8 +134,9 @@ A future reviewed, bounded **single administrator session** must, in order:
 
 ## Remaining hard blockers
 
-Actual separately operated **issuer signature services** are absent;
-the two role keys/accounts and root trust have not been provisioned;
+Issuer **source code** and distinct-key handoff now exist in PR #39,
+but actual separately operated signer processes, keys/accounts and
+readonly GitHub credentials are NOT installed; root trust is absent;
 PR #39 is Draft without a formal approved reviewer; an independent
 final-code security audit has not passed due to the Codex CLI limit;
 actual sudo administrator authorization is not available from the
