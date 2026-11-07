@@ -18,6 +18,7 @@ const MAX_PACKAGE=2*1024*1024;
 const SOURCE=Object.freeze([
   'scripts/protected-update-controller-wrapper.mjs',
   'src/ops/protected-update-approval.mjs',
+  'src/ops/protected-update-bootstrap-migration.mjs',
   'src/ops/protected-update-github-evidence.mjs',
   'src/ops/protected-update-journal-store.mjs',
   'src/ops/protected-update-journal.mjs',
@@ -89,6 +90,24 @@ function makeParent(root,relpath){
        (st.mode&0o777)!==0o700)deny();
   }
 }
+function readBoundedPackFile(path,owner,maxBytes){
+  let fd;
+  try{
+    fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW|
+      constants.O_NONBLOCK);
+    const before=fstatSync(fd);
+    if(!before.isFile()||before.uid!==owner||before.nlink!==1||
+       (before.mode&0o777)!==0o444||
+       before.size<1||before.size>maxBytes)deny();
+    const bytes=readFileSync(fd);
+    const after=fstatSync(fd);
+    if(bytes.length!==before.size||after.dev!==before.dev||
+       after.ino!==before.ino||after.size!==before.size||
+       after.mtimeMs!==before.mtimeMs)deny();
+    return bytes;
+  }catch{deny();}
+  finally{if(fd!==undefined)closeSync(fd);}
+}
 function expectedTree(){
   const dirs=new Set(['','code']);
   const paths=['MANIFEST.json'];
@@ -111,7 +130,8 @@ function treeContents(root,owner){
     checkDir(dir,0o700,owner);
     for(const name of readdirSync(dir)){
       const p=join(dir,name),r=rel?rel+'/'+name:name,s=lstatSync(p);
-      if(s.isSymbolicLink()||s.uid!==owner||s.nlink<1)deny();
+      if(s.isSymbolicLink()||s.uid!==owner||s.nlink<1||
+         !(s.isFile()||s.isDirectory()))deny();
       result.push({path:r,isDir:s.isDirectory(),mode:s.mode&0o777});
       if(s.isDirectory())walk(p,r);
     }
@@ -170,9 +190,8 @@ export function verifyProtectedBootstrapPack({outputPath,expectedManifestSha256}
     }else if(!expected.paths.has(item.path)||item.mode!==0o444)deny();
   }
   const manifestPath=join(outputPath,'MANIFEST.json');
-  const manifestBytes=readFileSync(manifestPath);
-  if(manifestBytes.length>8192||
-     digest(manifestBytes)!==expectedManifestSha256)deny();
+  const manifestBytes=readBoundedPackFile(manifestPath,owner,8192);
+  if(digest(manifestBytes)!==expectedManifestSha256)deny();
   let m;
   try{m=JSON.parse(manifestBytes.toString('utf8'));}catch{deny();}
   if(!exact(m,['version','repository','head','installAuthorized',
@@ -193,7 +212,7 @@ export function verifyProtectedBootstrapPack({outputPath,expectedManifestSha256}
     if(!st.isFile()||st.isSymbolicLink()||st.uid!==owner||
        st.nlink!==1||(st.mode&0o777)!==0o444||st.size!==f.bytes)
       deny();
-    const bytes=readFileSync(p);
+    const bytes=readBoundedPackFile(p,owner,MAX_FILE);
     if(bytes.length!==f.bytes||digest(bytes)!==f.sha256)deny();
     total+=bytes.length;
   }
