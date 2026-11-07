@@ -1,5 +1,12 @@
 # Handoff status
 
+## 2026-11-07 #35 read-only restart reconciliation (NOT DEPLOYED)
+
+- Reused existing Draft PR #39; added `src/ops/protected-update-reconcile.mjs` and 9 synthetic tests. A root-owned supervisor may later use this **information-only** candidate to compare a durable operation-ID record with the active two-file release. An absent, pending, interrupted, unknown or inconsistent operation never authorizes replay, health promotion, switch or rollback. No privileged entrypoint was added.
+- Source HEAD `9c2b20d9bafb1664d8366eb2f4c4c9118dbd2694` exact [CI #42320436322](https://github.com/al-hub/mcp-dev-hub/actions/runs/42320436322): completed **SUCCESS**, `bootstrap` job `npm run check` SUCCESS. New negative tests cover absent operation, prepared, switch-pending, switched-but-not-verified, durable verified/rollback, unknown, false terminal pointer and incorrect identity.
+- Android ClosePaw v0.1.108 is responding, but the target private-network probe reported **target_unreachable**, Android VPN not present; actual strict-host-key SSH to WSL timed out (confirmed failure, not unknown write). No command replay, root change, service change or data operation occurred. Real operating acceptance and new live Codex review are **NOT VERIFIED** in this checkpoint.
+- The immutable root updater, independent reviewer/approval signing principals and their protected provisioning, one-time migration/backup/installer, full privileged-code audit, two physical protected revisions, formal protected merge/main CI and #36/#37 real unattended E2Es remain missing. **Do not request administrator authorization or close #35** based on this source-only improvement. Maintain `AI_WRITE=0`, `AI_PUSH=0` and current services and policies.
+
 ## 2026-11-07 #35 protected-update candidate continuation (NOT DEPLOYED)
 
 - Reused existing Draft PR #39 and the exact fixed two-file protected-update scope. No administrator rights, new trust policy, root installation, service restart, data reset, branch-protection change, or global AI_WRITE/AI_PUSH change.
