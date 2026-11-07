@@ -64,9 +64,11 @@ test('three serial fully isolated package -> baseline -> install -> restore dry 
     for(const [name,bytes] of Object.entries(original)){
       writeFileSync(join(root,name),bytes,{mode:0o555});
       chmodSync(join(root,name),0o555);
-      assert.deepEqual(
-        Buffer.from(git(repo,['show',head+':'+oldPaths[name]]),'utf8'),
-        bytes);
+      const sourceBlob=spawnSync('git',['show',head+':'+oldPaths[name]],{
+        cwd:repo,encoding:null,timeout:10000
+      });
+      assert.equal(sourceBlob.status,0);
+      assert.deepEqual(sourceBlob.stdout,bytes);
       expectedLegacyFiles.push({name,bytes:bytes.length,sha256:hash(bytes)});
     }
     const wrapperBytes=readFileSync(join(outputPath,'code','scripts',
