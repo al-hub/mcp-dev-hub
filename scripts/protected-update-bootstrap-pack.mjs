@@ -20,6 +20,7 @@ const SOURCE=Object.freeze([
   'scripts/protected-update-bootstrap-pack.mjs',
   'scripts/protected-update-controller-wrapper.mjs',
   'scripts/protected-update-root-apply.mjs',
+  'scripts/protected-update-root-reconcile.mjs',
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-bootstrap-migration.mjs',
   'src/ops/protected-update-github-evidence.mjs',
