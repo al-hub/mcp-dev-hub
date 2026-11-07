@@ -11,13 +11,15 @@
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,mkdirSync,
   openSync,readFileSync,writeSync,chmodSync,chownSync,fchownSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-import {createPublicKey} from 'node:crypto';
+import {createPublicKey,createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
 import {assertFixedOperationalIssuerIsolation}
   from '../src/ops/protected-update-issuer-boundary.mjs';
+import {parsePinnedBootstrapIssuerContext}
+  from '../src/ops/protected-update-bootstrap-issuer.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -249,6 +251,21 @@ export function provisionIndependentProtectedIssuersOnce(){
   }
   mkdirSync(BASE,{mode:0o755});chmodSync(BASE,0o755);
   dir(BASE,0o755);
+  const pinnedContext={
+    version:1,repository:'al-hub/mcp-dev-hub',
+    scope:'protected-bootstrap',head:checked.head,
+    base:trust('approved-base-commit',128),packDigest:digest,
+    baselineCommit:trust('baseline-commit',128),
+    baselineDigest:createHash('sha256').update(
+      trust('baseline-files.json'),'utf8').digest('hex'),
+    prNumber:Number(trust('approved-pr-number',48)),
+    ciRunId:Number(trust('approved-ci-run-id',48)),
+    reviewerBotId:Number(trust('reviewer-bot-id',48)),
+    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]'
+  };
+  parsePinnedBootstrapIssuerContext(JSON.stringify(pinnedContext));
+  writePublicIssuerFile('approved-bootstrap-context.json',
+    JSON.stringify(pinnedContext));
   for(const {role,uid,gid} of identities){
     const dirPath=BASE+'/issuer-'+role;
     mkdirSync(dirPath,{mode:0o700});
