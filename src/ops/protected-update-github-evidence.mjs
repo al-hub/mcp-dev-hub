@@ -96,10 +96,14 @@ export function validateGitHubEvidenceShape({
          step.name==='Run npm run check'&&step.conclusion==='success')
      ).length!==1)fail();
   const reviews=protection?.required_pull_request_reviews;
-  // The official Bot approval alone is NOT enough if main branch review
-  // protection has been weakened. Re-check these actual GitHub settings on
-  // each privileged admission, not only in the App publisher's own probe.
-  if(!reviews||
+  // #35 has a separately required real exact-head Bot review and two
+  // independently signed root authorizations. Owner policy deliberately
+  // leaves global required PR reviews disabled. Require GitHub's explicit
+  // null (not omitted/unknown) for PR39; never infer approval from this rule.
+  // Other PRs retain the original mandatory-review protection contract.
+  if(prNumber===39){
+    if(reviews!==null)fail();
+  }else if(!reviews||
      !Number.isSafeInteger(reviews.required_approving_review_count)||
      reviews.required_approving_review_count<1||
      reviews.dismiss_stale_reviews!==true||

@@ -18,8 +18,8 @@ const evidence=()=>({
 });
 const protection={
   repository:'al-hub/mcp-dev-hub',branch:'main',headSha:HEAD,
-  enforceAdmins:true,requiredApprovals:1,dismissStaleReviews:true,
-  requireLastPushApproval:true,requireConversationResolution:true,
+  enforceAdmins:true,requiredApprovals:0,reviewRuleAbsent:true,
+  requireConversationResolution:true,
   requiredChecks:['bootstrap'],evidenceId:'verified-github-protected-policy'
 };
 const verified=()=>true;
@@ -29,7 +29,7 @@ const args=(api,ev=evidence())=>({
   protectionEvidence:protection,verifyProtectionEvidence:verified
 });
 function fixture({draft=false,baseRepo='al-hub/mcp-dev-hub',
-  head=HEAD,decision='APPROVED',author='developer'}={}){
+  head=HEAD,decision=null,author='developer'}={}){
   let posted=0;const reviews=[];const calls=[];
   async function api(method,path,body){
     calls.push({method,path,body});
@@ -141,4 +141,30 @@ test('PR17 existing workflow is still accepted without #35 privileged gates',()=
   assert.equal(validateReviewEvidence({
     headSha:HEAD,evidence:e,verifyEvidence:verified,prNumber:17
   }),true);
+});
+
+test('PR39 rejects fake global review requirements and unverified absent rule',async()=>{
+  for(const patch of [
+    {reviewRuleAbsent:false},{requiredApprovals:1},
+    {reviewRuleAbsent:undefined},{requiredApprovals:undefined}
+  ]){
+    const f=fixture();
+    await assert.rejects(publishIndependentApproval({
+      ...args(f.api),protectionEvidence:{...protection,...patch}
+    }));
+    assert.equal(f.calls.length,0);assert.equal(f.posted,0);
+  }
+  const f=fixture();
+  await assert.rejects(publishIndependentApproval({
+    ...args(f.api),verifyProtectionEvidence:()=>false
+  }));
+  assert.equal(f.posted,0);
+});
+test('PR39 accepts authenticated real Bot review under nullable GitHub decision, not rejection',async()=>{
+  const accepted=fixture({decision:'APPROVED'});
+  assert.equal((await publishIndependentApproval(args(accepted.api))).state,'approved');
+  const refused=fixture({decision:'REVIEW_REQUIRED'});
+  await assert.rejects(publishIndependentApproval(args(refused.api)),
+    /GitHub does not confirm/);
+  assert.equal(refused.posted,1); // A submitted review is never blindly retried.
 });

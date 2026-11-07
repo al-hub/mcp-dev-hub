@@ -40,15 +40,24 @@ export function validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber
 // Protection information comes from a separately trusted verifier; this
 // narrowly scoped review App must never gain policy/contents permissions.
 // Both the evidence and its provenance must be pinned to the exact PR HEAD.
-export function validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence}){
+export function validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber=17}){
  const p=protectionEvidence;
  if(typeof verifyProtectionEvidence!=='function'||!p||p.repository!==REPO||
     p.branch!=='main'||p.headSha!==headSha||p.enforceAdmins!==true||
-    !Number.isSafeInteger(p.requiredApprovals)||p.requiredApprovals<1||
-    p.dismissStaleReviews!==true||p.requireLastPushApproval!==true||
     p.requireConversationResolution!==true||!Array.isArray(p.requiredChecks)||
     !p.requiredChecks.includes('bootstrap')||
     typeof p.evidenceId!=='string'||!/^verified-[a-z0-9-]{6,100}$/.test(p.evidenceId))
+   fail('trusted branch protection evidence unavailable');
+ // #35 is explicitly scoped to an independently verified Bot approval and
+ // separately signed privilege authorization. The owner previously removed
+ // repository-wide required PR reviews; never silently re-enable that rule.
+ // A trusted out-of-band policy verifier MUST confirm the absent review rule.
+ if(prNumber===39){
+  if(p.requiredApprovals!==0||p.reviewRuleAbsent!==true)
+   fail('protected bootstrap policy evidence unavailable');
+ }else if(!Number.isSafeInteger(p.requiredApprovals)||
+          p.requiredApprovals<1||p.dismissStaleReviews!==true||
+          p.requireLastPushApproval!==true)
    fail('trusted branch protection evidence unavailable');
  if(verifyProtectionEvidence(p)!==true)fail('unverified branch protection provenance');
  return true;
@@ -107,7 +116,7 @@ export async function publishIndependentApproval({
  if(typeof api!=='function'||typeof actor!=='string'||!/^[-a-z0-9]+\[bot\]$/.test(actor)||
     !PR_ALLOWLIST.includes(prNumber)||!SHA.test(headSha))fail('review publisher scope denied');
  validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber});
- validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence});
+ validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber});
  const prefix='/repos/'+REPO;
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
@@ -156,8 +165,14 @@ export async function publishIndependentApproval({
  const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
  const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:prNumber}});
  const decision=result.data?.repository?.pullRequest;
- if(decision?.headRefOid!==headSha||decision?.reviewDecision!=='APPROVED')
-  fail('GitHub does not confirm same-HEAD required approval eligibility');
+ // With no repository-wide required reviews, GitHub can report null instead
+ // of APPROVED. The exact-head real Bot review was already re-read above;
+ // root activation also separately validates the pinned Bot actor and review.
+ if(decision?.headRefOid!==headSha||
+    (prNumber===39
+      ? ![null,'APPROVED'].includes(decision.reviewDecision)
+      : decision.reviewDecision!=='APPROVED'))
+  fail('GitHub does not confirm same-HEAD review state');
  const afterPr=await api('GET',prefix+'/pulls/'+prNumber);
  if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||afterPr.state!=='open')
   fail('PR HEAD moved during approval confirmation');

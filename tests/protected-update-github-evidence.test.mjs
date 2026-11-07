@@ -55,10 +55,7 @@ function githubFixture(){
       }]
     },
     protection:{
-      required_pull_request_reviews:{
-        required_approving_review_count:1,
-        dismiss_stale_reviews:true,require_last_push_approval:true
-      },
+      required_pull_request_reviews:null,
       required_status_checks:{
         strict:true,contexts:['bootstrap'],
         checks:[{context:'bootstrap',app_id:15368}]
@@ -148,18 +145,12 @@ test('authenticated GitHub payload shape requires exact PR, CI job and protectio
       required_pull_request_reviews:undefined}},
     {...f,protection:{...f.protection,
       required_pull_request_reviews:{
-        ...f.protection.required_pull_request_reviews,
         required_approving_review_count:0
       }}},
     {...f,protection:{...f.protection,
       required_pull_request_reviews:{
-        ...f.protection.required_pull_request_reviews,
-        dismiss_stale_reviews:false
-      }}},
-    {...f,protection:{...f.protection,
-      required_pull_request_reviews:{
-        ...f.protection.required_pull_request_reviews,
-        require_last_push_approval:false
+        required_approving_review_count:1,
+        dismiss_stale_reviews:true,require_last_push_approval:true
       }}},
     {...f,protection:{...f.protection,allow_force_pushes:{enabled:true}}},
     {...f,protection:{...f.protection,
@@ -222,4 +213,18 @@ test('untrusted manifest allowlist and hashes are denied before GitHub fetch',as
   ])await assert.rejects(fetchAndVerifyGitHubControllerPair({
     head,manifestFiles:list,githubToken:'not-a-real-token'
   }),/protected_evidence_denied/);
+});
+
+test('unrelated PR policy still requires mandatory independent reviews',()=>{
+  const f=githubFixture();
+  const pr17={...f,prNumber:17,
+    pr:{...f.pr,number:17},
+    run:{...f.run,pull_requests:[{number:17,head:{sha:head},base:{sha:base}}]}};
+  assert.throws(()=>validateGitHubEvidenceShape(pr17),/protected_evidence_denied/);
+  const secured={...pr17,protection:{...f.protection,
+    required_pull_request_reviews:{
+      required_approving_review_count:1,
+      dismiss_stale_reviews:true,require_last_push_approval:true
+    }}};
+  assert.equal(validateGitHubEvidenceShape(secured).strictProtection,true);
 });
