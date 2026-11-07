@@ -6,6 +6,7 @@
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync}
   from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
 import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
 import {readRootProtectedUpdateTrust}
@@ -104,8 +105,9 @@ function rootFileManifest(){
   // migration hashes the wrapper again against the pinned manifest.
   return readFileSync(PACK+'/MANIFEST.json','utf8');
 }
-if(process.argv[1]&&fileURLToPath(import.meta.url)===
-    '/usr/local/lib/mcp-dev-hub/protected-updater/code/scripts/protected-update-bootstrap-entry.mjs'){
+// Direct invocation from a checkout is a hard failure, never a successful
+// no-op. Imported modules (e.g. nonroot tests) perform no side effects.
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
     const result=bootstrapOneShotFixedRoot();
     process.stdout.write(JSON.stringify({
