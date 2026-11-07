@@ -208,9 +208,9 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
     let result;
     if(op==='build'&&process.argv.length===6)
       result=buildProtectedBootstrapPack({repositoryPath:repo,head,outputPath:out});
-    else if(op==='verify'&&process.argv.length===6)
-      result=verifyProtectedBootstrapPack({outputPath:out,
-        expectedManifestSha256:digestValue});
+    else if(op==='verify'&&process.argv.length===5)
+      result=verifyProtectedBootstrapPack({outputPath:repo,
+        expectedManifestSha256:head});
     else deny();
     process.stdout.write(JSON.stringify(result)+'\n');
   }catch{
