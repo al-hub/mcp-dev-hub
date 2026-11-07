@@ -6,12 +6,17 @@ const sha='a'.repeat(40);
 const config={appId:5576601,expectedHead:sha,
  keyFile:'/etc/mcp-dev-hub/reviewer-app.pem'};
 const canonical=JSON.stringify(config);
+const nested={...config,keyFile:'/etc/mcp-dev-hub/reviewer/reviewer-app.pem'};
 test('only fixed root credential leaf and exact SHA are allowed',()=>{
  assert.deepEqual(parseTrustedAppConfiguration(canonical),config);
+ assert.deepEqual(parseTrustedAppConfiguration(JSON.stringify(nested)),nested);
  for(const bad of [
   {...config,keyFile:'/tmp/reviewer-app.pem'},
   {...config,keyFile:'/etc/mcp-dev-hub/../bad.pem'},
-  {...config,keyFile:'/etc/mcp-dev-hub/nested/key.pem'},
+  {...config,keyFile:'/etc/mcp-dev-hub/nested/deeper/key.pem'},
+  {...config,keyFile:'/etc/mcp-dev-hub/nested/../key.pem'},
+  {...config,keyFile:'/etc/mcp-dev-hub/nested//key.pem'},
+  {...config,keyFile:'/etc/mcp-dev-hub/.hidden/key.pem'},
   {...config,expectedHead:'bad'},
   {...config,appId:0},
   {...config,appId:42},
@@ -80,4 +85,41 @@ test('wrong Bot, moved SHA or app authentication failure never emits ready',asyn
   });
   assert.equal(result.status,'blocked');
  }
+});
+
+test('installed one-level nested key parent must be private before any read',async()=>{
+ let parentChecked=0,read=false;
+ const result=await checkTrustedAppConnection({
+  config:nested,validatePrivateDirectory:(path,privateDir)=>{
+   parentChecked++;
+   assert.equal(path,'/etc/mcp-dev-hub/reviewer');
+   assert.equal(privateDir,true);
+   throw Error('mock insecure ancestor');
+  },
+  readOwnedFile:()=>{read=true;return 'must never happen';}
+ });
+ assert.equal(result.status,'blocked');
+ assert.equal(parentChecked,1);
+ assert.equal(read,false);
+});
+test('same nested private key works with explicitly verified parent',async()=>{
+ const key='synthetic-only',calls=[];
+ const result=await checkTrustedAppConnection({
+  config:nested,
+  validatePrivateDirectory:(path,privateDir)=>{
+   calls.push(['parent',path,privateDir]);
+  },
+  readOwnedFile:(path,mode)=>{calls.push(['key',path,mode]);return key;},
+  readKey:()=>key,
+  installationLookup:async()=>123,
+  createClient:async()=>({actor:'mcp-dev-hub-ai-reviewer[bot]',
+   api:async()=>({number:39,state:'open',draft:false,
+    head:{sha},base:{ref:'main',repo:{full_name:'al-hub/mcp-dev-hub'}},
+    user:{login:'al-hub'}})})
+ });
+ assert.equal(result.status,'ready');
+ assert.deepEqual(calls,[
+  ['parent','/etc/mcp-dev-hub/reviewer',true],
+  ['key','/etc/mcp-dev-hub/reviewer/reviewer-app.pem',0o600]
+ ]);
 });

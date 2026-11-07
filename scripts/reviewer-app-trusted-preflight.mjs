@@ -5,12 +5,17 @@
 // This performs no review POST, signer issuance, sudo-policy or root update.
 import {constants,openSync,fstatSync,closeSync,lstatSync,readFileSync,realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {dirname} from 'node:path';
 import {createAppJwt,readPrivateKey,createScopedAppClient}
   from '../src/jobs/github-app-review-publisher.mjs';
 
 const ENTRY='/usr/local/lib/mcp-dev-hub/protected-updater/code/scripts/reviewer-app-trusted-preflight.mjs';
 const CONFIG='/etc/mcp-dev-hub/reviewer-app-preflight.json';
-const KEY_PREFIX='/etc/mcp-dev-hub/';
+const KEY_ROOT='/etc/mcp-dev-hub';
+const KEY_PREFIX=KEY_ROOT+'/';
+// Installed existing reviewer key is one level below its root-only parent.
+// Support exactly a direct PEM leaf or one private root-owned subdirectory.
+const KEY_LEAF=/^(?:[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-][A-Za-z0-9._-]*\.pem$/;
 const REPO='al-hub/mcp-dev-hub';
 const REPO_ID=1440361577;
 // Public App ID confirmed by the owning GitHub App's General settings.
@@ -64,7 +69,7 @@ export function parseTrustedAppConfiguration(raw){
    !Number.isSafeInteger(c.appId)||c.appId!==APP_ID||
    typeof c.expectedHead!=='string'||!SHA.test(c.expectedHead)||
    typeof c.keyFile!=='string'||!c.keyFile.startsWith(KEY_PREFIX)||
-   !/^[a-zA-Z0-9._-]+\.pem$/.test(c.keyFile.slice(KEY_PREFIX.length)))deny();
+   !KEY_LEAF.test(c.keyFile.slice(KEY_PREFIX.length)))deny();
  return Object.freeze(c);
 }
 async function getInstallation({appId,key,fetchImpl=fetch}){
@@ -89,10 +94,12 @@ async function getInstallation({appId,key,fetchImpl=fetch}){
 // "ready" value never authorizes a review or a root change.
 export async function checkTrustedAppConnection({config,readKey=readPrivateKey,
  createClient=createScopedAppClient,installationLookup=getInstallation,
- readOwnedFile=trustedFile}={}){
+ readOwnedFile=trustedFile,validatePrivateDirectory=trustedDirectory}={}){
  try{
   const c=parseTrustedAppConfiguration(JSON.stringify(config));
-  // The real entrypoint additionally enforces root-only owner/mode/nofollow.
+  // Root-only private ancestors are checked before any key access.
+  const keyParent=dirname(c.keyFile);
+  if(keyParent!==KEY_ROOT)validatePrivateDirectory(keyParent,true);
   const keyInfo=readOwnedFile(c.keyFile,0o600,16384);
   const key=readKey(c.keyFile);
   if(typeof key!=='string'||key!==keyInfo)deny();
