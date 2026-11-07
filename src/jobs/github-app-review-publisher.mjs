@@ -7,8 +7,12 @@ import {lstatSync,readFileSync,realpathSync} from 'node:fs';
 const SHA=/^[a-f0-9]{40}$/;
 const REPO='al-hub/mcp-dev-hub';
 const GATES=['ci','security','private_sse','pc','galaxy'];
+// #35 keeps all existing gates and requires additional privileged checks.
+const PROTECTED_BOOTSTRAP_GATES=['root_security','original_restore'];
+const PR_ALLOWLIST=Object.freeze([17,39]);
 const fail=(message)=>{throw Error(message);};
-export function validateReviewEvidence({headSha,evidence,verifyEvidence}){
+export function validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber=17}){
+ if(!PR_ALLOWLIST.includes(prNumber))fail('review PR outside fixed scope');
  if(!SHA.test(headSha)||typeof verifyEvidence!=='function')fail('trusted evidence verifier required');
  if(!evidence||evidence.headSha!==headSha||evidence.authorAgent!=='agy'||
    evidence.reviewerAgent!=='codex'||evidence.verdict!=='passed'||
@@ -20,20 +24,40 @@ export function validateReviewEvidence({headSha,evidence,verifyEvidence}){
   if(value?.headSha!==headSha||value?.verdict!=='passed'||
      typeof value?.evidenceId!=='string'||value.evidenceId.length<4)fail('acceptance gate incomplete');
  }
+ if(prNumber===39){
+  if(evidence.scope!=='protected-bootstrap'||
+     evidence.prNumber!==39)fail('protected bootstrap evidence scope denied');
+  for(const gate of PROTECTED_BOOTSTRAP_GATES){
+   const value=evidence.gates?.[gate];
+   if(value?.headSha!==headSha||value?.verdict!=='passed'||
+      typeof value?.evidenceId!=='string'||
+      !/^verified-[a-z0-9-]{6,100}$/.test(value.evidenceId))
+    fail('privileged security and recovery gate incomplete');
+  }
+ }
  return verifyEvidence(evidence)===true || fail('unverified independent review provenance');
 }
 // Protection information comes from a separately trusted verifier; this
 // narrowly scoped review App must never gain policy/contents permissions.
 // Both the evidence and its provenance must be pinned to the exact PR HEAD.
-export function validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence}){
+export function validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber=17}){
  const p=protectionEvidence;
  if(typeof verifyProtectionEvidence!=='function'||!p||p.repository!==REPO||
     p.branch!=='main'||p.headSha!==headSha||p.enforceAdmins!==true||
-    !Number.isSafeInteger(p.requiredApprovals)||p.requiredApprovals<1||
-    p.dismissStaleReviews!==true||p.requireLastPushApproval!==true||
     p.requireConversationResolution!==true||!Array.isArray(p.requiredChecks)||
     !p.requiredChecks.includes('bootstrap')||
     typeof p.evidenceId!=='string'||!/^verified-[a-z0-9-]{6,100}$/.test(p.evidenceId))
+   fail('trusted branch protection evidence unavailable');
+ // #35 is explicitly scoped to an independently verified Bot approval and
+ // separately signed privilege authorization. The owner previously removed
+ // repository-wide required PR reviews; never silently re-enable that rule.
+ // A trusted out-of-band policy verifier MUST confirm the absent review rule.
+ if(prNumber===39){
+  if(p.requiredApprovals!==0||p.reviewRuleAbsent!==true)
+   fail('protected bootstrap policy evidence unavailable');
+ }else if(!Number.isSafeInteger(p.requiredApprovals)||
+          p.requiredApprovals<1||p.dismissStaleReviews!==true||
+          p.requireLastPushApproval!==true)
    fail('trusted branch protection evidence unavailable');
  if(verifyProtectionEvidence(p)!==true)fail('unverified branch protection provenance');
  return true;
@@ -55,7 +79,9 @@ export function readPrivateKey(path){
  if(real!==path)fail('private key must be a direct regular file');
  return readFileSync(path,'utf8');
 }
-export async function createScopedAppClient({appId,installationId,repositoryId,key,fetchImpl=fetch}){
+export async function createScopedAppClient({appId,installationId,repositoryId,
+ key,fetchImpl=fetch,prNumber=17}){
+ if(!PR_ALLOWLIST.includes(prNumber))fail('unapproved PR scope');
  if(!Number.isSafeInteger(installationId)||installationId<1||
     !Number.isSafeInteger(repositoryId)||repositoryId<1)fail('invalid App installation');
  const jwt=createAppJwt({appId,privateKey:key});
@@ -76,11 +102,11 @@ export async function createScopedAppClient({appId,installationId,repositoryId,k
  if(typeof access.token!=='string'||access.token.length<20||
     access.permissions?.pull_requests!=='write')fail('insufficient scoped installation token');
  const scoped=async (method,path,body)=>{
-  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/[1-9][0-9]*(\/reviews(\?per_page=100)?)?)$/.test(path)
+  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/(?:17|39)(\/reviews(\?per_page=100)?)?)$/.test(path)
      && path!=='/graphql')fail('unapproved GitHub App API path');
   return call(method,path,body,access.token);
  };
- const repos=await scoped('GET','/repos/al-hub/mcp-dev-hub/pulls/17');
+ const repos=await scoped('GET','/repos/al-hub/mcp-dev-hub/pulls/'+prNumber);
  if(repos.base?.repo?.id!==undefined && repos.base.repo.id!==repositoryId)fail('repository identity mismatch');
  return {api:scoped,actor:app.slug+'[bot]'};
 }
@@ -88,13 +114,15 @@ export async function publishIndependentApproval({
  api,actor,headSha,prNumber=17,evidence,verifyEvidence,protectionEvidence,verifyProtectionEvidence
 }){
  if(typeof api!=='function'||typeof actor!=='string'||!/^[-a-z0-9]+\[bot\]$/.test(actor)||
-    prNumber!==17||!SHA.test(headSha))fail('review publisher scope denied');
- validateReviewEvidence({headSha,evidence,verifyEvidence});
- validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence});
+    !PR_ALLOWLIST.includes(prNumber)||!SHA.test(headSha))fail('review publisher scope denied');
+ validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber});
+ validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber});
  const prefix='/repos/'+REPO;
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
-    pr.base?.ref!=='main'||pr.user?.login===actor)fail('stale or self-authored pull request');
+    pr.base?.ref!=='main'||pr.user?.login===actor||
+    (prNumber===39&&(pr.draft!==false||pr.base?.repo?.full_name!==REPO)))
+    fail('stale, draft or self-authored pull request');
  // CI is an independently verified exact-SHA acceptance gate in
  // validateReviewEvidence. The pull_requests-only App never queries Actions.
  const reviews=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
@@ -115,7 +143,9 @@ export async function publishIndependentApproval({
   // Check the HEAD and existing Bot reviews at the last possible point before POST.
   const justBefore=await api('GET',prefix+'/pulls/'+prNumber);
   if(justBefore.number!==prNumber||justBefore.state!=='open'||
-     justBefore.head?.sha!==headSha||justBefore.base?.ref!=='main')
+     justBefore.head?.sha!==headSha||justBefore.base?.ref!=='main'||
+     (prNumber===39&&(justBefore.draft!==false||
+       justBefore.base?.repo?.full_name!==REPO)))
    fail('PR HEAD moved immediately before approval POST');
   const prePostReviews=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
   if(!Array.isArray(prePostReviews)||prePostReviews.length>=100||
@@ -133,10 +163,16 @@ export async function publishIndependentApproval({
     effective.state==='APPROVED'&&effective.commit_id===headSha&&effective.user?.login===actor;
  if(!confirmed)fail('review submission not confirmed; do not retry');
  const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
- const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:17}});
+ const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:prNumber}});
  const decision=result.data?.repository?.pullRequest;
- if(decision?.headRefOid!==headSha||decision?.reviewDecision!=='APPROVED')
-  fail('GitHub does not confirm same-HEAD required approval eligibility');
+ // With no repository-wide required reviews, GitHub can report null instead
+ // of APPROVED. The exact-head real Bot review was already re-read above;
+ // root activation also separately validates the pinned Bot actor and review.
+ if(decision?.headRefOid!==headSha||
+    (prNumber===39
+      ? ![null,'APPROVED'].includes(decision.reviewDecision)
+      : decision.reviewDecision!=='APPROVED'))
+  fail('GitHub does not confirm same-HEAD review state');
  const afterPr=await api('GET',prefix+'/pulls/'+prNumber);
  if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||afterPr.state!=='open')
   fail('PR HEAD moved during approval confirmation');

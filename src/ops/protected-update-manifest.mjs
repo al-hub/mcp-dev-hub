@@ -20,6 +20,11 @@ export function validateProposedProtectedUpdate(rawJson,{verifiedCommit}={}){
   throw Error('invalid_update_json_input');
  let value;
  try{value=JSON.parse(rawJson);}catch{throw Error('invalid_update_json_input');}
+ // Require a single canonical byte representation at the parser boundary.
+ // JSON.parse alone silently accepts duplicate keys (last wins); equality
+ // prevents key shadowing and cross-parser ambiguity before root validation.
+ if(JSON.stringify(value)!==rawJson)
+  throw Error('noncanonical_protected_update_manifest');
  // verifiedCommit MUST come from a separately authenticated root-owned
  // verifier; it is not an authorization token and does not prove code safety.
  if(typeof verifiedCommit!=='string'||!SHA40.test(verifiedCommit))

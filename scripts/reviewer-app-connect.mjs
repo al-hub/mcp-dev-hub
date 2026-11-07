@@ -9,6 +9,8 @@ import {readPrivateKey,createScopedAppClient} from '../src/jobs/github-app-revie
 const ACTOR='mcp-dev-hub-ai-reviewer[bot]';
 const REPO_ID=1440361577;
 const HEAD=/^[a-f0-9]{40}$/;
+// Explicit fixed repository review targets; never arbitrary PR/URL.
+const PR_ALLOWLIST=Object.freeze([17,39]);
 const NAMES=[
  'MCP_DEV_HUB_REVIEWER_APP_ID',
  'MCP_DEV_HUB_REVIEWER_APP_INSTALLATION_ID',
@@ -22,7 +24,10 @@ export async function checkReviewerConnection({
 }={}){
  const missing=NAMES.filter(k=>typeof env[k]!=='string'||env[k].length===0);
  if(missing.length)return {status:'blocked',reason:'configuration_missing',missing};
- if(!positive(env.MCP_DEV_HUB_REVIEWER_APP_ID)||
+ const prNumber=env.MCP_DEV_HUB_REVIEWER_TARGET_PR===undefined
+   ?17:Number(env.MCP_DEV_HUB_REVIEWER_TARGET_PR);
+ if(!PR_ALLOWLIST.includes(prNumber)||
+    !positive(env.MCP_DEV_HUB_REVIEWER_APP_ID)||
     !positive(env.MCP_DEV_HUB_REVIEWER_APP_INSTALLATION_ID)||
     !env.MCP_DEV_HUB_REVIEWER_APP_PRIVATE_KEY_FILE.startsWith('/')||
     !HEAD.test(env.MCP_DEV_HUB_REVIEWER_EXPECTED_HEAD_SHA)){
@@ -33,17 +38,19 @@ export async function checkReviewerConnection({
   const {api,actor}=await createClient({
    appId:Number(env.MCP_DEV_HUB_REVIEWER_APP_ID),
    installationId:Number(env.MCP_DEV_HUB_REVIEWER_APP_INSTALLATION_ID),
-   repositoryId:REPO_ID,key
+   repositoryId:REPO_ID,key,prNumber
   });
   if(actor!==ACTOR)return {status:'blocked',reason:'app_identity_or_pr_unverified'};
-  const pr=await api('GET','/repos/al-hub/mcp-dev-hub/pulls/17');
-  if(pr?.number!==17||pr.state!=='open'||
+  const pr=await api('GET','/repos/al-hub/mcp-dev-hub/pulls/'+prNumber);
+  if(pr?.number!==prNumber||pr.state!=='open'||
+     (prNumber===39&&(pr.draft!==false||
+       pr.base?.repo?.full_name!=='al-hub/mcp-dev-hub'))||
      pr.head?.sha!==env.MCP_DEV_HUB_REVIEWER_EXPECTED_HEAD_SHA||
      pr.base?.ref!=='main'||pr.user?.login!=='al-hub'||
      pr.user?.login===actor){
    return {status:'blocked',reason:'app_identity_or_pr_unverified'};
   }
-  return {status:'ready',actor,headSha:pr.head.sha,prNumber:17};
+  return {status:'ready',actor,headSha:pr.head.sha,prNumber};
  }catch{
   return {status:'blocked',reason:'app_authentication_or_scope_unverified'};
  }
