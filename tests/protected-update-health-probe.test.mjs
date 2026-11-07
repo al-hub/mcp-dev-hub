@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PROTECTED_HEALTH_UNIT_NAMES,evaluateProtectedHealthEvidence,
-  observeProtectedWorkerHealth
+  evaluateProtectedReadinessResult,observeProtectedWorkerHealth
 } from '../src/ops/protected-update-health-probe.mjs';
 
 function healthy(){
@@ -45,4 +45,26 @@ test('nonroot caller is denied before reading any OS state',()=>{
       expectedCommit:'a'.repeat(40),
       expectedHashes:{'ai-github-canary.mjs':'c'.repeat(64)}
     }),/protected_health_observer_unknown/);
+});
+
+test('startup probe requires explicit isolated ESM ready marker',()=>{
+  assert.equal(evaluateProtectedReadinessResult({
+    status:0,signal:null,error:null,stdout:'PROTECTED_READY\n'
+  }),true);
+});
+test('startup import failure triggers confirmed negative, not health PASS',()=>{
+  assert.equal(evaluateProtectedReadinessResult({
+    status:23,signal:null,error:null,stdout:'PROTECTED_BROKEN\n'
+  }),false);
+});
+test('sandbox errors, timeout, malformed output and uncertain startup fail UNKNOWN',()=>{
+  for(const row of [
+    {status:127,signal:null,error:null,stdout:''},
+    {status:null,signal:'SIGKILL',error:null,stdout:''},
+    {status:0,signal:null,error:null,stdout:''},
+    {status:0,signal:null,error:null,stdout:'FORGED\nPROTECTED_READY\n'},
+    {status:23,signal:null,error:null,stdout:'unknown error'},
+    {status:0,signal:null,error:Error('timeout'),stdout:'PROTECTED_READY\n'}
+  ]) assert.throws(()=>evaluateProtectedReadinessResult(row),
+    /protected_health_observer_unknown/);
 });
