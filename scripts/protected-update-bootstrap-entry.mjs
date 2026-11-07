@@ -17,7 +17,8 @@ import {readRootProtectedUpdateTrust}
   from '../src/ops/protected-update-root-evidence.mjs';
 import {verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
-import {fetchAndVerifyGitHubBootstrapEvidence}
+import {fetchAndVerifyGitHubBootstrapEvidence,
+  fetchAndVerifyOfficialReviewerApproval}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {migrateProtectedOriginalPairCandidate}
   from '../src/ops/protected-update-bootstrap-migration.mjs';
@@ -134,6 +135,14 @@ export async function bootstrapOneShotFixedRoot(){
   if(gh.head!==bound.head||gh.base!==bound.base||
      gh.ciRunId!==bound.ciRunId||gh.strictProtection!==true||
      gh.ciPassed!==true)fail();
+  const reviewerBotIdRaw=rootFile(TRUST+'/reviewer-bot-id',48).trim();
+  if(!/^[1-9][0-9]{0,14}$/.test(reviewerBotIdRaw))fail();
+  const review=await fetchAndVerifyOfficialReviewerApproval({
+    prNumber,head:verified.head,reviewerBotId:Number(reviewerBotIdRaw),
+    githubToken:trust.githubToken,nowMs:Date.now()
+  });
+  if(review.state!=='official_github_bot_review_confirmed'||
+     review.head!==verified.head)fail();
   // No owner approval is implied by the signatures; OS installation remains
   // a separately explicit administrator action. This candidate cannot grant
   // itself sudo access or perform the initial immutable file installation.
