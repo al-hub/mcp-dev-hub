@@ -6,7 +6,7 @@
 import {createHash} from 'node:crypto';
 import {
   chmodSync,closeSync,constants,fchmodSync,fstatSync,fsyncSync,lstatSync,
-  mkdirSync,openSync,readFileSync,readdirSync,renameSync,writeFileSync
+  mkdirSync,openSync,readFileSync,readdirSync,renameSync,writeSync
 } from 'node:fs';
 import {isAbsolute,join,resolve} from 'node:path';
 import {captureLegacyProtectedPair} from './protected-update-legacy-capture.mjs';
@@ -61,9 +61,9 @@ function writeVerified(path,bytes,mode){
   try{
     let offset=0;
     while(offset<bytes.length){
-      const n=writeFileSync; // do not trust a partial write
-      // writeFileSync(fd) on Node handles all bytes, including EINTR.
-      n(fd,bytes.subarray(offset)); offset=bytes.length;
+      const n=writeSync(fd,bytes,offset,bytes.length-offset,offset);
+      if(n<=0)deny();
+      offset+=n;
     }
     fchmodSync(fd,mode);
     fsyncSync(fd);
