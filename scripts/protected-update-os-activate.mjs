@@ -96,6 +96,26 @@ function workerAccount(){
      cols[3]!==String(roleNumber('worker-gid')))deny();
   return policy;
 }
+/** Node's getgroups() may include the effective GID even after
+ * setgroups([]); reject any other supplementary group before child spawn.
+ * This pure guard is never sufficient without the actual OS call.
+ */
+export function assertNoResidualSupplementaryGroups({actual,expected}={}){
+  if(!Array.isArray(actual)||actual.length>1||
+     !Number.isSafeInteger(expected)||expected!==0||
+     actual.some(g=>!Number.isSafeInteger(g)||g!==expected))deny();
+  return true;
+}
+function dropRootSupplementaryGroupsBeforeHealth(){
+  if(process.getuid?.()!==0||process.geteuid?.()!==0||
+     process.getegid?.()!==0||
+     typeof process.setgroups!=='function'||
+     typeof process.getgroups!=='function')deny();
+  try{process.setgroups([]);}catch{deny();}
+  assertNoResidualSupplementaryGroups({
+    actual:process.getgroups(),expected:process.getegid()
+  });
+}
 /** Pure admission gate, unit tested, no OS changes. */
 export function validateFixedActivationEvidence({
   bootstrapPhase,baselineCommit,health,policy
@@ -152,6 +172,7 @@ function writeRootPolicy(policy){
  */
 export async function activateProtectedOSOnce(){
   exactRoot();
+  dropRootSupplementaryGroupsBeforeHealth();
   for(const p of ['/','/usr','/usr/local','/usr/local/lib',ROOT,
     '/etc','/etc/mcp-dev-hub',TRUST,'/var','/var/lib',SUDO_DIR])
     realDirectory(p);

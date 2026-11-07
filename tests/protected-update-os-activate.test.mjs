@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {
-  activateProtectedOSOnce,validateFixedActivationEvidence
+  activateProtectedOSOnce,validateFixedActivationEvidence,
+  assertNoResidualSupplementaryGroups
 } from '../scripts/protected-update-os-activate.mjs';
 import {renderFixedProtectedSudoPolicy}
   from '../src/ops/protected-update-sudo-policy.mjs';
@@ -18,6 +19,14 @@ test('install candidate and exact sudo policy are in pinned source pack',()=>{
     'scripts/protected-update-os-activate.mjs'));
   assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(
     'src/ops/protected-update-sudo-policy.mjs'));
+});
+test('root activation health child rejects inherited supplementary groups',()=>{
+  assert.equal(assertNoResidualSupplementaryGroups({actual:[],expected:0}),true);
+  // On Linux Node may include the effective GID itself.
+  assert.equal(assertNoResidualSupplementaryGroups({actual:[0],expected:0}),true);
+  for(const actual of [[0,0],[0,10],[10],['0'],null,undefined,{}])
+    denied(()=>assertNoResidualSupplementaryGroups({actual,expected:0}));
+  denied(()=>assertNoResidualSupplementaryGroups({actual:[],expected:10}));
 });
 test('health PASS alone never installs: admission remains explicit NO-GO',()=>{
   const r=validateFixedActivationEvidence({
