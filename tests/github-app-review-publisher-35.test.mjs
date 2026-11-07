@@ -14,7 +14,7 @@ const evidence=()=>({
   gates:Object.fromEntries([
     'ci','security','private_sse','pc','galaxy',
     'root_security','original_restore'
-  ].map(k=>[k,{...VERDICT,evidenceId:'verified-'+k+'-proof'}]))
+  ].map(k=>[k,{...VERDICT,evidenceId:'verified-'+k.replaceAll('_','-')+'-proof'}]))
 });
 const protection={
   repository:'al-hub/mcp-dev-hub',branch:'main',headSha:HEAD,
