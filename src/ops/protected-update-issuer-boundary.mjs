@@ -36,10 +36,11 @@ function readRoleUid(role){
  * authority: only assertFixedOperationalIssuerIsolation observes OS state.
  */
 export function verifyProtectedIssuerIsolationEvidence({
-  reviewer,approval,workerUid,parentRows
+  reviewer,approval,workerUid,workerGid,parentRows
 }={}){
   if(!Number.isSafeInteger(workerUid)||workerUid<=0||
-     !Array.isArray(parentRows)||parentRows.length!==5||
+     !Number.isSafeInteger(workerGid)||workerGid<=0||
+     !Array.isArray(parentRows)||parentRows.length!==7||
      !parentRows.every(p=>p?.uid===0&&p.directory===true&&
        p.symlink===false&&Number.isSafeInteger(p.mode)&&
        (p.mode&0o022)===0))deny();
@@ -53,11 +54,13 @@ export function verifyProtectedIssuerIsolationEvidence({
        r.key.links===1&&Number.isSafeInteger(r.key.bytes)&&
        r.key.bytes>0&&r.key.bytes<=8192))deny();
   if(reviewer.uid===approval.uid||
-     reviewer.gid===approval.gid)deny();
+     reviewer.gid===approval.gid||reviewer.gid===workerGid||
+     approval.gid===workerGid)deny();
   return Object.freeze({
     state:'os_private_key_metadata_separated',
     reviewerUid:reviewer.uid,approvalUid:approval.uid,
-    workerUid,signerProvenanceVerified:false,installerAuthorized:false
+    workerUid,workerGid,signerProvenanceVerified:false,
+    installerAuthorized:false
   });
 }
 /** Read-only root-side inspection of FIXED paths, never Worker supplied.
@@ -67,9 +70,11 @@ export function verifyProtectedIssuerIsolationEvidence({
  */
 export function assertFixedOperationalIssuerIsolation(){
   if(process.geteuid?.()!==0||process.getuid?.()!==0)deny();
-  const parents=['/','/var','/var/lib',BASE,TRUST];
+  const parents=['/','/var','/var/lib',BASE,
+    '/etc','/etc/mcp-dev-hub',TRUST];
   const parentRows=parents.map(dirInfo);
   const workerUid=readRoleUid('worker');
+  const workerGid=readRoleUid('worker-gid');
   const groups=roles.map(role=>{
     const uid=readRoleUid(role);
     const gid=readRoleUid(role+'-gid');
@@ -79,6 +84,6 @@ export function assertFixedOperationalIssuerIsolation(){
   });
   return verifyProtectedIssuerIsolationEvidence({
     reviewer:groups[0],approval:groups[1],
-    workerUid,parentRows
+    workerUid,workerGid,parentRows
   });
 }
