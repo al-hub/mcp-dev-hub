@@ -15,6 +15,10 @@ import {inspectProtectedCurrentSnapshot,RELEASE_FILES}
   from '../src/ops/protected-update-release-pointer.mjs';
 import {applyProtectedUpdateCandidate}
   from '../src/ops/protected-update-transaction.mjs';
+import {verifyIndependentSignedReview}
+  from '../src/ops/protected-update-github-evidence.mjs';
+import {verifySignedProtectedUpdateApproval}
+  from '../src/ops/protected-update-approval.mjs';
 import {observeProtectedWorkerHealth}
   from '../src/ops/protected-update-health-probe.mjs';
 
@@ -24,6 +28,13 @@ const STATE='/var/lib/mcp-dev-hub/protected-update';
 const TRUST='/etc/mcp-dev-hub/protected-update';
 const REQ_LIMIT=12500;
 const deny=()=>{throw Error('protected_root_apply_denied');};
+/** Synthetic group inspection only; root authority comes from OS getgroups
+ * after setgroups([]), not from a caller-supplied array.
+ */
+export function rootSupplementaryGroupsCleared(groups,effectiveGid){
+  return Array.isArray(groups)&&groups.length<=1&&
+    groups.every(g=>g===effectiveGid);
+}
 function requireFixedRoot(){
   if(process.geteuid?.()!==0||process.getuid?.()!==0||
      fileURLToPath(import.meta.url)!==FIXED||process.argv.length!==2)
@@ -92,7 +103,8 @@ export async function applyOneProtectedUpdateFixedRoot(){
   try{
     if(typeof process.setgroups!=='function')deny();
     process.setgroups([]);
-    if(process.getgroups().includes(0))deny();
+    if(!rootSupplementaryGroupsCleared(
+      process.getgroups(),process.getgid()))deny();
   }catch{deny();}
   const raw=await readRequest();
   const req=parseProtectedUpdateRequest(raw);
@@ -114,6 +126,24 @@ export async function applyOneProtectedUpdateFixedRoot(){
     pinnedWorkerUid:uid,pinnedWorkerGid:gid,
     expectedCommit:prior.commit,expectedHashes:previousHashes
   })!==true)deny();
+  // The initial GH observation can take time; neither review nor approval
+  // may expire while evaluating baseline service health. Validate both
+  // signatures against the actual clock IMMEDIATELY before any journal/stage.
+  const finalNowMs=Date.now();
+  verifySignedProtectedUpdateApproval({
+    manifestJson:req.manifestJson,approvalJson:req.approvalJson,
+    signatureBase64:req.signatureBase64,
+    trustPublicKeyPem:trust.approvalPublicKeyPem,
+    trustedHead:req.head,trustedBase:req.base,
+    trustedOperationId:req.operationId,nowMs:finalNowMs
+  });
+  verifyIndependentSignedReview({
+    reviewJson:req.reviewJson,
+    signatureBase64:req.reviewSignatureBase64,
+    pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+    head:req.head,base:req.base,prNumber:req.prNumber,nowMs:finalNowMs
+  });
   const futureHashes=hashes(verified.approved.manifest.files);
   const outcome=await applyProtectedUpdateCandidate({
     root:ROOT,stateDir:STATE,
@@ -121,7 +151,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
     signatureBase64:req.signatureBase64,
     pinnedPublicKey:trust.approvalPublicKeyPem,
     proof:verified.proof,contents:verified.contents,
-    oldFiles:prior.files,operationId:req.operationId,nowMs,
+    oldFiles:prior.files,operationId:req.operationId,nowMs:finalNowMs,
     observeHealth:async()=>observeProtectedWorkerHealth({
       pinnedWorkerUid:uid,pinnedWorkerGid:gid,
       expectedCommit:req.head,expectedHashes:futureHashes
