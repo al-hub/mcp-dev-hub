@@ -1,5 +1,53 @@
 # Handoff status
 
+## 2026-11-07 #35 root updater / issuer-bound bootstrap admission candidate — NOT INSTALLED
+
+- Reused Draft PR #39 without touching main, Worker/Dashboard, privileged trust
+  files, keys or global AI_WRITE/AI_PUSH policy. The authenticated mobile
+  Bridge→Termux→SSH→WSL path was usable and both existing user services were
+  **active**.
+- Added separately signed Ed25519 **reviewer** and **approval** attestation
+  binding for exact bootstrap package SHA-256, HEAD/BASE, PR, CI, original
+  baseline hash, review-run ID and short expiry. The two public keys must be
+  **distinct**, pinned from immutable root config; payload role crossover,
+  signature substitution, replay/expiry and stale evidence fail closed.
+  The signed claims are cross-checked against **actual fixed GitHub HTTPS
+  PR/CI/main-branch protection**, never treated as self-authenticating.
+  These are **cryptographic verifier candidates**, not operating signers.
+- Added fixed, zero-argument, root-only protected update and read-only
+  operation-ID reconciliation entrypoint candidates. Only exact signed
+  controller/policy pairs are eligible for staged single-pointer CAS,
+  durable journal and bounded rollback; unknown outcomes remain nonreplayable.
+  No generic shell, path, sudo, reviewer key or command from Issue/Worker.
+- Added pinned Worker/Dashboard health checks and a fail-closed requirement
+  for actual controller ESM import/initialization inside a no-network,
+  no-Worker-HOME read-only Bubblewrap namespace as a nonroot Worker.
+  **A globally root-owned `/usr/bin/bwrap` is currently ABSENT on the
+  operating WSL host**, and it cannot be silently substituted with a
+  user-writable executable. One-time reviewed OS provisioning is required.
+- Real independent Codex reviews on intermediate source commits reported
+  **P2 false startup-health PASS**, **P1 mistaken effective-GID check**, and
+  **P2 stale signature clock** in both root update and one-shot bootstrap.
+  All were corrected in source, and negative/clock/review-role tests were
+  added. A *fresh exact-code-HEAD security review* is required before
+  installation; a synthetic test or a Codex exit status alone is not a
+  privileged operating acceptance.
+- Read-only WSL Node tests on latest source code `74bb5281a8e436b0234e47a549ff69e65725a825`:
+  **310/310 PASS**, privacy scan **PASS**. Earlier source HEAD had
+  **three consecutive 310-test WSL suites = 930 PASS** and three
+  reproducible **21-file source-only** packages with matching digests.
+  Exact code-head [strict CI #42337508014](https://github.com/al-hub/mcp-dev-hub/actions/runs/42337508014)
+  **SUCCESS**: `bootstrap` 314 PASS, 0 FAIL, privacy scan 155 files PASS.
+  Worker/Dashboard remained active around these tests.
+- **NO-GO for owner sudo/administrator installation:** independently
+  operated review/approval signer keys and issuer separation, audited
+  immutable OS one-shot installer and original-backup trust setup,
+  global root-owned bwrap, installed root updater and exact sudoers command
+  policy, complete privileged audit and real physical protected source
+  updates **0/2** remain. Current source-only manifest intentionally sets
+  `installAuthorized:false`. #35 OPEN, PR #39 Draft/OPEN; #36/#37 downstream
+  physical acceptance cannot be claimed. No OS root files changed.
+
 ## 2026-11-07 #35 one-shot bootstrap source pack, synthetic restore and no-go guard
 
 - Existing Draft PR #39 reused; no privileged install, service restart, secret transfer or OS trust change. The authenticated mobile→Termux→strict-SSH→WSL path was usable; existing Worker-14 and Dashboard user services were active. Original installed controller/policy remain root:root mode 0555.
