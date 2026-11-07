@@ -23,10 +23,12 @@ condition below BEFORE writing a rule:
   equivalent to signed installation authorization. Exact original bytes,
   services and an OS rollback path are independently confirmed.
 - Fixed, root-owned `/usr/bin/node`, `/usr/bin/systemctl` and
-  `/usr/bin/bwrap` must be available and reviewed. The current WSL
-  machine does **not** have a global root-owned `/usr/bin/bwrap`, so
-  the sandboxed controller startup observer remains a **NO-GO** until
-  this OS prerequisite is safely provisioned.
+  `/usr/bin/bwrap` must be available and reviewed. **Correction from
+  2026-11-07 read-only WSL evidence:** `/usr/bin/bwrap` is already installed
+  as `root:root` mode `0755` (v0.6.1). A real no-network Bubblewrap Node
+  launch and isolated import of the existing protected controller both
+  succeeded. **No Bubblewrap reinstallation is needed.** This validates
+  the current baseline's sandbox startup only, not an installed updater.
 - `sudo -n` may be used **after** the initial setup only for the two
   exact audited root-controlled JavaScript entrypoints. Signed requests
   on stdin are data-only and cannot choose executable paths, shell
