@@ -18,7 +18,8 @@ import {inspectProtectedCurrentSnapshot,RELEASE_FILES}
   from '../src/ops/protected-update-release-pointer.mjs';
 import {applyProtectedUpdateCandidate}
   from '../src/ops/protected-update-transaction.mjs';
-import {verifyIndependentSignedReview}
+import {verifyIndependentSignedReview,
+  fetchAndVerifyOfficialReviewerApproval}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {verifySignedProtectedUpdateApproval}
   from '../src/ops/protected-update-approval.mjs';
@@ -121,6 +122,13 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const verified=await preflightAuthenticatedProtectedUpdate({
     ...req,nowMs
   });
+  const reviewerBotId=privateDecimal('reviewer-bot-id');
+  if(reviewerBotId<=0)deny();
+  const official=await fetchAndVerifyOfficialReviewerApproval({
+    prNumber:req.prNumber,head:req.head,reviewerBotId,
+    githubToken:trust.githubToken,nowMs:Date.now()
+  });
+  if(official.state!=='official_github_bot_review_confirmed')deny();
   const prior=inspectProtectedCurrentSnapshot(ROOT);
   if(prior.commit===req.head||prior.commit===null)deny();
   const previousHashes=hashes(prior.files);
