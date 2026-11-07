@@ -1,5 +1,68 @@
 # Handoff status
 
+## 2026-11-07 #35 PR #39 independent proof and real issuer-runtime handoff — NO-GO for root
+
+- The **existing Draft PR #39** is reused; no root auth, sudo changes,
+  installed signing principal/private key/token, protected controller update,
+  Worker DB/keys, service restart or global AI_WRITE/AI_PUSH change.
+- Reused the **existing GitHub reviewer App** code (no new GitHub App/account):
+  `src/jobs/github-app-review-publisher.mjs` and
+  `scripts/reviewer-app-connect.mjs` now accept only PR #17 (existing)
+  or #39. #39 requires **non-Draft exact HEAD**, trusted real independent
+  Codex, strict existing CI/security/user acceptance PLUS `root_security`
+  and `original_restore` gates, official GitHub decision and no
+  unknown POST replay. It refuses arbitrary PR IDs and stale HEAD.
+- Added actual issuer-candidate entrypoints
+  `scripts/protected-update-review-issuer.mjs` and
+  `scripts/protected-update-approval-issuer.mjs`; each ONLY operates from
+  an OS-fixed root-owned issuer-runtime path under its own nonroot
+  UID/GID/private Ed25519 key. Each independently queries actual GitHub
+  strict CI, branch protection and latest exact-HEAD pinned Bot
+  **APPROVED** (including its verified review-evidence ID). Approval
+  validates the first Ed25519 reviewer signature and review-run ID
+  again before constructing its own second signature. Unknown, expired,
+  stale, forged, wrong-key and caller-supplied PASS are denied.
+- Added `src/ops/protected-update-bootstrap-issuer.mjs` for exact
+  canonical two-stage Ed25519 claims, plus
+  `src/ops/protected-update-issuer-runtime.mjs` for fixed OS mode/owner/
+  symlink/private-token checks; tests prove two separate keys produce
+  claims accepted by the earlier root verifier and reject impostors.
+- Added `scripts/protected-update-issuer-stage.mjs` to copy an
+  externally pinned, root-owned 0700 source-only package's **exact
+  six-file static import closure** into a separate root-owned 0555
+  runtime whose files are 0444, never the Worker checkout.
+- Added `scripts/protected-update-issuer-collect.mjs`: fixed no-arg
+  root-side handoff that independently checks GitHub, runs role scripts
+  under their respective UID/GID, verifies both Ed25519 signatures,
+  writes canonical handoff/root-only trust files and preserves unknown
+  partial state rather than retrying/deleting it. The one-time
+  `scripts/protected-update-issuer-provision.mjs` now derives
+  root-owned public context from pinned original package/baseline and
+  copies each **separately scoped readonly GitHub token** into the
+  respective mode-0400 role private directory. Tokens, passwords and
+  private keys are never returned/logged.
+- Actual nonroot WSL **382/382** full Node `.test.mjs` suite PASS,
+  privacy scan **180 files PASS**, both Worker/Dashboard **active**.
+  [Exact-code-head strict CI #42345604627](https://github.com/al-hub/mcp-dev-hub/actions/runs/42345604627)
+  completed **SUCCESS**, **386/386 tests PASS, 0 FAIL**, privacy
+  candidate scan **180 files PASS**. Subsequent documentation-only
+  HEAD `ccd61f6593f19081add64b8897fe943cc2ed9e12` also has
+  strict CI **SUCCESS #42345793813**.
+- **Important:** No genuine reviewer Bot APPROVED is present for
+  Draft PR #39; no separately operated reviewer or approval signer
+  is yet installed. The App's legacy trusted review provenance
+  verifier must itself be operationally audited, so a textual evidence
+  ID is NOT an independent proof of Codex execution. Independent
+  Codex privileged source audit was interrupted by quota; exact-final-
+  HEAD PASS NOT obtained. Source-only `installAuthorized:false` and
+  actual protected revisions **0/2**, #35 OPEN, PR #39 Draft.
+- The independent review can be retried after the previously reported
+  quota reset; a 16:15 KST follow-up was previously arranged.
+  **Do not attempt sudo setup before actual signed reviewer/App
+  provenance, complete privileged audit and one owner-authorized OS
+  bootstrap.** All operating root/trust/stage changes remain
+  unapplied and must be tested in the real OS before accepted.
+
 ## 2026-11-07 #35 one-time signer provisioning, root activation and real visudo checks — NO-GO
 
 - Continued development in the **existing Draft PR #39**, without root or
