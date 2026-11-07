@@ -161,7 +161,7 @@ export async function activateProtectedOSOnce(){
   realDirectory('/var/lib');
   try{mkdirSync('/var/lib/mcp-dev-hub',{mode:0o700});}
   catch(e){if(e.code!=='EEXIST')throw e;}
-  realDirectory('/var/lib/mcp-dev-hub',0o700);
+  realDirectory('/var/lib/mcp-dev-hub');
   absent(STATE);
   mkdirSync(STATE,{mode:0o700});
   fsyncDir('/var/lib/mcp-dev-hub');
