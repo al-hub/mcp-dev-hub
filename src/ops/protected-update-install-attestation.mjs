@@ -17,12 +17,12 @@ const ID=/^[0-9a-f]{32}$/;
 const B64=/^[A-Za-z0-9+/]{86}==$/;
 const REVIEW_KEYS=[
   'version','repository','scope','head','base','packDigest',
-  'baselineCommit','baselineDigest','ciRunId','reviewRunId',
+  'baselineCommit','baselineDigest','prNumber','ciRunId','reviewRunId',
   'verdict','findings','issuedAtMs','expiresAtMs'
 ];
 const APPROVAL_KEYS=[
   'version','repository','scope','head','base','packDigest',
-  'baselineCommit','baselineDigest','ciRunId','reviewDigest',
+  'baselineCommit','baselineDigest','prNumber','ciRunId','reviewDigest',
   'reviewRunId','issuedAtMs','expiresAtMs'
 ];
 const deny=()=>{throw Error('protected_bootstrap_attestation_denied');};
@@ -65,7 +65,7 @@ function signedBy(publicKeyPem,signatureBase64,domain,payload){
 export function verifyProtectedBootstrapAttestations({
   reviewJson,reviewSignatureBase64,approvalJson,approvalSignatureBase64,
   reviewerPublicKeyPem,approvalPublicKeyPem,
-  head,base,packDigest,baselineCommit,baselineDigest,ciRunId,nowMs
+  head,base,packDigest,baselineCommit,baselineDigest,prNumber,ciRunId,nowMs
 }={}){
   if(typeof head!=='string'||!SHA.test(head)||
      typeof base!=='string'||!SHA.test(base)||head===base||
@@ -73,6 +73,7 @@ export function verifyProtectedBootstrapAttestations({
      typeof baselineCommit!=='string'||!SHA.test(baselineCommit)||
      baselineCommit===head||
      typeof baselineDigest!=='string'||!HASH.test(baselineDigest)||
+     !Number.isSafeInteger(prNumber)||prNumber<1||
      !Number.isSafeInteger(ciRunId)||ciRunId<=0||
      !Number.isSafeInteger(nowMs)||nowMs<=0)deny();
 
@@ -85,7 +86,7 @@ export function verifyProtectedBootstrapAttestations({
        claim.packDigest!==packDigest||
        claim.baselineCommit!==baselineCommit||
        claim.baselineDigest!==baselineDigest||
-       claim.ciRunId!==ciRunId||
+       claim.prNumber!==prNumber||claim.ciRunId!==ciRunId||
        typeof claim.reviewRunId!=='string'||!ID.test(claim.reviewRunId))
       deny();
     validWindow(claim,nowMs);
@@ -104,7 +105,7 @@ export function verifyProtectedBootstrapAttestations({
   if(reviewKey.equals(approvalKey))deny();
   return Object.freeze({
     state:'attestation_bound_not_os_authorized',
-    head,base,packDigest,baselineCommit,baselineDigest,ciRunId,
+    head,base,packDigest,baselineCommit,baselineDigest,prNumber,ciRunId,
     reviewRunId:review.reviewRunId,reviewDigest:digest(reviewJson),
     safeToInstall:false
   });
