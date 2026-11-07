@@ -1,5 +1,42 @@
 # Handoff status
 
+## 2026-11-07 #35 live nonroot baseline and sandbox acceptance — corrected OS inventory
+
+- Existing Draft PR #39 and isolated clean WSL worktree reused; no root/sudo
+  action, no signer/key/privilege/service configuration change.
+- Corrected a prior **false blocker**: actual operating
+  `/usr/bin/bwrap` is **present**, `root:root` `0755`,
+  v0.6.1. The previous check mistakenly treated an escaped shell
+  variable as a literal path. **Do not reinstall Bubblewrap.**
+- Read-only exact installed originals:
+  controller `14357` bytes SHA-256
+  `595d6c5180abf82f2ecb50534a7a2e6d70c7f9f3395135082b2cc881be77231e`,
+  policy `7887` bytes SHA-256
+  `a2b81bca5d27a50a9a84d11d9240ee4ab85f1b07695a0fbc2c44d2e6a61dd839`.
+  Both are `root:root` `0555`. These match exactly the two immutable
+  Git blobs from original baseline commit
+  `175ba1a481d9a55c0567402a2c905f457c7601e5`.
+- Added `scripts/protected-update-bootstrap-readiness.mjs`,
+  **nonprivileged/read-only** before any administrator action. It
+  independently compares exact Git object bytes against real protected
+  root files, checks fixed directory ancestry, nofollow regular-file
+  bounds and owner/mode, and actually imports the existing protected
+  controller under the genuine **root-owned, no-network, read-only,
+  no-home Bubblewrap namespace**. Actual WSL result:
+  `original_baseline_and_isolated_startup_confirmed`,
+  `installerAuthorized:false`, `realProtectedUpdates:0`.
+  Readiness fixture negative tests **5/5 PASS**.
+- This removes **baseline ambiguity and the missing-Bubblewrap blocker**,
+  but creates no trusted independent signing principals, no immutable
+  root installer or narrow sudoers, and no physical protected updates.
+  Source candidate remains uninstalled and source-only
+  `installAuthorized:false`.
+- **NO-GO for one-time administrator install until** separate operated
+  reviewer+approval private signers, pinned root trust and
+  verified owner-approved immutable installer/undo are completed.
+  Physical protected updates **0/2**, Issue #35 OPEN, PR #39 Draft.
+  Real Worker/Dashboard services remain active and original bytes untouched.
+
 ## 2026-11-07 #35 root updater / issuer-bound bootstrap admission candidate — NOT INSTALLED
 
 - Reused Draft PR #39 without touching main, Worker/Dashboard, privileged trust
