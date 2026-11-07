@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {
   chmodSync,mkdirSync,mkdtempSync,readFileSync,rmSync,
-  symlinkSync,writeFileSync
+  symlinkSync,truncateSync,writeFileSync
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
@@ -138,5 +138,38 @@ test('unsafe ancestor or non-canonical output path is refused',t=>{
   denied(()=>buildProtectedBootstrapPack({
     repositoryPath:f.source,head:f.head,
     outputPath:f.top+'/../noncanonical'
+  }));
+});
+
+test('Codex P2: malicious FIFO manifest is refused without blocking',t=>{
+  const f=fixture(t),b=build(f,'a');
+  const path=join(f.out('a'),'MANIFEST.json');
+  rmSync(path);
+  const result=spawnSync('/usr/bin/mkfifo',[path],{timeout:1500});
+  assert.equal(result.status,0);
+  chmodSync(path,0o444);
+  denied(()=>verifyProtectedBootstrapPack({
+    outputPath:f.out('a'),expectedManifestSha256:b.manifestSha256
+  }));
+});
+test('Codex P2: oversized sparse manifest is refused before allocation',t=>{
+  const f=fixture(t),b=build(f,'a');
+  const path=join(f.out('a'),'MANIFEST.json');
+  chmodSync(path,0o600);
+  truncateSync(path,32*1024*1024);
+  chmodSync(path,0o444);
+  denied(()=>verifyProtectedBootstrapPack({
+    outputPath:f.out('a'),expectedManifestSha256:b.manifestSha256
+  }));
+});
+test('nonregular source file masquerading as approved name is refused',t=>{
+  const f=fixture(t),b=build(f,'a');
+  const path=join(f.out('a'),'code',PROTECTED_BOOTSTRAP_FILES[0]);
+  rmSync(path);
+  const result=spawnSync('/usr/bin/mkfifo',[path],{timeout:1500});
+  assert.equal(result.status,0);
+  chmodSync(path,0o444);
+  denied(()=>verifyProtectedBootstrapPack({
+    outputPath:f.out('a'),expectedManifestSha256:b.manifestSha256
   }));
 });
