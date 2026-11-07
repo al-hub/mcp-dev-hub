@@ -85,7 +85,8 @@ test('authenticated synthetic two serial updates use journal + atomic CAS',async
   assert.equal(inspectProtectedRelease(env.root,{files:first.files}),B);
   assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID1).phase,
     'verified');
-  const second=request({head:C,base:B,id:ID2,word:'C'});
+  const second={...request({head:C,base:B,id:ID2,word:'C'}),
+    nowMs:now+100};
   const result2=await applyProtectedUpdateCandidate({
     root:env.root,stateDir:env.stateDir,
     ...second,oldFiles:first.files,observeHealth:async()=>true
@@ -152,7 +153,8 @@ test('subsequent authenticated update may reuse exact rolled-back release',async
   });
   assert.equal(rolled.phase,'rolled_back');
   assert.equal(inspectProtectedRelease(env.root,{files:env.oldFiles}),A);
-  const second=request({head:B,base:A,id:ID2,word:'B'});
+  const second={...request({head:B,base:A,id:ID2,word:'B'}),
+    nowMs:now+100};
   const result=await applyProtectedUpdateCandidate({
     ...env,...second,observeHealth:async()=>true
   });
@@ -170,7 +172,8 @@ test('corrupt existing release denies next operation before journal write',async
   });
   const tampered=join(env.root,'versions',B);
   chmodSync(tampered,0o700);
-  const second=request({head:B,base:A,id:ID2,word:'B'});
+  const second={...request({head:B,base:A,id:ID2,word:'B'}),
+    nowMs:now+100};
   await assert.rejects(applyProtectedUpdateCandidate({
     ...env,...second,observeHealth:async()=>true
   }),/protected_release_guard_failed/);
