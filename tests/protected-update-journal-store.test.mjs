@@ -30,8 +30,9 @@ function tempState(t) {
   t.after(()=>rmSync(dir,{recursive:true,force:true}));
   return dir;
 }
-const args=(operationId=idA,old=oldHashes,next=newHashes,previousCommit='a'.repeat(40))=>({
-  operationId,head:'f'.repeat(40),base:'0'.repeat(40),previousCommit,
+const args=(operationId=idA,old=oldHashes,next=newHashes,
+  previousCommit='a'.repeat(40),head='f'.repeat(40))=>({
+  operationId,head,base:'0'.repeat(40),previousCommit,
   oldHashes:old,newHashes:next,nowMs:1000
 });
 function move(dir,operationId,j,to,extra={}) {
@@ -54,7 +55,7 @@ test('fsynced journal readback tracks exact operation and two serial revisions',
   });
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).phase,'verified');
   const second=beginStoredProtectedUpdateJournal(
-    dir,args(idB,newHashes,newerHashes,'f'.repeat(40))
+    dir,args(idB,newHashes,newerHashes,'f'.repeat(40),'e'.repeat(40))
   );
   assert.equal(second.phase,'prepared');
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).sequence,3);
