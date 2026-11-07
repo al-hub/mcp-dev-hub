@@ -34,7 +34,7 @@ function boundedRead(path){
   try{
     const before=fstatSync(fd);
     if(!before.isFile()||before.isSymbolicLink()||before.uid!==0||
-      before.nlink!==1||(before.mode&0o222)!==0||
+      before.nlink!==1||(before.mode&0o777)!==0o555||
       before.size<1||before.size>MAX_BYTES)fail();
     const b=readFileSync(fd);
     const after=fstatSync(fd);
