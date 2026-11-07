@@ -6,11 +6,16 @@
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync}
   from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
 import {readRootProtectedUpdateTrust}
   from '../src/ops/protected-update-root-evidence.mjs';
+import {verifyProtectedBootstrapAttestations}
+  from '../src/ops/protected-update-install-attestation.mjs';
+import {fetchAndVerifyGitHubBootstrapEvidence}
+  from '../src/ops/protected-update-github-evidence.mjs';
 import {migrateProtectedOriginalPairCandidate}
   from '../src/ops/protected-update-bootstrap-migration.mjs';
 
@@ -68,7 +73,7 @@ function parseBaseFiles(raw){
  * Signature issuers are required but operational issuer autonomy remains a
  * separate gate. Caller never supplies paths, SHA, stdin or executable args.
  */
-export function bootstrapOneShotFixedRoot(){
+export async function bootstrapOneShotFixedRoot(){
   if(process.geteuid?.()!==0||process.getuid?.()!==0||
      process.argv.length!==2||fileURLToPath(import.meta.url)!==ENTRY)
     fail();
@@ -82,23 +87,66 @@ export function bootstrapOneShotFixedRoot(){
   const baselineCommit=rootFile(BASE_COMMIT,128).trim();
   const expectedLegacyFiles=parseBaseFiles(rootFile(BASE_FILES,4096));
   if(!HASH.test(pinned)||!SHA.test(baselineCommit))fail();
-  // Root-held keys/token must be provisioned by independent identity setup.
-  // The presence of two distinct public keys is NOT itself a security PASS.
-  readRootProtectedUpdateTrust();
+  const trust=readRootProtectedUpdateTrust();
   const verified=verifyProtectedBootstrapPack({
     outputPath:PACK,expectedManifestSha256:pinned
   });
-  // CRITICAL: source-only packages explicitly say installAuthorized=false.
-  // Distinct public keys alone do not prove that either independent issuer
-  // actually reviewed this exact install. Do not activate root migration
-  // until a separate authenticated, pinned installer approval gate exists.
-  if(verified.status!=='approved_for_one_shot')fail();
+  // The source manifest intentionally says installAuthorized=false:
+  // independently pinned, short-lived signed authorization is a separate
+  // mandatory gate, never a mutable flag in the package itself.
+  if(verified.status!=='source_only_unprivileged_no_go')fail();
+
+  const base=rootFile(TRUST+'/approved-base-commit',128).trim();
+  const prRaw=rootFile(TRUST+'/approved-pr-number',48).trim();
+  const runRaw=rootFile(TRUST+'/approved-ci-run-id',48).trim();
+  if(!SHA.test(base)||!/^[1-9][0-9]{0,14}$/.test(prRaw)||
+     !/^[1-9][0-9]{0,14}$/.test(runRaw))fail();
+  const prNumber=Number(prRaw),ciRunId=Number(runRaw);
+  if(!Number.isSafeInteger(prNumber)||!Number.isSafeInteger(ciRunId))fail();
+  const baselineDigest=createHash('sha256').update(
+    JSON.stringify(expectedLegacyFiles),'utf8').digest('hex');
+  const reviewJson=rootFile(TRUST+'/bootstrap-review.json',2048);
+  const reviewSignatureBase64=
+    rootFile(TRUST+'/bootstrap-review.sig',256).trim();
+  const approvalJson=rootFile(TRUST+'/bootstrap-approval.json',2048);
+  const approvalSignatureBase64=
+    rootFile(TRUST+'/bootstrap-approval.sig',256).trim();
+  const bound=verifyProtectedBootstrapAttestations({
+    reviewJson,reviewSignatureBase64,approvalJson,
+    approvalSignatureBase64,
+    reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    approvalPublicKeyPem:trust.approvalPublicKeyPem,
+    head:verified.head,base,packDigest:pinned,
+    baselineCommit,baselineDigest,prNumber,ciRunId,nowMs:Date.now()
+  });
+  if(bound.state!=='attestation_bound_not_os_authorized'||
+     bound.safeToInstall!==false)fail();
+  // Independent, live HTTPS GitHub cross-check: an approval signature and a
+  // Worker-supplied CI claim are never sufficient for root-side installation.
+  const gh=await fetchAndVerifyGitHubBootstrapEvidence({
+    prNumber,head:verified.head,base,ciRunId,
+    githubToken:trust.githubToken
+  });
+  if(gh.head!==bound.head||gh.base!==bound.base||
+     gh.ciRunId!==bound.ciRunId||gh.strictProtection!==true||
+     gh.ciPassed!==true)fail();
+  // No owner approval is implied by the signatures; OS installation remains
+  // a separately explicit administrator action. This candidate cannot grant
+  // itself sudo access or perform the initial immutable file installation.
   const wrapperRow=verified.files.find(
     row=>row.path==='scripts/protected-update-controller-wrapper.mjs');
   if(!wrapperRow||!HASH.test(wrapperRow.sha256))fail();
-  const wrapperBytes=readFileSync(WRAPPER);
-  if(wrapperBytes.length!==wrapperRow.bytes)fail();
-  if(verified.status!=='source_only_unprivileged_no_go')fail();
+  const fd=openSync(WRAPPER,readFlags);
+  let wrapperBytes;
+  try{
+    const st=fstatSync(fd);
+    if(!st.isFile()||st.uid!==0||st.nlink!==1||
+       (st.mode&0o777)!==0o444||
+       st.size!==wrapperRow.bytes||st.size<1||st.size>256*1024)fail();
+    wrapperBytes=readFileSync(fd);
+    if(wrapperBytes.length!==st.size||createHash('sha256')
+      .update(wrapperBytes).digest('hex')!==wrapperRow.sha256)fail();
+  }finally{closeSync(fd);}
   return migrateProtectedOriginalPairCandidate({
     root:ROOT,baselineCommit,expectedLegacyFiles,
     wrapperBytes,wrapperSha256:wrapperRow.sha256
@@ -108,7 +156,7 @@ export function bootstrapOneShotFixedRoot(){
 // no-op. Imported modules (e.g. nonroot tests) perform no side effects.
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
-    const result=bootstrapOneShotFixedRoot();
+    const result=await bootstrapOneShotFixedRoot();
     process.stdout.write(JSON.stringify({
       phase:result.phase,baselineCommit:result.baselineCommit,
       safeToRetry:false
