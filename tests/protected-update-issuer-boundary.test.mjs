@@ -12,7 +12,8 @@ function fixture(){
     key:{uid,mode:0o400,regular:true,symlink:false,links:1,bytes:119}
   });
   return {reviewer:identity(201,201),approval:identity(202,202),
-    workerUid:1000,parentRows:[row(),row(),row(),row(),row()]};
+    workerUid:1000,workerGid:1000,
+    parentRows:[row(),row(),row(),row(),row(),row(),row()]};
 }
 test('distinct issuer owners, directories, keys and worker form only an OS boundary',()=>{
   const evidence=verifyProtectedIssuerIsolationEvidence(fixture());
@@ -60,4 +61,18 @@ test('issuer private directory must be exactly owner-private',()=>{
 test('unprivileged caller cannot inspect root secret metadata as authority',()=>{
   if(process.geteuid?.()!==0)
     denied(()=>assertFixedOperationalIssuerIsolation());
+});
+
+test('signer account cannot share Worker primary group',()=>{
+  for(const role of ['reviewer','approval']){
+    const fixtureData=fixture();
+    fixtureData[role].gid=fixtureData.workerGid;
+    denied(()=>verifyProtectedIssuerIsolationEvidence(fixtureData));
+  }
+});
+test('root trust ancestors cannot be writable or symlinked',()=>{
+  for(const patch of [{mode:0o777},{symlink:true},{uid:1000}]){
+    const r=fixture();Object.assign(r.parentRows[5],patch);
+    denied(()=>verifyProtectedIssuerIsolationEvidence(r));
+  }
 });
