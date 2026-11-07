@@ -3,7 +3,11 @@
 `src/ops/protected-update-journal.mjs` implements pure state transitions
 for an exact two-file update: `prepared → switch_pending → switched →
 verified`, or bounded rollback/aborted/unknown states. Durable readback
-uses canonical JSON and rejects duplicate keys or malformed state.
+uses canonical JSON and rejects duplicate keys or malformed state. The
+**candidate v2** record durably binds `previousCommit` (the actual prior
+active release, not a Worker-supplied recovery hint) alongside the approved
+new `head`. Legacy v1 candidate records lack this identity and are rejected
+fail-closed rather than silently migrated or replayed.
 
 `src/ops/protected-update-journal-store.mjs` adds **non-privileged**
 Linux file persistence for a *separately trusted* private state directory:
@@ -23,7 +27,8 @@ file descriptors and actual OS readback. Mode checks alone are not a sandbox.
 
 Persist `switch_pending` **before** protected filesystem effects. If a
 response is lost or a crash leaves a lock or partial stage, the caller must
-reconcile immutable identifiers and OS evidence; neither the journal module
+reconcile the persisted v2 previous/new commit identities, exact file hashes
+and OS evidence; neither the journal module
 nor store authorizes replay or lock removal. Hash equality supplied by a caller
 does not establish physical file ownership or service health.
 
