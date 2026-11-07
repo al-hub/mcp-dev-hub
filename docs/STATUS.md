@@ -1,5 +1,14 @@
 # Handoff status
 
+## 2026-11-07 #35 one-shot bootstrap source pack, synthetic restore and no-go guard
+
+- Existing Draft PR #39 reused; no privileged install, service restart, secret transfer or OS trust change. The authenticated mobile→Termux→strict-SSH→WSL path was usable; existing Worker-14 and Dashboard user services were active. Original installed controller/policy remain root:root mode 0555.
+- Added a reproducible, nonprivileged Git-blob source pack `scripts/protected-update-bootstrap-pack.mjs` with exact clean HEAD, explicit source allowlist, owner-private staging, manifest SHA-256 and fail-closed nofollow/size/identity checks. The pack deliberately sets `installAuthorized:false`, includes no live signer keys/token and is **not an installation authorization**.
+- Actual independent Codex security review found **P2**: a FIFO or oversized fake `MANIFEST.json` could hang/exhaust the package verifier. Fixed using O_NOFOLLOW|O_NONBLOCK, bounded fstat and regular-file checks before reading, plus synthetic FIFO/oversized regression tests.
+- Implemented an **uninstalled** original-file migration/restore candidate: exact baseline hashes, backup before single-pointer switch and digest-checked wrapper replacement; refuse unsafe root permissions, symlinked originals, altered backup, crash leftovers and nonmatching rollback. Added fixed no-argument root entrypoint candidate, explicitly refuses the current source-only bundle and running from any mutable checkout.
+- Three separate **synthetic** package→baseline→wrapper→original-restore integration runs and three deterministic source bundle builds are covered by tests, not live protected OS updates. All original bytes are compared after restore. Earlier actual WSL Node suite at code HEAD `c5277e0de8ecbc7d0fcd6f096ba1d5a56b265789` **280/280 PASS**, privacy check PASS. Full final-HEAD CI, complete independent privileged security audit and physical root tests are separately required.
+- The real immutable root updater, reviewer/approval independent issuer operation and local protected signing keys, baseline pinning, least-privilege one-shot installation policy/undo and 2/2 physical protected updates remain incomplete. **One-time admin installation remains NO-GO; #35 OPEN.** Keep global `AI_WRITE=0` / `AI_PUSH=0`, main protection and existing data unchanged.
+
 ## 2026-11-07 #35 verified continuation — immutable roots and historical operation-ID recovery (NOT DEPLOYED)
 
 - Reused existing Draft PR #39 and one isolated clean WSL worktree, with recovered authenticated ClosePaw/Termux/strict-SSH access. Current Worker and Dashboard user services both reported **active**. No root, service, credential, private-data, branch-protection or global `AI_WRITE=0` / `AI_PUSH=0` change.
