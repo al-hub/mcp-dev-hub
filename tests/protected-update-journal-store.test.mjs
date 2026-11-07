@@ -31,9 +31,9 @@ function tempState(t) {
   return dir;
 }
 const args=(operationId=idA,old=oldHashes,next=newHashes,
-  previousCommit='a'.repeat(40),head='f'.repeat(40))=>({
+  previousCommit='a'.repeat(40),head='f'.repeat(40),nowMs=1000)=>({
   operationId,head,base:'0'.repeat(40),previousCommit,
-  oldHashes:old,newHashes:next,nowMs:1000
+  oldHashes:old,newHashes:next,nowMs
 });
 function move(dir,operationId,j,to,extra={}) {
   return advanceStoredProtectedUpdateJournal(dir,operationId,{
@@ -55,7 +55,7 @@ test('fsynced journal readback tracks exact operation and two serial revisions',
   });
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).phase,'verified');
   const second=beginStoredProtectedUpdateJournal(
-    dir,args(idB,newHashes,newerHashes,'f'.repeat(40),'e'.repeat(40))
+    dir,args(idB,newHashes,newerHashes,'f'.repeat(40),'e'.repeat(40),1010)
   );
   assert.equal(second.phase,'prepared');
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).sequence,3);
@@ -152,4 +152,24 @@ test('journal-shaped FIFO fails closed before a blocking read',t=>{
   assert.throws(()=>beginStoredProtectedUpdateJournal(
     dir,args(idB,newHashes,newerHashes)
   ),/protected_journal_store_guard_failed/);
+});
+
+test('new journal rejects clock regression or disconnected previous hashes',t=>{
+  const dir=tempState(t);
+  let first=beginStoredProtectedUpdateJournal(dir,args());
+  first=move(dir,idA,first,'switch_pending');
+  first=move(dir,idA,first,'switched',{observedHashes:newHashes});
+  move(dir,idA,first,'verified',{
+    observedHashes:newHashes,serviceHealthVerified:true
+  });
+  assert.throws(()=>beginStoredProtectedUpdateJournal(dir,
+    args(idB,newHashes,newerHashes,'f'.repeat(40),'e'.repeat(40),1002)
+  ),/protected_journal_store_guard_failed/);
+  assert.throws(()=>beginStoredProtectedUpdateJournal(dir,
+    args(idB,oldHashes,newerHashes,'f'.repeat(40),'e'.repeat(40),1010)
+  ),/protected_journal_store_guard_failed/);
+  assert.throws(()=>beginStoredProtectedUpdateJournal(dir,
+    args(idB,newHashes,newerHashes,'a'.repeat(40),'e'.repeat(40),1010)
+  ),/protected_journal_store_guard_failed/);
+  assert.equal(readStoredProtectedUpdateJournal(dir,idB),null);
 });
