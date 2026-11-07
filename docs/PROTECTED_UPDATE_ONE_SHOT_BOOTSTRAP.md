@@ -4,6 +4,31 @@
 > public, nonsecret **scope freeze and evidence checklist**, not administrator
 > authorization, an installer or a claim that unattended updating works.
 
+## Updated real-machine preflight (2026-11-07 KST)
+
+The nonprivileged `scripts/protected-update-bootstrap-readiness.mjs`
+now verifies exactly two existing root-owned, mode-0555 controller/policy
+files against their immutable Git baseline
+`175ba1a481d9a55c0567402a2c905f457c7601e5`, using nofollow and
+bounded regular-file reads. The deployed bytes and file sizes match
+the corresponding Git blobs **exactly**. It also confirmed the current
+controller actually imports and initializes in a real non-network,
+read-only Bubblewrap sandbox with no Worker home environment.
+
+**Correction:** the WSL system **already has** `/usr/bin/bwrap`
+(root:root, mode 0755, version 0.6.1). The earlier claim that a system
+Bubblewrap binary was missing was based on an incorrectly escaped
+variable in a shell inventory; no installation is needed for this
+dependency. Existing Worker and Dashboard services remain active.
+
+The read-only report intentionally returns
+`installerAuthorized:false` and `realProtectedUpdates:0`.
+It is **not** an independent signing issuer, root-owned trust setup,
+one-shot administrator install script, official approval or evidence
+of successful in-place protected update. The remaining gates below
+still apply without bypass. Recheck against final reviewed package
+HEAD before any eventual owner administrator action.
+
 ## Intended result
 
 A single explicitly authorized, narrowly scoped local administrator bootstrap,
