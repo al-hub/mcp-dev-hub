@@ -15,8 +15,8 @@ test('source package includes the fixed root bootstrap entrypoint',()=>{
   assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(
     'scripts/protected-update-bootstrap-entry.mjs'));
 });
-test('direct bootstrap API denies being run from untrusted checkout',()=>{
-  assert.throws(()=>bootstrapOneShotFixedRoot(),
+test('direct bootstrap API denies being run from untrusted checkout',async()=>{
+  await assert.rejects(bootstrapOneShotFixedRoot(),
     /protected_bootstrap_entry_denied/);
 });
 test('direct source-script invocation returns nonzero, not false success',()=>{
