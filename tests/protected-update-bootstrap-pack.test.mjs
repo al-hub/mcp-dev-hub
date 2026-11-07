@@ -6,7 +6,8 @@ import {
   symlinkSync,truncateSync,writeFileSync
 } from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname,join} from 'node:path';
+import {dirname,join,posix} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {
   buildProtectedBootstrapPack,verifyProtectedBootstrapPack,
   PROTECTED_BOOTSTRAP_FILES
@@ -172,4 +173,43 @@ test('nonregular source file masquerading as approved name is refused',t=>{
   denied(()=>verifyProtectedBootstrapPack({
     outputPath:f.out('a'),expectedManifestSha256:b.manifestSha256
   }));
+});
+
+const PROJECT_ROOT=fileURLToPath(new URL('../',import.meta.url));
+test('every relative static import in real package sources has a bundled file',()=>{
+  const allowed=new Set(PROTECTED_BOOTSTRAP_FILES);
+  for(const path of PROTECTED_BOOTSTRAP_FILES){
+    const source=readFileSync(join(PROJECT_ROOT,path),'utf8');
+    const matches=source.matchAll(/\bfrom\s*['"](\.[^'"]+)['"]|\bimport\s*['"](\.[^'"]+)['"]/g);
+    for(const match of matches){
+      const imported=match[1]||match[2];
+      const normalized=posix.normalize(posix.join(posix.dirname(path),imported));
+      assert.ok(allowed.has(normalized),'missing bundled dependency: '+normalized);
+    }
+  }
+});
+test('real immutable package entrypoint resolves its bundled module closure',t=>{
+  const f=fixture(t);
+  for(const path of PROTECTED_BOOTSTRAP_FILES){
+    writeFileSync(join(f.source,path),
+      readFileSync(join(PROJECT_ROOT,path)));
+  }
+  git(f.source,['add','.']);
+  git(f.source,['-c','commit.gpgsign=false','commit','-qm',
+    'synthetic integration source copy']);
+  const head=git(f.source,['rev-parse','HEAD']);
+  const outputPath=f.out('actual');
+  const packed=buildProtectedBootstrapPack({
+    repositoryPath:f.source,head,outputPath
+  });
+  assert.equal(packed.status,'source_only_unprivileged_no_go');
+  const entry=join(outputPath,'code','scripts',
+    'protected-update-bootstrap-entry.mjs');
+  const result=spawnSync(process.execPath,[entry],{
+    encoding:'utf8',timeout:8000,maxBuffer:8192
+  });
+  assert.equal(result.status,1);
+  assert.match(result.stderr,/protected_bootstrap_entry_denied/);
+  assert.doesNotMatch(result.stderr,/ERR_MODULE_NOT_FOUND/);
+  assert.equal(result.stdout,'');
 });
