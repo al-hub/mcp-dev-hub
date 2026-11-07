@@ -93,7 +93,7 @@ function workerAccount(){
   const cols=rows[0].split(':');
   if(cols.length!==7||cols[0]!==name||
      cols[2]!==String(roleNumber('worker-uid'))||
-     cols[3]!==String(roleNumber('worker-gid',true)))deny();
+     cols[3]!==String(roleNumber('worker-gid')))deny();
   return policy;
 }
 /** Pure admission gate, unit tested, no OS changes. */
