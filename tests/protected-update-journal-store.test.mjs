@@ -30,8 +30,8 @@ function tempState(t) {
   t.after(()=>rmSync(dir,{recursive:true,force:true}));
   return dir;
 }
-const args=(operationId=idA,old=oldHashes,next=newHashes)=>({
-  operationId,head:'f'.repeat(40),base:'0'.repeat(40),
+const args=(operationId=idA,old=oldHashes,next=newHashes,previousCommit='a'.repeat(40))=>({
+  operationId,head:'f'.repeat(40),base:'0'.repeat(40),previousCommit,
   oldHashes:old,newHashes:next,nowMs:1000
 });
 function move(dir,operationId,j,to,extra={}) {
@@ -44,6 +44,8 @@ test('fsynced journal readback tracks exact operation and two serial revisions',
   let j=beginStoredProtectedUpdateJournal(dir,args());
   assert.deepEqual(readStoredProtectedUpdateJournal(dir,idA),j);
   assert.equal(statSync(join(dir,idA+'.json')).mode&0o077,0);
+  assert.equal(readStoredProtectedUpdateJournal(dir,idA).previousCommit,
+    'a'.repeat(40));
   j=move(dir,idA,j,'switch_pending');
   assert.equal(j.sequence,1);
   j=move(dir,idA,j,'switched',{observedHashes:newHashes});
@@ -52,7 +54,7 @@ test('fsynced journal readback tracks exact operation and two serial revisions',
   });
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).phase,'verified');
   const second=beginStoredProtectedUpdateJournal(
-    dir,args(idB,newHashes,newerHashes)
+    dir,args(idB,newHashes,newerHashes,'f'.repeat(40))
   );
   assert.equal(second.phase,'prepared');
   assert.equal(readStoredProtectedUpdateJournal(dir,idA).sequence,3);
@@ -100,7 +102,7 @@ test('unsafe journal bytes, file permissions and symlink are rejected',t=>{
   assert.throws(()=>readStoredProtectedUpdateJournal(dir,idA));
   chmodSync(file,0o600);
   const raw=readFileSync(file,'utf8');
-  writeFileSync(file,raw.replace('"version":1','"version":1,"version":1'));
+  writeFileSync(file,raw.replace('"version":2','"version":2,"version":2'));
   assert.throws(()=>readStoredProtectedUpdateJournal(dir,idA));
   unlinkSync(file);
   symlinkSync('nonexistent',file);
