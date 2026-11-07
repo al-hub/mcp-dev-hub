@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {Script} from 'node:vm';
 import {
-  verifyRootSignerProvisionPlan,provisionIndependentProtectedIssuersOnce
+  verifyRootSignerProvisionPlan,provisionIndependentProtectedIssuersOnce,
+  PROTECTED_ISSUER_KEYGEN_PROGRAM
 } from '../scripts/protected-update-issuer-provision.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
@@ -47,5 +49,14 @@ test('direct root-setup script invocation from checkout is blocked',()=>{
   assert.equal(r.status,1);
   assert.match(r.stderr,
     /protected_issuer_provision_denied_or_unknown/);
+  assert.equal(r.stdout,'');
+});
+
+test('literal keygen child code parses but cannot write to arbitrary path',()=>{
+  assert.doesNotThrow(()=>new Script(PROTECTED_ISSUER_KEYGEN_PROGRAM));
+  const r=spawnSync(process.execPath,[
+    '-e',PROTECTED_ISSUER_KEYGEN_PROGRAM,'/tmp/unsafe-key-target'
+  ],{encoding:'utf8',timeout:5000,maxBuffer:1024});
+  assert.equal(r.status,50);
   assert.equal(r.stdout,'');
 });
