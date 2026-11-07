@@ -127,9 +127,13 @@ test('approval issuer denies fake, expired, wrong-SHA, wrong-identity review',()
   };
   const wrong=JSON.stringify({...JSON.parse(f.review.reviewJson),
     head:sha('f')});
+  const corruptedSignature=Buffer.from(f.reviewSignatureBase64,'base64');
+  corruptedSignature[0]^=1;
+  assert.notEqual(corruptedSignature.toString('base64'),
+    f.reviewSignatureBase64);
   for(const patch of [
     {reviewerPublicKeyPem:publicPem(keys())},
-    {reviewSignatureBase64:'z'+f.reviewSignatureBase64.slice(1)},
+    {reviewSignatureBase64:corruptedSignature.toString('base64')},
     {reviewJson:wrong},
     {nowMs:NOW+130000},
     {officialApproval:{...f.officialApproval,reviewId:4455}},
