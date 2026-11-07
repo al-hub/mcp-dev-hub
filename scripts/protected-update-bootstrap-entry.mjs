@@ -147,6 +147,18 @@ export async function bootstrapOneShotFixedRoot(){
     if(wrapperBytes.length!==st.size||createHash('sha256')
       .update(wrapperBytes).digest('hex')!==wrapperRow.sha256)fail();
   }finally{closeSync(fd);}
+  // GitHub verification is asynchronous. A signature valid when its HTTPS
+  // checks began must never authorize root migration after its expiration.
+  // Re-check BOTH independent signatures against the actual clock directly
+  // before the first protected backup/OS effect.
+  verifyProtectedBootstrapAttestations({
+    reviewJson,reviewSignatureBase64,approvalJson,
+    approvalSignatureBase64,
+    reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    approvalPublicKeyPem:trust.approvalPublicKeyPem,
+    head:verified.head,base,packDigest:pinned,
+    baselineCommit,baselineDigest,prNumber,ciRunId,nowMs:Date.now()
+  });
   return migrateProtectedOriginalPairCandidate({
     root:ROOT,baselineCommit,expectedLegacyFiles,
     wrapperBytes,wrapperSha256:wrapperRow.sha256
