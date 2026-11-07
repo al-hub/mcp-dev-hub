@@ -1,4 +1,7 @@
-// #35: inert durable updater journal transition checks. NO privileged effects.
+// #35: v2 journal records the trusted previous version commit for restart
+// reconciliation. V1 candidate records had no rollback identity; fail closed.
+// This is NOT installed and does not migrate production OS state.
+// Inert durable updater journal transition checks. NO privileged effects.
 // The root-owned caller must fsync/atomic-persist BEFORE each external effect,
 // lock updates, obtain trusted file hashes, and reconcile unknown outcomes.
 // This module never updates a file, grants sudo, starts services or runs code.
@@ -9,7 +12,7 @@ export const PROTECTED_PAIR = Object.freeze([
   'ai-github-canary-policy.mjs', 'ai-github-canary.mjs'
 ]);
 const FIELDS = Object.freeze([
-  'version','operationId','head','base','oldHashes','newHashes',
+  'version','operationId','head','base','previousCommit','oldHashes','newHashes',
   'phase','sequence','createdAtMs','updatedAtMs'
 ]);
 const MOVES = Object.freeze({
@@ -30,10 +33,12 @@ const cloneHashes = h=>Object.freeze(Object.fromEntries(
   PROTECTED_PAIR.map(name=>[name,h[name]])
 ));
 function validate(j) {
-  if(!exact(j,FIELDS) || j.version!==1 ||
+  if(!exact(j,FIELDS) || j.version!==2 ||
      typeof j.operationId!=='string' || !OP.test(j.operationId) ||
      typeof j.head!=='string' || !SHA.test(j.head) ||
      typeof j.base!=='string' || !SHA.test(j.base) || j.head===j.base ||
+     typeof j.previousCommit!=='string' ||
+     !SHA.test(j.previousCommit) || j.previousCommit===j.head ||
      !validHashes(j.oldHashes) || !validHashes(j.newHashes) ||
      typeof j.phase!=='string' || !Object.hasOwn(MOVES,j.phase) ||
      !Number.isSafeInteger(j.sequence) || j.sequence<0 ||
@@ -43,9 +48,9 @@ function validate(j) {
   return j;
 }
 export function startProtectedUpdateJournal({
-  operationId,head,base,oldHashes,newHashes,nowMs
+  operationId,head,base,previousCommit,oldHashes,newHashes,nowMs
 }={}) {
-  const j={version:1,operationId,head,base,oldHashes,newHashes,
+  const j={version:2,operationId,head,base,previousCommit,oldHashes,newHashes,
     phase:'prepared',sequence:0,createdAtMs:nowMs,updatedAtMs:nowMs};
   validate(j);
   // A no-op update is not evidence of two genuine revisions.
