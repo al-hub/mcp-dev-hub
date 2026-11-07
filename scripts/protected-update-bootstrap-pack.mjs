@@ -17,6 +17,7 @@ const MAX_FILE=256*1024;
 const MAX_PACKAGE=2*1024*1024;
 const SOURCE=Object.freeze([
   'scripts/protected-update-bootstrap-entry.mjs',
+  'scripts/protected-update-bootstrap-pack.mjs',
   'scripts/protected-update-controller-wrapper.mjs',
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-bootstrap-migration.mjs',
