@@ -1,3 +1,11 @@
+## 2026-11-07 #35 trusted GitHub App preflight candidate — NOT DEPLOYED
+
+- Reuse the existing installed reviewer App and its original owner-protected key. No credential or global repository policy change.
+- `scripts/reviewer-app-trusted-preflight.mjs` is source-only: it can authenticate ONLY from the independently hash-pinned fixed root-owned package path, with a root-owned 0400 configuration and an existing root-owned 0600 key under the existing private directory. It discovers the exact repository's installation and checks PR #39 HEAD/actor without posting any review.
+- This is a protected owner bootstrap **candidate**, not a grant to execute checkout files as root. It must not run with root privileges before an independent installation review and one separately authorized owner action. No operational App exchange or independent reviewer attribution is yet claimed.
+- The existing updater signer accounts, root trust, two-command sudoers and real protected updates are not provisioned. PR #39 and Issue #35 remain OPEN; an actual Bot APPROVED, separate issuer identities/signatures and 2 genuine unattended revisions are still mandatory.
+- The package manifest includes the two pinned source dependencies used by this preflight; its `installAuthorized:false` remains mandatory.
+
 # Handoff status
 
 ## 2026-11-07 #35 PR #39 independent proof and real issuer-runtime handoff — NO-GO for root
