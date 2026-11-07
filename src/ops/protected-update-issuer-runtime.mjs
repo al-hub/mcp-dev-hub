@@ -1,0 +1,147 @@
+// #35 UNINSTALLED issuer runtime library. Two *distinct* OS uid/gid
+// principals own keys and independently fetch GitHub evidence. This module
+// never elevates or changes root files. Runtime source must be copied from
+// a separately approved exact-HEAD bundle into a fixed root-owned (0555
+// directories, 0444 files) readable issuer-code path by ONE admin bootstrap.
+// It is never safe to execute from a Worker checkout.
+import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync}
+  from 'node:fs';
+import {createPrivateKey,sign} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {parsePinnedBootstrapIssuerContext}
+  from './protected-update-bootstrap-issuer.mjs';
+import {fetchAndVerifyGitHubBootstrapEvidence,
+  fetchAndVerifyOfficialReviewerApproval}
+  from './protected-update-github-evidence.mjs';
+
+const BASE='/var/lib/mcp-dev-hub-signers';
+const CODE='/usr/local/lib/mcp-dev-hub/protected-issuer/code';
+const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
+const deny=()=>{throw Error('protected_signer_runtime_denied');};
+const ROLE=Object.freeze({
+  reviewer:'protected-update-review-issuer.mjs',
+  approval:'protected-update-approval-issuer.mjs'
+});
+function checkedDir(path,owner,mode=null){
+  const s=lstatSync(path);
+  if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==owner||
+     (s.mode&0o022)!==0||
+     (mode!==null&&(s.mode&0o777)!==mode))deny();
+}
+function readExact(path,{owner,mode,maxBytes,group=null}){
+  const fd=openSync(path,READ);
+  try{
+    const s=fstatSync(fd);
+    if(!s.isFile()||s.uid!==owner||s.nlink!==1||
+       (s.mode&0o777)!==mode||
+       (group!==null&&s.gid!==group)||
+       s.size<1||s.size>maxBytes)deny();
+    const b=readFileSync(fd);
+    if(b.length!==s.size)deny();
+    return b.toString('utf8');
+  }finally{closeSync(fd);}
+}
+export function assertRoleRuntimeInstalled({role,moduleUrl,argv}={}){
+  if(!Object.hasOwn(ROLE,role)||typeof moduleUrl!=='string'||
+     typeof process.getuid!=='function'||
+     process.getuid()===0||process.geteuid?.()!==process.getuid()||
+     !Array.isArray(argv)||argv.length!==2||
+     fileURLToPath(moduleUrl)!==
+       CODE+'/scripts/'+ROLE[role])deny();
+  const uid=process.getuid(),gid=process.getgid();
+  if(!Number.isSafeInteger(uid)||uid<=0||
+     !Number.isSafeInteger(gid)||gid<=0)deny();
+  if(process.getgroups?.().some(g=>g!==gid))deny();
+  for(const p of [
+    '/','/usr','/usr/local','/usr/local/lib',
+    '/usr/local/lib/mcp-dev-hub',
+    '/usr/local/lib/mcp-dev-hub/protected-issuer',
+    CODE,CODE+'/scripts',CODE+'/src',CODE+'/src/ops',
+    '/var','/var/lib',BASE
+  ])checkedDir(p,0);
+  checkedDir(BASE+'/issuer-'+role,uid,0o700);
+  return Object.freeze({role,uid,gid});
+}
+export function readFixedIssuerContext(){
+  checkedDir(BASE,0);
+  return parsePinnedBootstrapIssuerContext(readExact(
+    BASE+'/approved-bootstrap-context.json',
+    {owner:0,mode:0o444,maxBytes:2048}
+  ));
+}
+function readPrivateIssuerMaterial(role){
+  if(!Object.hasOwn(ROLE,role))deny();
+  const uid=process.getuid(),gid=process.getgid();
+  checkedDir(BASE+'/issuer-'+role,uid,0o700);
+  const key=readExact(
+    BASE+'/issuer-'+role+'/private.ed25519.pem',
+    {owner:uid,group:gid,mode:0o400,maxBytes:8192}
+  );
+  const token=readExact(
+    BASE+'/issuer-'+role+'/github-readonly-token',
+    {owner:uid,group:gid,mode:0o400,maxBytes:4096}
+  ).trim();
+  if(!/^[a-zA-Z0-9_.-]{8,4096}$/.test(token))deny();
+  let privateKey;
+  try{privateKey=createPrivateKey(key);}catch{deny();}
+  if(privateKey.asymmetricKeyType!=='ed25519')deny();
+  return {privateKey,token};
+}
+export async function fetchFixedIssuerEvidence(context,token){
+  // Genuine TLS/GitHub evidence: PR must be NON-DRAFT, exact HEAD/BASE,
+  // strict required CI and branch protection. Bot approval must be the
+  // latest same-HEAD review from the fixed trusted reviewer identity.
+  const [githubEvidence,officialApproval]=await Promise.all([
+    fetchAndVerifyGitHubBootstrapEvidence({
+      prNumber:context.prNumber,head:context.head,base:context.base,
+      ciRunId:context.ciRunId,githubToken:token
+    }),
+    fetchAndVerifyOfficialReviewerApproval({
+      prNumber:context.prNumber,head:context.head,
+      reviewerBotId:context.reviewerBotId,githubToken:token,
+      nowMs:Date.now()
+    })
+  ]);
+  if(officialApproval.reviewActor!==context.reviewerBotActor||
+     !/^verified-[a-z0-9-]{6,100}$/.test(
+       officialApproval.reviewEvidenceId||''))deny();
+  return {githubEvidence,officialApproval};
+}
+export function signFixedRolePayload({role,domain,json}={}){
+  if(!Object.hasOwn(ROLE,role)||
+     typeof domain!=='string'||typeof json!=='string'||
+     Buffer.byteLength(json,'utf8')>2048)deny();
+  const expected=role==='reviewer'
+    ?'mcp-dev-hub/bootstrap-independent-review/v1\n'
+    :'mcp-dev-hub/bootstrap-approval/v1\n';
+  if(domain!==expected)deny();
+  const {privateKey}=readPrivateIssuerMaterial(role);
+  return sign(null,Buffer.from(domain+json),privateKey)
+    .toString('base64');
+}
+export function readFixedReviewerHandoff(){
+  checkedDir(BASE,0);
+  const raw=readExact(BASE+'/review-handoff.json',{
+    owner:0,mode:0o444,maxBytes:5000
+  });
+  let value;
+  try{value=JSON.parse(raw);}catch{deny();}
+  if(!value||Array.isArray(value)||
+     Object.keys(value).sort().join(',')!==
+       'reviewJson,reviewSignatureBase64'||
+     JSON.stringify(value)!==raw||
+     typeof value.reviewJson!=='string'||
+     typeof value.reviewSignatureBase64!=='string')deny();
+  const reviewerPublicKeyPem=readExact(
+    BASE+'/reviewer-public.pem',
+    {owner:0,mode:0o444,maxBytes:4096}
+  );
+  return {reviewerPublicKeyPem,
+    reviewJson:value.reviewJson,
+    reviewSignatureBase64:value.reviewSignatureBase64};
+}
+export function readFixedIssuerToken(role){
+  if(!Object.hasOwn(ROLE,role))deny();
+  // No access to the peer role's private key or token.
+  return readPrivateIssuerMaterial(role).token;
+}
