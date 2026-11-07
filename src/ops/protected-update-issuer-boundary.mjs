@@ -5,7 +5,7 @@
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync}
   from 'node:fs';
 
-const BASE='/var/lib/mcp-dev-hub';
+const BASE='/var/lib/mcp-dev-hub-signers';
 const TRUST='/etc/mcp-dev-hub/protected-update';
 const roles=['reviewer','approval'];
 const deny=()=>{throw Error('protected_issuer_isolation_denied');};
