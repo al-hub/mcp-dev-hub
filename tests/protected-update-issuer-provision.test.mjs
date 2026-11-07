@@ -78,7 +78,7 @@ test('public issuer writer enforces exact mode despite restrictive admin umask',
   const writer=source.split('function writePublicIssuerFile(name,value){')[1]
     ?.split('function copyIssuerReadonlyToken(')[0];
   assert.ok(writer);
-  assert.match(writer,/fchmodSync\\(fd,0o444\\);/);
+  assert.ok(writer.includes('fchmodSync(fd,0o444);'));
   assert.ok(writer.indexOf('fchmodSync(fd,0o444)')<
     writer.indexOf('fsyncSync(fd)'));
   const dir=mkdtempSync(join(tmpdir(),'mcp35-issuer-mode-'));
