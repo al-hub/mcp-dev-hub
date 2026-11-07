@@ -190,6 +190,31 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   });
 }
 
+/**
+ * Read-only fixed GitHub HTTPS cross-check for a signed one-shot bootstrap.
+ * The caller MUST also verify independently signed Codex review + approval,
+ * root-owned issuer policy, exact source pack and pinned original baseline.
+ * This never installs, merges, changes GitHub or authorizes sudo.
+ */
+export async function fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber,head,base,ciRunId,githubToken
+}={}){
+  if(!Number.isSafeInteger(prNumber)||prNumber<1||
+     !Number.isSafeInteger(ciRunId)||ciRunId<1||
+     typeof head!=='string'||!SHA.test(head)||
+     typeof base!=='string'||!SHA.test(base)||head===base)fail();
+  const stem='/repos/al-hub/mcp-dev-hub';
+  const [pr,run,jobs,protection]=await Promise.all([
+    githubGet(stem+'/pulls/'+prNumber,githubToken),
+    githubGet(stem+'/actions/runs/'+ciRunId,githubToken),
+    githubGet(stem+'/actions/runs/'+ciRunId+'/jobs?per_page=100',githubToken),
+    githubGet(stem+'/branches/main/protection',githubToken)
+  ]);
+  return validateGitHubEvidenceShape({
+    pr,run,jobs,protection,prNumber,head,base,ciRunId
+  });
+}
+
 const FILEPATHS=Object.freeze({
   'ai-github-canary-policy.mjs':'src/jobs/ai-github-canary-policy.mjs',
   'ai-github-canary.mjs':'scripts/ai-github-canary.mjs'
