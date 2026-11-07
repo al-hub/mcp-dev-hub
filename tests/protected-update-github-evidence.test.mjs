@@ -55,6 +55,10 @@ function githubFixture(){
       }]
     },
     protection:{
+      required_pull_request_reviews:{
+        required_approving_review_count:1,
+        dismiss_stale_reviews:true,require_last_push_approval:true
+      },
       required_status_checks:{
         strict:true,contexts:['bootstrap'],
         checks:[{context:'bootstrap',app_id:15368}]
@@ -140,6 +144,23 @@ test('authenticated GitHub payload shape requires exact PR, CI job and protectio
     {...f,protection:{...f.protection,
       required_status_checks:{...f.protection.required_status_checks,
         strict:false}}},
+    {...f,protection:{...f.protection,
+      required_pull_request_reviews:undefined}},
+    {...f,protection:{...f.protection,
+      required_pull_request_reviews:{
+        ...f.protection.required_pull_request_reviews,
+        required_approving_review_count:0
+      }}},
+    {...f,protection:{...f.protection,
+      required_pull_request_reviews:{
+        ...f.protection.required_pull_request_reviews,
+        dismiss_stale_reviews:false
+      }}},
+    {...f,protection:{...f.protection,
+      required_pull_request_reviews:{
+        ...f.protection.required_pull_request_reviews,
+        require_last_push_approval:false
+      }}},
     {...f,protection:{...f.protection,allow_force_pushes:{enabled:true}}},
     {...f,protection:{...f.protection,
       required_conversation_resolution:{enabled:false}}}
