@@ -8,7 +8,6 @@ import {readStoredProtectedUpdateJournal}
 import {inspectProtectedCurrentSnapshot}
   from './protected-update-release-pointer.mjs';
 
-const SHA=/^[a-f0-9]{40}$/;
 const ID=/^[a-f0-9]{32}$/;
 const deny=()=>{throw Error('protected_update_reconciliation_denied');};
 const COMPLETED=new Set(['verified','rolled_back','aborted']);
@@ -31,25 +30,25 @@ function exactHashes(expected,actual){
  * separate mandatory production trust gates.
  */
 export function reconcileProtectedUpdateCandidate({
-  root,stateDir,operationId,expectedPreviousCommit
+  root,stateDir,operationId
 }={}){
   if(typeof operationId!=='string'||!ID.test(operationId)||
-     typeof expectedPreviousCommit!=='string'||
-     !SHA.test(expectedPreviousCommit)||
      typeof root!=='string'||typeof stateDir!=='string')deny();
   const j=readStoredProtectedUpdateJournal(stateDir,operationId);
   if(j===null)return Object.freeze({
     operationId,state:'absent',observed:'unverified',
     safeToReplay:false,requiresReconciliation:true
   });
-  if(j.head===expectedPreviousCommit||
+  // Previous commit comes only from the root-held, durably parsed v2 journal,
+  // NEVER from a Worker/Issue/recovery call parameter.
+  if(j.head===j.previousCommit||
      !COMPLETED.has(j.phase)&&!UNCERTAIN.has(j.phase))deny();
 
   // The pointer must reference one of the two signed, journalled versions.
   // Unexpected paths, corrupt contents or additional files fail closed.
   const snap=inspectProtectedCurrentSnapshot(root);
   let observed;
-  if(snap.commit===expectedPreviousCommit&&
+  if(snap.commit===j.previousCommit&&
      exactHashes(j.oldHashes,snap.files))observed='previous';
   else if(snap.commit===j.head&&
           exactHashes(j.newHashes,snap.files))observed='next';
