@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {existsSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {renderFixedProtectedSudoPolicy}
   from '../src/ops/protected-update-sudo-policy.mjs';
 
@@ -34,4 +38,24 @@ test('sudoers paths are fixed; no callers can customize root commands',()=>{
     scripts:['/usr/bin/bash'],root:'/tmp',allowAll:true
   });
   assert.equal(a.text,b.text);
+});
+
+test('real host visudo accepts exact two-command sudo policy',t=>{
+  if(!existsSync('/usr/sbin/visudo')){
+    t.skip('OS visudo unavailable, real administrator acceptance still needed');
+    return;
+  }
+  const root=mkdtempSync(join(tmpdir(),'sudo-policy-fixture-'));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const path=join(root,'fixed-sudoers');
+  const policy=renderFixedProtectedSudoPolicy({
+    workerAccount:'synthetic_worker'
+  });
+  writeFileSync(path,policy.text,{mode:0o440});
+  const r=spawnSync('/usr/sbin/visudo',['-cf',path],{
+    encoding:'utf8',timeout:10000,maxBuffer:4096,
+    stdio:['ignore','pipe','pipe']
+  });
+  assert.equal(r.status,0,
+    'sudoers syntax validation failed (not safe to install)');
 });
