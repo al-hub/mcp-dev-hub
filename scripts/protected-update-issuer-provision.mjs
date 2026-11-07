@@ -9,7 +9,8 @@
 // after the first identity is created is an UNKNOWN partial provision, not
 // something to blindly rerun or delete.
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,mkdirSync,
-  openSync,readFileSync,writeSync,chmodSync,chownSync,fchownSync} from 'node:fs';
+  openSync,readFileSync,writeSync,chmodSync,chownSync,fchownSync,
+  fchmodSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createPublicKey,createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';

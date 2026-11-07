@@ -20,8 +20,13 @@ function fileInfo(path){
   return {uid:s.uid,mode:s.mode&0o777,regular:s.isFile(),
     symlink:s.isSymbolicLink(),links:s.nlink,bytes:s.size};
 }
-function readRoleUid(role){
-  const fd=openSync(TRUST+'/'+role+'-uid',
+export function pinnedIssuerNumericTrustName(role,kind){
+  if(!['worker',...roles].includes(role)||
+     (kind!=='uid'&&kind!=='gid'))deny();
+  return role+'-'+kind;
+}
+function readRoleId(role,kind){
+  const fd=openSync(TRUST+'/'+pinnedIssuerNumericTrustName(role,kind),
     constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
   try{
     const s=fstatSync(fd);
@@ -73,11 +78,11 @@ export function assertFixedOperationalIssuerIsolation(){
   const parents=['/','/var','/var/lib',BASE,
     '/etc','/etc/mcp-dev-hub',TRUST];
   const parentRows=parents.map(dirInfo);
-  const workerUid=readRoleUid('worker');
-  const workerGid=readRoleUid('worker-gid');
+  const workerUid=readRoleId('worker','uid');
+  const workerGid=readRoleId('worker','gid');
   const groups=roles.map(role=>{
-    const uid=readRoleUid(role);
-    const gid=readRoleUid(role+'-gid');
+    const uid=readRoleId(role,'uid');
+    const gid=readRoleId(role,'gid');
     const dir=dirInfo(BASE+'/issuer-'+role);
     const key=fileInfo(BASE+'/issuer-'+role+'/private.ed25519.pem');
     return {uid,gid,dir,key};

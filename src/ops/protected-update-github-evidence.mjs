@@ -142,15 +142,16 @@ export function validateOfficialReviewerApproval({
        !/^[a-zA-Z0-9_-]+\[bot\]$/.test(r.user.login)||
        typeof r.submitted_at!=='string')fail();
     const t=Date.parse(r.submitted_at);
-    if(!Number.isFinite(t)||t>nowMs||t<nowMs-7*86400000)
-      fail();
+    if(!Number.isFinite(t)||t>nowMs)fail();
     if(r.pull_request_url!==
        'https://api.github.com/repos/al-hub/mcp-dev-hub/pulls/'+
          prNumber)fail();
     return {review:r,t};
   });
   parsed.sort((a,b)=>a.t-b.t||a.review.id-b.review.id);
-  const latest=parsed.at(-1).review;
+  const effective=parsed.at(-1);
+  if(effective.t<nowMs-7*86400000)fail();
+  const latest=effective.review;
   if(latest.state!=='APPROVED'||latest.commit_id!==head)fail();
   // Only the independently authenticated Bot can author this API field.
   // A textual evidence ID is never itself proof of actual Codex execution;

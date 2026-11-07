@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  verifyProtectedIssuerIsolationEvidence,assertFixedOperationalIssuerIsolation
+  verifyProtectedIssuerIsolationEvidence,assertFixedOperationalIssuerIsolation,
+  pinnedIssuerNumericTrustName
 } from '../src/ops/protected-update-issuer-boundary.mjs';
 
 const denied=fn=>assert.throws(fn,/protected_issuer_isolation_denied/);
@@ -75,4 +76,14 @@ test('root trust ancestors cannot be writable or symlinked',()=>{
     const r=fixture();Object.assign(r.parentRows[5],patch);
     denied(()=>verifyProtectedIssuerIsolationEvidence(r));
   }
+});
+
+test('fixed root trust filenames distinguish UID and GID without suffix duplication',()=>{
+  for(const role of ['worker','reviewer','approval']){
+    assert.equal(pinnedIssuerNumericTrustName(role,'uid'),role+'-uid');
+    assert.equal(pinnedIssuerNumericTrustName(role,'gid'),role+'-gid');
+  }
+  for(const [role,kind] of [['other','uid'],['worker','other'],
+    ['../worker','gid'],['reviewer',null]])
+    denied(()=>pinnedIssuerNumericTrustName(role,kind));
 });

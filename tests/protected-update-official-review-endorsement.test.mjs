@@ -57,3 +57,13 @@ test('untrusted caller cannot choose bot identity or HEAD',()=>{
   denied(()=>verify([approved()],{head:'c'.repeat(40)}));
   denied(()=>verify([approved()],{prNumber:17}));
 });
+
+test('old bot history does not veto a fresh latest exact-HEAD approval',()=>{
+  const stale=approved({id:1,
+    submitted_at:new Date(NOW-30*86400000).toISOString()});
+  const current=approved({id:2,
+    submitted_at:new Date(NOW-1000).toISOString()});
+  assert.equal(verify([stale,current]).reviewId,2);
+  denied(()=>verify([stale,{...current,state:'DISMISSED'}]));
+  denied(()=>verify([stale,{...current,commit_id:'b'.repeat(40)}]));
+});

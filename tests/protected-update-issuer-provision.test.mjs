@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {Script} from 'node:vm';
 import {
@@ -59,4 +60,12 @@ test('literal keygen child code parses but cannot write to arbitrary path',()=>{
   ],{encoding:'utf8',timeout:5000,maxBuffer:1024});
   assert.equal(r.status,50);
   assert.equal(r.stdout,'');
+});
+
+test('privileged token copier imports fchmodSync before any account effects',()=>{
+  const source=readFileSync(new URL(
+    '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+  const fsImport=source.match(/import\s*\{([^}]*)\}\s*from\s*'node:fs';/);
+  assert.ok(fsImport);
+  assert.ok(fsImport[1].split(',').map(s=>s.trim()).includes('fchmodSync'));
 });
