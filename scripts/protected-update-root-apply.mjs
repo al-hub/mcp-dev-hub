@@ -4,6 +4,7 @@
 // authorization. A signed request is DATA, never a shell command.
 import {constants,closeSync,fstatSync,openSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
 import {parseProtectedUpdateRequest}
   from '../src/ops/protected-update-request.mjs';
 import {assertFixedRootProtectedUpdateLayout}
@@ -62,6 +63,7 @@ async function readRequest(){
       process.stdin.off('data',data);
       process.stdin.off('end',end);
       process.stdin.off('error',fail);
+      process.stdin.pause();
       if(error)reject(error);
       else resolve(Buffer.concat(parts).toString('utf8'));
       parts=[];
@@ -127,7 +129,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
 // Importing from nonroot unit tests is inert; direct source-checkout
 // invocation MUST fail without touching the running protected controller.
 if(process.argv[1]&&fileURLToPath(import.meta.url)===
-    process.argv[1]){
+    resolve(process.argv[1])){
   try{
     const outcome=await applyOneProtectedUpdateFixedRoot();
     process.stdout.write(JSON.stringify(outcome)+'\n');
