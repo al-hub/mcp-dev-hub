@@ -88,6 +88,11 @@ export function bootstrapOneShotFixedRoot(){
   const verified=verifyProtectedBootstrapPack({
     outputPath:PACK,expectedManifestSha256:pinned
   });
+  // CRITICAL: source-only packages explicitly say installAuthorized=false.
+  // Distinct public keys alone do not prove that either independent issuer
+  // actually reviewed this exact install. Do not activate root migration
+  // until a separate authenticated, pinned installer approval gate exists.
+  if(verified.status!=='approved_for_one_shot')fail();
   const wrapperRow=verified.files.find(
     row=>row.path==='scripts/protected-update-controller-wrapper.mjs');
   if(!wrapperRow||!HASH.test(wrapperRow.sha256))fail();
