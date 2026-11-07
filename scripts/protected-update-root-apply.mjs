@@ -4,6 +4,9 @@
 // authorization. A signed request is DATA, never a shell command.
 import {constants,closeSync,fstatSync,openSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {assertFixedOperationalIssuerIsolation}
+  from '../src/ops/protected-update-issuer-boundary.mjs';
+
 import {resolve} from 'node:path';
 import {parseProtectedUpdateRequest}
   from '../src/ops/protected-update-request.mjs';
@@ -110,6 +113,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const req=parseProtectedUpdateRequest(raw);
   assertFixedRootProtectedUpdateLayout();
   const trust=readRootProtectedUpdateTrust();
+  assertFixedOperationalIssuerIsolation();
   const uid=privateDecimal('worker-uid');
   const gid=privateDecimal('worker-gid');
   if(uid===0)deny();
