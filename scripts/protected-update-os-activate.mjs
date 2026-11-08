@@ -205,7 +205,9 @@ export async function activateProtectedOSOnce(){
   // A known negative may safely restore exactly the previously captured
   // original. Unknown must not be coerced into a success or auto-retry.
   if(health===false){
-    restoreProtectedOriginalFixedRoot();
+    // Emergency restoration now returns a Promise. Wait for the durable
+    // recovery fence and original-controller readback before reporting failure.
+    await restoreProtectedOriginalFixedRoot();
     deny();
   }
   const evidence=validateFixedActivationEvidence({
