@@ -1,5 +1,9 @@
 import {createSign} from 'node:crypto';
 import {lstatSync,readFileSync,realpathSync} from 'node:fs';
+import {verifyIndependentSignedReview}
+  from '../ops/protected-update-github-evidence.mjs';
+import {deriveSignedCodexEvidenceId}
+  from '../ops/protected-update-bootstrap-issuer.mjs';
 
 // GitHub App publisher for one explicitly authorized repository.
 // AI output is never an approval by itself. The caller must supply a trusted
@@ -11,7 +15,11 @@ const GATES=['ci','security','private_sse','pc','galaxy'];
 const PROTECTED_BOOTSTRAP_GATES=['root_security','original_restore'];
 const PR_ALLOWLIST=Object.freeze([17,39]);
 const fail=(message)=>{throw Error(message);};
-export function validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber=17}){
+export function validateReviewEvidence({
+ headSha,evidence,verifyEvidence,prNumber=17,baseSha,
+ signedCodexReceipt,pinnedCodexPublicKeyPem,pinnedIssuerReviewerPublicKeyPem,
+ packDigest
+}){
  if(!PR_ALLOWLIST.includes(prNumber))fail('review PR outside fixed scope');
  if(!SHA.test(headSha)||typeof verifyEvidence!=='function')fail('trusted evidence verifier required');
  if(!evidence||evidence.headSha!==headSha||evidence.authorAgent!=='agy'||
@@ -27,6 +35,33 @@ export function validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber
  if(prNumber===39){
   if(evidence.scope!=='protected-bootstrap'||
      evidence.prNumber!==39)fail('protected bootstrap evidence scope denied');
+  // Verify the actual independent signature BEFORE any GitHub App API call.
+  // The public keys and package digest MUST be pinned out of band by the
+  // separately installed trusted publisher, never sourced from PR text.
+  if(!SHA.test(baseSha||'')||baseSha===headSha||
+     typeof signedCodexReceipt?.reviewJson!=='string'||
+     typeof signedCodexReceipt?.signatureBase64!=='string'||
+     typeof pinnedCodexPublicKeyPem!=='string'||
+     typeof pinnedIssuerReviewerPublicKeyPem!=='string')
+   fail('independent signed Codex receipt unavailable');
+  let signed;
+  try{
+   signed=verifyIndependentSignedReview({
+    reviewJson:signedCodexReceipt.reviewJson,
+    signatureBase64:signedCodexReceipt.signatureBase64,
+    pinnedReviewerPublicKeyPem:pinnedCodexPublicKeyPem,
+    pinnedApprovalPublicKeyPem:pinnedIssuerReviewerPublicKeyPem,
+    head:headSha,base:baseSha,prNumber:39,nowMs:Date.now()
+   });
+  }catch{
+   fail('independent signed Codex receipt invalid');
+  }
+  let expectedEvidenceId;
+  try{expectedEvidenceId=deriveSignedCodexEvidenceId({
+   reviewDigest:signed.reviewDigest,packDigest
+  });}catch{fail('independent Codex package digest invalid');}
+  if(evidence.evidenceId!==expectedEvidenceId)
+   fail('independent Codex evidence ID mismatch');
   for(const gate of PROTECTED_BOOTSTRAP_GATES){
    const value=evidence.gates?.[gate];
    if(value?.headSha!==headSha||value?.verdict!=='passed'||
@@ -111,16 +146,23 @@ export async function createScopedAppClient({appId,installationId,repositoryId,
  return {api:scoped,actor:app.slug+'[bot]'};
 }
 export async function publishIndependentApproval({
- api,actor,headSha,prNumber=17,evidence,verifyEvidence,protectionEvidence,verifyProtectionEvidence
+ api,actor,headSha,prNumber=17,evidence,verifyEvidence,
+ protectionEvidence,verifyProtectionEvidence,baseSha,
+ signedCodexReceipt,pinnedCodexPublicKeyPem,pinnedIssuerReviewerPublicKeyPem,
+ packDigest
 }){
  if(typeof api!=='function'||typeof actor!=='string'||!/^[-a-z0-9]+\[bot\]$/.test(actor)||
     !PR_ALLOWLIST.includes(prNumber)||!SHA.test(headSha))fail('review publisher scope denied');
- validateReviewEvidence({headSha,evidence,verifyEvidence,prNumber});
+ validateReviewEvidence({
+  headSha,evidence,verifyEvidence,prNumber,baseSha,signedCodexReceipt,
+  pinnedCodexPublicKeyPem,pinnedIssuerReviewerPublicKeyPem,packDigest
+ });
  validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber});
  const prefix='/repos/'+REPO;
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
     pr.base?.ref!=='main'||pr.user?.login===actor||
+    (prNumber===39&&pr.base?.sha!==baseSha)||
     (prNumber===39&&(pr.draft!==false||pr.base?.repo?.full_name!==REPO)))
     fail('stale, draft or self-authored pull request');
  // CI is an independently verified exact-SHA acceptance gate in
@@ -151,6 +193,7 @@ export async function publishIndependentApproval({
   const justBefore=await api('GET',prefix+'/pulls/'+prNumber);
   if(justBefore.number!==prNumber||justBefore.state!=='open'||
      justBefore.head?.sha!==headSha||justBefore.base?.ref!=='main'||
+     (prNumber===39&&justBefore.base?.sha!==baseSha)||
      (prNumber===39&&(justBefore.draft!==false||
        justBefore.base?.repo?.full_name!==REPO)))
    fail('PR HEAD moved immediately before approval POST');
@@ -183,7 +226,8 @@ export async function publishIndependentApproval({
       : decision.reviewDecision!=='APPROVED'))
   fail('GitHub does not confirm same-HEAD review state');
  const afterPr=await api('GET',prefix+'/pulls/'+prNumber);
- if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||afterPr.state!=='open')
+ if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||
+    afterPr.state!=='open'||(prNumber===39&&afterPr.base?.sha!==baseSha))
   fail('PR HEAD moved during approval confirmation');
  return {state:'approved',reviewId:review.id,reviewUrl:review.html_url??null,headSha,actor};
 }
