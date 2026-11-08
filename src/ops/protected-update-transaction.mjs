@@ -11,7 +11,8 @@ import {
   RELEASE_FILES
 } from './protected-update-release-pointer.mjs';
 import {
-  beginStoredProtectedUpdateJournal,advanceStoredProtectedUpdateJournal
+  beginStoredProtectedUpdateJournal,advanceStoredProtectedUpdateJournal,
+  preflightStoredProtectedUpdateJournal
 } from './protected-update-journal-store.mjs';
 
 const fail=()=>{throw Error('protected_update_transaction_blocked');};
@@ -58,6 +59,38 @@ export function preflightProtectedUpdate({
      p.reviewDigest!==signed.reviewDigest)fail();
   return signed;
 }
+/** Only authenticated source bytes and trusted pinned evidence are accepted.
+ * Every check below is nonmutating and runs under the exclusive root guard
+ * before durable update admission. Real journal begin performs them again.
+ * A synthetic caller cannot turn this result into installation authority.
+ */
+export function preflightProtectedUpdateAdmission({
+  root,stateDir,manifestJson,approvalJson,signatureBase64,
+  pinnedPublicKey,proof,operationId,nowMs,
+  contents,oldFiles
+}={}){
+  const signed=preflightProtectedUpdate({
+    manifestJson,approvalJson,signatureBase64,pinnedPublicKey,
+    proof,operationId,nowMs
+  });
+  if(!Array.isArray(oldFiles))fail();
+  const previous=inspectProtectedRelease(root,{files:oldFiles});
+  if(!previous||previous===signed.head)fail();
+  inspectProtectedReleaseStaging(root,{
+    commit:signed.head,files:signed.manifest.files,contents
+  });
+  const admitted=preflightStoredProtectedUpdateJournal(stateDir,{
+    operationId,head:signed.head,base:signed.base,
+    previousCommit:previous,
+    oldHashes:hashes(oldFiles),newHashes:hashes(signed.manifest.files),
+    nowMs
+  });
+  if(admitted.state!=='read_only_admitted'||
+     admitted.operationId!==operationId)fail();
+  return Object.freeze({state:'read_only_transaction_admitted',
+    operationId,head:signed.head});
+}
+
 /** Entire operation must be driven by the separately authenticated immutable
  * entrypoint. No arbitrary commands, paths, hooks, network APIs or root keys
  * are exposed here. Missing/unknown evidence must stop, not auto-retry.
