@@ -53,6 +53,16 @@ function ownedFile(path,{owner,mode,min=1,max=262144}){
     return out;
   }finally{closeSync(fd);}
 }
+// For large trusted executables, verify metadata without allocating their
+// entire contents; no mutable executable path or symlink is allowed.
+function assertExecutable(path){
+  const fd=openSync(path,READ);
+  try{
+    const s=fstatSync(fd);
+    if(!s.isFile()||s.uid!==0||s.nlink!==1||
+       (s.mode&0o777)!==0o755||s.size<1||s.size>64*1024*1024)deny();
+  }finally{closeSync(fd);}
+}
 function writeOnce(path,data,mode=0o600){
   const bytes=Buffer.isBuffer(data)?data:Buffer.from(data,'utf8');
   const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|
@@ -108,7 +118,7 @@ function assertInstalledRole(){
       {owner:0,mode:0o444,max:131072});
   }
   for(const exe of [CODEX,COMPANION,BWRAP])
-    ownedFile(exe,{owner:0,mode:0o755,max:64*1024*1024});
+    assertExecutable(exe);
   ownedFile(PRIVATE+'/private.ed25519.pem',
     {owner:uid,mode:0o400,max:8192});
   ownedFile(PRIVATE+'/codex-auth.json',
