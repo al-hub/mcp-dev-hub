@@ -1,16 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generateKeyPairSync} from 'node:crypto';
+import {generateKeyPairSync,sign} from 'node:crypto';
+import {INDEPENDENT_REVIEW_DOMAIN}
+  from '../src/ops/protected-update-github-evidence.mjs';
+import {deriveSignedCodexEvidenceId}
+  from '../src/ops/protected-update-bootstrap-issuer.mjs';
 import {createScopedAppClient,publishIndependentApproval,
   validateReviewEvidence} from '../src/jobs/github-app-review-publisher.mjs';
 
-const HEAD='a'.repeat(40),BOT='independent-reviewer[bot]';
+const HEAD='a'.repeat(40),BASE='b'.repeat(40);
+const PACK='c'.repeat(64),BOT='independent-reviewer[bot]';
+const codexKey=generateKeyPairSync('ed25519');
+const issuerKey=generateKeyPairSync('ed25519');
+const publicPem=k=>k.publicKey.export({type:'spki',format:'pem'});
+const now=Date.now();
+const reviewJson=JSON.stringify({
+ version:1,repository:'al-hub/mcp-dev-hub',prNumber:39,
+ head:HEAD,base:BASE,reviewer:'independent-codex',
+ reviewRunId:'f'.repeat(32),reviewVerdict:'PASS',findings:[],
+ issuedAtMs:now-1000,expiresAtMs:now+300000
+});
+const signedCodexReceipt={
+ reviewJson,signatureBase64:sign(null,
+  Buffer.from(INDEPENDENT_REVIEW_DOMAIN+reviewJson),
+  codexKey.privateKey).toString('base64')
+};
+const EVIDENCE_ID=deriveSignedCodexEvidenceId({
+ reviewDigest:(await import('node:crypto')).createHash('sha256')
+  .update(reviewJson).digest('hex'),packDigest:PACK
+});
+const receiptArgs={
+ baseSha:BASE,packDigest:PACK,signedCodexReceipt,
+ pinnedCodexPublicKeyPem:publicPem(codexKey),
+ pinnedIssuerReviewerPublicKeyPem:publicPem(issuerKey)
+};
 const VERDICT={headSha:HEAD,verdict:'passed'};
 const evidence=()=>({
   headSha:HEAD,prNumber:39,scope:'protected-bootstrap',
   authorAgent:'agy',reviewerAgent:'codex',verdict:'passed',
   reviewReadonly:true,reviewIsolated:true,exitCode:0,
-  evidenceId:'verified-independent-review-35',
+  evidenceId:EVIDENCE_ID,
   gates:Object.fromEntries([
     'ci','security','private_sse','pc','galaxy',
     'root_security','original_restore'
@@ -25,7 +54,7 @@ const protection={
 const verified=()=>true;
 const args=(api,ev=evidence())=>({
   api,actor:BOT,headSha:HEAD,prNumber:39,
-  evidence:ev,verifyEvidence:verified,
+  evidence:ev,verifyEvidence:verified,...receiptArgs,
   protectionEvidence:protection,verifyProtectionEvidence:verified
 });
 function fixture({draft=false,baseRepo='al-hub/mcp-dev-hub',
@@ -35,7 +64,7 @@ function fixture({draft=false,baseRepo='al-hub/mcp-dev-hub',
     calls.push({method,path,body});
     if(path==='/repos/al-hub/mcp-dev-hub/pulls/39')
       return {number:39,state:'open',draft,head:{sha:head},
-        base:{ref:'main',repo:{full_name:baseRepo}},
+        base:{ref:'main',sha:BASE,repo:{full_name:baseRepo}},
         user:{login:author}};
     if(path==='/repos/al-hub/mcp-dev-hub/pulls/39/reviews?per_page=100')
       return [...reviews];
@@ -186,4 +215,35 @@ test('PR39 rejects an existing same-HEAD Bot approval without evidence body',asy
   await assert.rejects(publishIndependentApproval(args(f.api)),
     /reconciliation/);
   assert.equal(f.posted,0);
+});
+
+test('PR39 denies absent, forged and wrong-package signed receipts BEFORE API',async()=>{
+ for(const mutation of [
+  {signedCodexReceipt:undefined},
+  {signedCodexReceipt:{...signedCodexReceipt,signatureBase64:'AA=='}},
+  {pinnedCodexPublicKeyPem:publicPem(generateKeyPairSync('ed25519'))},
+  {pinnedIssuerReviewerPublicKeyPem:publicPem(codexKey)},
+  {packDigest:'d'.repeat(64)},
+  {baseSha:'d'.repeat(40)}
+ ]){
+  const f=fixture();
+  await assert.rejects(publishIndependentApproval({...args(f.api),...mutation}));
+  assert.equal(f.calls.length,0);
+  assert.equal(f.posted,0);
+ }
+ const f=fixture(),altered=evidence();
+ altered.evidenceId='verified-unrelated-code-review';
+ await assert.rejects(publishIndependentApproval(args(f.api,altered)));
+ assert.equal(f.calls.length,0);
+});
+test('PR39 denies changed actual main base before any Bot approval POST',async()=>{
+ const f=fixture();
+ const api=async(method,path,body)=>{
+  const result=await f.api(method,path,body);
+  if(method==='GET'&&path==='/repos/al-hub/mcp-dev-hub/pulls/39')
+   result.base.sha='d'.repeat(40);
+  return result;
+ };
+ await assert.rejects(publishIndependentApproval(args(api)));
+ assert.equal(f.posted,0);
 });
