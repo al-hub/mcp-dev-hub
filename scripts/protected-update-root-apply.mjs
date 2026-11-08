@@ -137,19 +137,17 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const raw=await readRequest();
   const req=parseProtectedUpdateRequest(raw);
   assertFixedRootProtectedUpdateLayout();
-  // The recovery path owns this same durable lock; never update after
-  // original restoration or while its outcome is UNKNOWN.
-  return await withProtectedOperationGuard(ROOT,async()=>{
+  // Authenticate the Worker-provided request BEFORE taking the durable
+  // exclusive lock. Invalid signatures, expired review or failed GitHub
+  // queries must never create a permanent root-side denial of service.
   const launcherHash=pinnedLauncherDigest();
-  assertPinnedProtectedLauncher(ROOT,launcherHash);
   const trust=readRootProtectedUpdateTrust();
   assertFixedOperationalIssuerIsolation();
   const uid=privateDecimal('worker-uid');
   const gid=privateDecimal('worker-gid');
   if(uid===0||gid===0)deny();
-  const nowMs=Date.now();
   const verified=await preflightAuthenticatedProtectedUpdate({
-    ...req,nowMs
+    ...req,nowMs:Date.now()
   });
   const reviewerBotId=privateDecimal('reviewer-bot-id');
   if(reviewerBotId<=0)deny();
@@ -161,52 +159,63 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const prior=inspectProtectedCurrentSnapshot(ROOT);
   if(prior.commit===req.head||prior.commit===null)deny();
   const previousHashes=hashes(prior.files);
-  // If the existing services cannot be observed under their pinned identity,
-  // do not switch anything or consume a journal operation ID.
-  if(observeProtectedWorkerHealth({
-    pinnedWorkerUid:uid,pinnedWorkerGid:gid,
-    expectedCommit:prior.commit,expectedHashes:previousHashes
-  })!==true)deny();
-  // The initial GH observation can take time; neither review nor approval
-  // may expire while evaluating baseline service health. Validate both
-  // signatures against the actual clock IMMEDIATELY before any journal/stage.
-  const finalNowMs=Date.now();
-  verifySignedProtectedUpdateApproval({
-    manifestJson:req.manifestJson,approvalJson:req.approvalJson,
-    signatureBase64:req.signatureBase64,
-    trustPublicKeyPem:trust.approvalPublicKeyPem,
-    trustedHead:req.head,trustedBase:req.base,
-    trustedOperationId:req.operationId,nowMs:finalNowMs
-  });
-  verifyIndependentSignedReview({
-    reviewJson:req.reviewJson,
-    signatureBase64:req.reviewSignatureBase64,
-    pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
-    pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
-    head:req.head,base:req.base,prNumber:req.prNumber,nowMs:finalNowMs
-  });
   const futureHashes=hashes(verified.approved.manifest.files);
-  const outcome=await applyProtectedUpdateCandidate({
-    root:ROOT,stateDir:STATE,
-    manifestJson:req.manifestJson,approvalJson:req.approvalJson,
-    signatureBase64:req.signatureBase64,
-    pinnedPublicKey:trust.approvalPublicKeyPem,
-    proof:verified.proof,contents:verified.contents,
-    oldFiles:prior.files,operationId:req.operationId,nowMs:finalNowMs,
-    observeHealth:async()=>{
-      assertPinnedProtectedLauncher(ROOT,launcherHash);
-      return observeProtectedWorkerHealth({
-        pinnedWorkerUid:uid,pinnedWorkerGid:gid,
-        expectedCommit:req.head,expectedHashes:futureHashes
-      });
-    }
-  });
-  if(!['verified','rolled_back'].includes(outcome?.phase))deny();
-  return Object.freeze({
-    state:outcome.phase,operationId:req.operationId,
-    commit:outcome.commit,safeToReplay:false
-  });
-  });
+  let finalNowMs;
+  return await withProtectedOperationGuard(ROOT,async()=>{
+    // From this point, crashes and UNKNOWN outcomes preserve the lock;
+    // no automatic replay or stale-lock removal is permitted.
+    const outcome=await applyProtectedUpdateCandidate({
+      root:ROOT,stateDir:STATE,
+      manifestJson:req.manifestJson,approvalJson:req.approvalJson,
+      signatureBase64:req.signatureBase64,
+      pinnedPublicKey:trust.approvalPublicKeyPem,
+      proof:verified.proof,contents:verified.contents,
+      oldFiles:prior.files,operationId:req.operationId,nowMs:finalNowMs,
+      observeHealth:async()=>{
+        assertPinnedProtectedLauncher(ROOT,launcherHash);
+        return observeProtectedWorkerHealth({
+          pinnedWorkerUid:uid,pinnedWorkerGid:gid,
+          expectedCommit:req.head,expectedHashes:futureHashes
+        });
+      }
+    });
+    if(!['verified','rolled_back'].includes(outcome?.phase))deny();
+    return Object.freeze({
+      state:outcome.phase,operationId:req.operationId,
+      commit:outcome.commit,safeToReplay:false
+    });
+  },{verifyReadOnly:()=>{
+    // The emergency restore uses this same durable lock; never accept a
+    // baseline captured before restoration or an unexpected pointer change.
+    assertPinnedProtectedLauncher(ROOT,launcherHash);
+    const current=inspectProtectedCurrentSnapshot(ROOT);
+    if(current.commit!==prior.commit||
+       JSON.stringify(hashes(current.files))!==
+         JSON.stringify(previousHashes))deny();
+    // A confirmed unhealthy baseline is a READ-ONLY rejection, not an
+    // interrupted update; the lock may be durably released in this phase.
+    if(observeProtectedWorkerHealth({
+      pinnedWorkerUid:uid,pinnedWorkerGid:gid,
+      expectedCommit:prior.commit,expectedHashes:previousHashes
+    })!==true)deny();
+    finalNowMs=Date.now();
+    verifySignedProtectedUpdateApproval({
+      manifestJson:req.manifestJson,approvalJson:req.approvalJson,
+      signatureBase64:req.signatureBase64,
+      trustPublicKeyPem:trust.approvalPublicKeyPem,
+      trustedHead:req.head,trustedBase:req.base,
+      trustedOperationId:req.operationId,nowMs:finalNowMs
+    });
+    verifyIndependentSignedReview({
+      reviewJson:req.reviewJson,
+      signatureBase64:req.reviewSignatureBase64,
+      pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
+      pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+      head:req.head,base:req.base,prNumber:req.prNumber,
+      nowMs:finalNowMs
+    });
+    return true;
+  }});
 }
 // Importing from nonroot unit tests is inert; direct source-checkout
 // invocation MUST fail without touching the running protected controller.
