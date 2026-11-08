@@ -1,5 +1,13 @@
 # Handoff status
 
+## 2026-11-08 #36 one-shot persisted live snapshot checkpoint (Draft PR #44)
+
+- Added `recordLiveGitHubIssueCandidate`: a single read of an externally authenticated, policy-verified Issue snapshot followed by immutable SQLite candidate admission. It does not start polling, an AI/Worker job, GitHub mutation, root operation or external retry.
+- New focused tests establish durable admission, exact duplicate readback, changed-policy conflict, preservation of terminal blocks, 429 single-call refusal and no request without an independent policy or ledger. Focused intake/ledger/adapter **21/21 PASS**, Microduck full Node suite **exit 0**, privacy candidate scanner **115 files PASS**, `git diff --check` PASS and clean worktree.
+- Exact code/test HEAD `935de0425c6cc4de375176edfaf5ae935eb31536`: [strict CI #42454858098](https://github.com/al-hub/mcp-dev-hub/actions/runs/42454858098) **completed SUCCESS**. This STATUS-only commit requires its own latest-HEAD CI check.
+- Not a production Worker poller: no live read credential, trusted policy issuer, isolated AGY/Codex, signer, GitHub App APPROVED, protected root updater, merge/main acceptance or Issue Close. `AI_WRITE=0`, `AI_PUSH=0` and existing protected services remain unchanged.
+
+
 ## 2026-11-08 #36 authenticated read-only Issue snapshot adapter (Draft PR #44)
 
 - Added `src/jobs/issue-intake-github.mjs`: fixed-origin, HTTPS GitHub GET for exactly one numeric Issue ID, bounded JSON response (64 KiB), no redirects, no retries on 429/timeout and separate externally supplied read-token provider.
