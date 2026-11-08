@@ -64,6 +64,14 @@ export async function pollAuthorizedIssueOnce({
      candidate.state==='candidate_only'?'candidate_only':
      candidate.state==='blocked'?'blocked':'unknown';
    }
+   // A terminal reconciliation is durable, not just a transient return
+   // value. Never resurrect candidate_only after a block, missing row or
+   // independently verified policy conflict on a later readback.
+   if(previous.state==='candidate_only'&&state!=='candidate_only')
+    db.prepare("UPDATE issue_intake_poll_attempts "+
+     "SET state=?,updated_at=? WHERE repository=? AND issue_number=? "+
+     "AND state='candidate_only'")
+     .run(state,new Date().toISOString(),REPO,issueNumber);
    db.exec('COMMIT');
    return Object.freeze({state,attempted:false});
   }
