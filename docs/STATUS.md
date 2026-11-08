@@ -1,3 +1,9 @@
+## 2026-11-08 #35 Bot endorsement evidence marker fail-closed (PR #39, source only)
+
+- Corrected the existing live GitHub Bot review validator: a genuine same-HEAD `APPROVED` with a missing or malformed independently verified publisher evidence marker is no longer returned as `official_github_bot_review_confirmed`. The strict evidence-body syntax already required by the scoped App publisher now also applies to root-side GitHub review readback; no review is posted.
+- Source/test checkpoint `a631244e040b1c30524c065ed3818556932dbb46`. Microduck focused endorsement tests **7/7 PASS**, full Node suite exit 0, privacy candidate scan **185 files PASS**, `git diff --check` PASS. Final documentation HEAD still requires its own GitHub CI confirmation.
+- **Uninstalled / NO-GO.** This is additional negative validation, NOT authenticated Bot APPROVED, not evidence of a completed independent Codex privileged audit, and not a deployed root verifier. Final-head Codex PASS, distinct operational signer/App identities, user-authorized minimal root bootstrap, two real protected updates and rollback acceptance remain absent. PR39 OPEN/unmerged; #35 OPEN, physical updates **0/2**. AI_WRITE=0 / AI_PUSH=0, original Worker/Dashboard/root assets and branch protection unchanged.
+
 ## 2026-11-08 #35 independent Codex execution receipt runner CANDIDATE — NO-GO
 
 - Reused open PR #39 and the existing signed-receipt verifier. Added
