@@ -1,5 +1,11 @@
 # Handoff status
 
+## 2026-11-08 #36 preflight policy-before-GET fix (Draft PR #44)
+
+- The separately exposed one-shot intake now rejects missing, invalid, expired or mismatched policies before token-provider access or external GitHub Issue GET. Independent policy verification is required before outbound I/O; downstream candidate validation remains in force.
+- Regression tests confirm zero credential calls and zero GETs for eight negative policy/scope variants. Code/test HEAD 464ba429894d239e625523210038a4f0577031f6: strict CI #42460938090 SUCCESS (https://github.com/al-hub/mcp-dev-hub/actions/runs/42460938090). Microduck exact HEAD: 15/15 focused, 188/188 full tests, privacy 117 files, and git diff check PASS.
+- No trusted production issuer/token, live Worker poll, AGY/Codex, App approval, root update, protected merge or Issue Close. AI_WRITE=0 / AI_PUSH=0 and branch protection remain unchanged. This STATUS-only commit must have its own final-HEAD CI.
+
 ## 2026-11-08 #36 opt-in Worker intake boundary (Draft PR #44, not deployed)
 
 - Added a bounded, opt-in Worker-side Issue polling hook and `src/jobs/issue-intake-poll.mjs`. It requires independently supplied trusted per-Issue policy verification and read-only credentials. The default running Worker supplies neither; no live polling or code execution is enabled.
