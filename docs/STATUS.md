@@ -1,3 +1,19 @@
+## 2026-11-08 #35 Bot review-to-proof binding — SOURCE ONLY, NO-GO
+
+- Existing PR #39 only: the fixed-scope GitHub App review publisher now
+  refuses to reuse or confirm a same-HEAD Bot APPROVED for PR #39 unless
+  its actual GitHub review body names the exact independently verified
+  evidence ID supplied to this invocation. Added two synthetic fail-closed
+  regression tests (mismatch and missing evidence body). Prior valid
+  same-HEAD evidence is not implicitly transferable to a new proof.
+- This correction does NOT install a trusted publisher, produce an
+  independent real Codex execution receipt, authenticate the installed App
+  in a protected publishing context, or submit an official approval.
+  Source CI at the resulting final HEAD and a new real independent
+  privileged-code audit must be checked separately. Root trust, signer
+  accounts, restricted sudo, physical updates (0/2), rollback and
+  protected merge remain unaccepted. Keep Issue #35 OPEN and PR #39 unmerged.
+
 ## 2026-11-08 #35 signed Codex provenance hardening  SOURCE ONLY
 
 - Existing PR39 WSL isolated worktree: reviewed P2 root supplementary-group
