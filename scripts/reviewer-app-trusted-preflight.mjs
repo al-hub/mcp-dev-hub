@@ -25,12 +25,12 @@ const SHA=/^[a-f0-9]{40}$/;
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const deny=()=>{throw Error('trusted_app_preflight_denied');};
 
-function trustedDirectory(path,privateDir=false){
+export function trustedDirectory(path,privateDir=false){
  const s=lstatSync(path);
  if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||
    (s.mode&0o022)!==0||(privateDir&&(s.mode&0o777)!==0o700))deny();
 }
-function trustedFile(path,mode,maxBytes){
+export function trustedFile(path,mode,maxBytes){
  const fd=openSync(path,READ);
  try{
   const before=fstatSync(fd);
@@ -72,7 +72,7 @@ export function parseTrustedAppConfiguration(raw){
    !KEY_LEAF.test(c.keyFile.slice(KEY_PREFIX.length)))deny();
  return Object.freeze(c);
 }
-async function getInstallation({appId,key,fetchImpl=fetch}){
+export async function getInstallation({appId,key,fetchImpl=fetch}){
  const jwt=createAppJwt({appId,privateKey:key});
  const url='https://api.github.com/repos/'+REPO+'/installation';
  const res=await fetchImpl(url,{
