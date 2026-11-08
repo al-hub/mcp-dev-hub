@@ -163,6 +163,9 @@ export function validateOfficialReviewerApproval({
   const receipt=typeof latest.body==='string'
     ? /^AI-assisted independent Codex technical review \(not a human review\)\. Evidence: (verified-[a-z0-9-]{6,100})$/.exec(latest.body)
     : null;
+  // A same-HEAD Bot APPROVED without the publisher's evidence marker is
+  // not the protected review endorsement required by this trust boundary.
+  if(!receipt)fail();
   return Object.freeze({
     state:'official_github_bot_review_confirmed',
     prNumber,head,reviewerBotId,reviewId:latest.id,
