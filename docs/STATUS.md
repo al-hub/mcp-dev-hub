@@ -1,5 +1,14 @@
 # Handoff status
 
+## 2026-11-08 #36 authenticated read-only Issue snapshot adapter (Draft PR #44)
+
+- Added `src/jobs/issue-intake-github.mjs`: fixed-origin, HTTPS GitHub GET for exactly one numeric Issue ID, bounded JSON response (64 KiB), no redirects, no retries on 429/timeout and separate externally supplied read-token provider.
+- API repository, exact Issue URL/number/ID, open state and non-PR identity must match; an independent trusted policy verifier and the latest Issue timestamp must pass before issuing a **non-executable** candidate. Issue prose never grants code/OS/GitHub authority.
+- New synthetic tests `tests/issue-intake-github-36.test.mjs`: 6/6 PASS, including 429/no-retry, spoofing, stale snapshots, oversize data, API failure, invalid credentials and no policy. Existing 12/12 candidate/ledger tests remain; full Microduck Node suite exit 0, privacy scan passed (115 files), clean workspace.
+- GitHub exact-source CI for commit `8705bcba5e4880cc5cd2b827933405b69999ba10`: [#42453945720](https://github.com/al-hub/mcp-dev-hub/actions/runs/42453945720) SUCCESS. This section is an additional documentation-only commit; its own final HEAD CI must be checked separately.
+- **NOT LIVE:** No deployed read-token issuer, Worker scheduler/dispatch, trusted scoped policy issuance, isolated AGY/Codex, App approval, protected merge, main CI or Issue Close. #35 remains blocked; PR #44 stays Draft and #36 remains OPEN. Existing `AI_WRITE=0`, `AI_PUSH=0`, root files and services unchanged.
+
+
 ## 2026-11-08 #36 non-executable Issue intake foundation (Draft PR #44)
 
 - Added explicit per-Issue trusted scope/snapshot validation; Issue text never creates an execution, push or root grant. Different safe Issue requests produce distinct immutable candidate identities.
