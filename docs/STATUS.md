@@ -1,5 +1,13 @@
 # Handoff status
 
+## 2026-11-08 #36 Worker SQLite binding enforced (source only)
+
+- Continued existing Draft PR #44. Identified a Worker trust-boundary bug: the existing injected polling arguments were spread after `db`, so an injected `db` property could replace the Worker's actual persistent SQLite ledger while still returning a nominal candidate admission.
+- Extracted `pollTrustedWorkerIssueOnce` from `scripts/worker.mjs` for testability and pinned the Worker-owned `db` as the final argument. An injected intake descriptor can no longer substitute a second SQLite database. This does not add a production policy verifier, token, or activation.
+- Added a synthetic, non-operational regression to `tests/issue-intake-poll-36.test.mjs`. In an isolated test with two in-memory DBs the old spread order left the Worker DB uninitialized (9/10 focused checks PASS, new check FAIL); corrected order gives focused **10/10 PASS** and full Node **195/195 PASS**. Privacy candidate check **117 files PASS**, `git diff --check` PASS and clean Microduck worktree.
+- Source/test HEAD `1dde8be2bc94c7cfa9f5474231e49c4f2250500c`. This source-only fix must not be interpreted as independently issued operating policy, a live Issue GET, a deployed Worker, independent Codex PASS, GitHub App APPROVED or protected root updates. Keep PR44 Draft, #36 OPEN and #37 E2E at 0/3. Preserve `AI_WRITE=0`, `AI_PUSH=0` and installed Worker/Dashboard, SQLite and branch protection.
+
+
 ## 2026-11-08 #36 terminal poll ledger reconciliation (source only, not installed)
 
 - Continued existing Draft PR #44 at source/test commit `77ea69284b8fff94ce4da8a09b6d0cdb1048e00f`. No separate operational activation or PR merge.
