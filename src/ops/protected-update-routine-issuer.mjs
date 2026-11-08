@@ -50,9 +50,12 @@ export function parsePinnedRoutineIssuerContext(raw){
      c.reviewerBotActor!=='mcp-dev-hub-ai-reviewer[bot]'||
      !ID.test(c.operationId||'')||!HASH.test(c.packDigest||'')||
      typeof c.manifestJson!=='string')deny();
-  const manifest=validateProposedProtectedUpdate(c.manifestJson,{
-    verifiedCommit:c.head
-  });
+  let manifest;
+  try{
+    manifest=validateProposedProtectedUpdate(c.manifestJson,{
+      verifiedCommit:c.head
+    });
+  }catch{deny();}
   if(manifest.commit!==c.head||manifest.files.length!==2)deny();
   return Object.freeze({...c});
 }
