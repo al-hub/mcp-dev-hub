@@ -133,3 +133,20 @@ test('prior poll claim respects blocked or missing immutable candidate without G
    'candidate_only');
  }finally{db.close();}
 });
+
+test('expired policy cannot record poll claim when caller supplies stale clock',async()=>{
+ const db=new DatabaseSync(':memory:');
+ let credentials=0,gets=0;
+ const now=Date.now();
+ try{
+  await assert.rejects(pollAuthorizedIssueOnce({
+   db,...opts(),nowMs:now-60000,
+   policy:{...policy(),expiresAtMs:now-1000},
+   tokenProvider:async()=>{credentials++;return authenticated();},
+   fetchImpl:async()=>{gets++;return fetchFixture();}
+  }),/issue_intake_poll_unavailable/);
+  assert.equal(credentials,0);
+  assert.equal(gets,0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='issue_intake_poll_attempts'").get().n,0);
+ }finally{db.close();}
+});
