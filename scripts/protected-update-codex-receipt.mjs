@@ -65,6 +65,30 @@ function assertExecutable(path){
        (s.mode&0o777)!==0o755||s.size<1||s.size>64*1024*1024)deny();
   }finally{closeSync(fd);}
 }
+function assertPinnedExecutable(path,expectedSha256){
+  if(!HASH.test(expectedSha256||''))deny();
+  const fd=openSync(path,READ);
+  try{
+    const before=fstatSync(fd);
+    if(!before.isFile()||before.uid!==0||before.nlink!==1||
+       (before.mode&0o777)!==0o755||before.size<1||
+       before.size>64*1024*1024)deny();
+    const hash=createHash('sha256');
+    const buffer=Buffer.alloc(65536);
+    let offset=0;
+    while(offset<before.size){
+      const n=readSync(fd,buffer,0,
+        Math.min(buffer.length,before.size-offset),offset);
+      if(n<=0)deny();
+      hash.update(buffer.subarray(0,n));
+      offset+=n;
+    }
+    const after=fstatSync(fd);
+    if(after.dev!==before.dev||after.ino!==before.ino||
+       after.size!==before.size||after.mtimeMs!==before.mtimeMs||
+       hash.digest('hex')!==expectedSha256)deny();
+  }finally{closeSync(fd);}
+}
 function writeOnce(path,data,mode=0o600){
   const bytes=Buffer.isBuffer(data)?data:Buffer.from(data,'utf8');
   const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|
@@ -89,12 +113,15 @@ function pinnedPacket(raw){
   try{p=JSON.parse(raw);}catch{deny();}
   if(!p||Array.isArray(p)||
      Object.keys(p).sort().join(',')!==
-      'base,head,packDigest,prNumber,reviewInputSha256,version'||
+      'base,bwrapSha256,codexSha256,companionSha256,head,packDigest,prNumber,reviewInputSha256,version'||
      JSON.stringify(p)!==raw||
      p.version!==1||p.prNumber!==39||
      !SHA.test(p.head||'')||!SHA.test(p.base||'')||
      p.head===p.base||!HASH.test(p.packDigest||'')||
-     !HASH.test(p.reviewInputSha256||''))deny();
+     !HASH.test(p.reviewInputSha256||'')||
+     !HASH.test(p.codexSha256||'')||
+     !HASH.test(p.companionSha256||'')||
+     !HASH.test(p.bwrapSha256||''))deny();
   return p;
 }
 function assertInstalledRole(){
@@ -187,6 +214,12 @@ function executeOnce(){
   const packet=pinnedPacket(ownedFile(PACKET,{
     owner:0,mode:0o444,max:1024
   }).toString('utf8'));
+  // Pin exact trusted CLI/companion/sandbox BYTES, not merely root owner.
+  // The owner-authorized package supplies these expected digests out of
+  // band. Fail before dispatch and preserve all previous attempts.
+  assertPinnedExecutable(CODEX,packet.codexSha256);
+  assertPinnedExecutable(COMPANION,packet.companionSha256);
+  assertPinnedExecutable(BWRAP,packet.bwrapSha256);
   const source=ownedFile(INPUT,{owner:0,mode:0o444,max:262144});
   if(createHash('sha256').update(source).digest('hex')!==
      packet.reviewInputSha256)deny();
