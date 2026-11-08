@@ -8,6 +8,10 @@ import {assertFixedOperationalIssuerIsolation}
   from '../src/ops/protected-update-issuer-boundary.mjs';
 
 import {resolve} from 'node:path';
+import {verifyProtectedBootstrapPack}
+  from './protected-update-bootstrap-pack.mjs';
+import {assertPinnedProtectedLauncher,withProtectedOperationGuard}
+  from '../src/ops/protected-update-operation-guard.mjs';
 import {parseProtectedUpdateRequest}
   from '../src/ops/protected-update-request.mjs';
 import {assertFixedRootProtectedUpdateLayout}
@@ -57,6 +61,26 @@ function privateDecimal(name){
     if(!Number.isSafeInteger(value))deny();
     return value;
   }finally{closeSync(fd);}
+}
+function pinnedLauncherDigest(){
+  const fd=openSync(TRUST+'/approved-pack-digest',
+    constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  let hash;
+  try{
+    const st=fstatSync(fd);
+    if(!st.isFile()||st.uid!==0||st.nlink!==1||
+       (st.mode&0o777)!==0o400||st.size<1||st.size>128)deny();
+    hash=readFileSync(fd,'utf8').trim();
+    if(!/^[a-f0-9]{64}$/.test(hash))deny();
+  }finally{closeSync(fd);}
+  const checked=verifyProtectedBootstrapPack({
+    outputPath:ROOT+'/protected-updater',expectedManifestSha256:hash
+  });
+  if(checked.status!=='source_only_unprivileged_no_go')deny();
+  const wrapper=checked.files.find(x=>
+    x.path==='scripts/protected-update-controller-wrapper.mjs');
+  if(!wrapper||!/^[a-f0-9]{64}$/.test(wrapper.sha256))deny();
+  return wrapper.sha256;
 }
 function hashes(files){
   if(!Array.isArray(files)||files.length!==2||
@@ -113,6 +137,11 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const raw=await readRequest();
   const req=parseProtectedUpdateRequest(raw);
   assertFixedRootProtectedUpdateLayout();
+  // The recovery path owns this same durable lock; never update after
+  // original restoration or while its outcome is UNKNOWN.
+  return await withProtectedOperationGuard(ROOT,async()=>{
+  const launcherHash=pinnedLauncherDigest();
+  assertPinnedProtectedLauncher(ROOT,launcherHash);
   const trust=readRootProtectedUpdateTrust();
   assertFixedOperationalIssuerIsolation();
   const uid=privateDecimal('worker-uid');
@@ -164,15 +193,19 @@ export async function applyOneProtectedUpdateFixedRoot(){
     pinnedPublicKey:trust.approvalPublicKeyPem,
     proof:verified.proof,contents:verified.contents,
     oldFiles:prior.files,operationId:req.operationId,nowMs:finalNowMs,
-    observeHealth:async()=>observeProtectedWorkerHealth({
-      pinnedWorkerUid:uid,pinnedWorkerGid:gid,
-      expectedCommit:req.head,expectedHashes:futureHashes
-    })
+    observeHealth:async()=>{
+      assertPinnedProtectedLauncher(ROOT,launcherHash);
+      return observeProtectedWorkerHealth({
+        pinnedWorkerUid:uid,pinnedWorkerGid:gid,
+        expectedCommit:req.head,expectedHashes:futureHashes
+      });
+    }
   });
   if(!['verified','rolled_back'].includes(outcome?.phase))deny();
   return Object.freeze({
     state:outcome.phase,operationId:req.operationId,
     commit:outcome.commit,safeToReplay:false
+  });
   });
 }
 // Importing from nonroot unit tests is inert; direct source-checkout
