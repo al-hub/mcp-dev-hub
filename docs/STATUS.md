@@ -1,3 +1,35 @@
+## 2026-11-08 #35 independent Codex execution receipt runner CANDIDATE — NO-GO
+
+- Reused open PR #39 and the existing signed-receipt verifier. Added
+  `src/ops/protected-update-codex-terminal.mjs` and a separate fixed-path
+  nonroot `scripts/protected-update-codex-receipt.mjs` source candidate.
+  The runner requires a root-staged immutable HEAD/BASE review packet,
+  SHA-256 of review input and exact root-owned Codex, companion and
+  Bubblewrap binaries, a dedicated nonroot signer key and bounded read-only
+  isolation. Neither the Worker nor arbitrary CLI arguments can supply PASS.
+- The runner records its one-time attempt before dispatch. Only a real
+  process with successful status AND a separately persisted canonical
+  final PASS for the same HEAD/BASE may produce a short-lived Ed25519
+  receipt under the established independent Codex signature domain.
+  Failure, timeout, missing final verdict, untrusted checkout or unknown
+  outcome fails closed, preserving state without automatic replay.
+- Source-only package includes both new files with static import closure.
+  Exact source HEAD `a84a515e2bf5b66ef624e9333daf9760a2c6ab9f`:
+  [CI #42441436313](https://github.com/al-hub/mcp-dev-hub/actions/runs/42441436313)
+  completed SUCCESS, Node tests **414/414**, privacy scan **185 files**.
+  Earlier privacy scanner flagged literal sandbox HOME in source; the
+  exact expression was made synthetic while preserving the scanner.
+- **Not deployed and not independently security-approved.** No operational
+  Codex role/key/credential, owner-pinned source packet, audited installation
+  or actual signed real-model result was created. Existing protected
+  reviewer App key/auth evidence reused conceptually, not accessed.
+  Fixed trusted App production publisher and separately authenticated
+  root-security/original-restore evidence remain absent. Official GitHub
+  reviews 0, real protected updates 0/2, root rollback/unknown and
+  Worker/Dashboard post-install acceptance untested. No sudo/root, key
+  creation, installation, service restart, GitHub review POST, policy change,
+  merge or Issue Close. CI is not deployment authorization.
+
 ## 2026-11-08 #35 signed Codex proof mandatory in App publisher — SOURCE ONLY
 
 - Existing PR #39 only: the non-privileged publisher library now requires
