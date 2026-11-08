@@ -36,7 +36,7 @@ export function buildIssueIntakeCandidate({
     !/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(issue.body)&&
     typeof issue.updatedAt==='string'&&
     Number.isFinite(Date.parse(issue.updatedAt))&&
-    new Date(issue.updatedAt).toISOString()===issue.updatedAt;
+    /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(issue.updatedAt);
  if(!validIssue)denied();
  const validPolicy=policy.version===1&&policy.repository===REPO&&
     policy.issueId===issue.id&&policy.issueNumber===issue.number&&
