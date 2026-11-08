@@ -1,5 +1,13 @@
 # Handoff status
 
+## 2026-11-08 #36 opt-in Worker intake boundary (Draft PR #44, not deployed)
+
+- Added a bounded, opt-in Worker-side Issue polling hook and `src/jobs/issue-intake-poll.mjs`. It requires independently supplied trusted per-Issue policy verification and read-only credentials. The default running Worker supplies neither; no live polling or code execution is enabled.
+- The SQLite poll-attempt claim is stored as `unknown` **before** an external GitHub GET. A successful authenticated snapshot is handed to the existing non-executable candidate ledger; failed, 429 or interrupted attempts stay `unknown` across process/database restart. An existing attempt or changed policy cannot cause another GET.
+- Synthetic focused candidate/adapter/ledger/poll tests: **26/26 PASS** including duplicate, 429, database reopen, policy conflict, missing trust and no-job assertions. All Node tests executed via `node --test --test-reporter=dot` **exit 0** and privacy candidate scan **117 files PASS**, with staged diff check PASS (the Microduck command allowlist does not expose `npm`). No real Issue intake, token/policy provisioning, AGY, independent Codex, App APPROVED, root protected install, merge or 3-run E2E is claimed.
+- `AI_WRITE=0`, `AI_PUSH=0`, branch protection, Worker/Dashboard services, protected root files and existing operations remain unchanged. CI/latest HEAD must be checked after publication.
+
+
 ## 2026-11-08 #36 one-shot persisted live snapshot checkpoint (Draft PR #44)
 
 - Added `recordLiveGitHubIssueCandidate`: a single read of an externally authenticated, policy-verified Issue snapshot followed by immutable SQLite candidate admission. It does not start polling, an AI/Worker job, GitHub mutation, root operation or external retry.

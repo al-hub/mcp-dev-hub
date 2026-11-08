@@ -9,6 +9,7 @@ import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
 import {ensureIssueIntakeLedger} from '../src/jobs/issue-intake-ledger.mjs';
+import {pollAuthorizedIssueOnce} from '../src/jobs/issue-intake-poll.mjs';
 import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync,spawn } from 'node:child_process';
@@ -499,8 +500,8 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
  }
  return {state:'remediation_required',claimed:result.claimed,jobId};
 }
-export async function runWorker(db,{interval=300}={}) {
- let lastPrPoll=0;
+export async function runWorker(db,{interval=300,issueIntake=null}={}) {
+ let lastPrPoll=0,lastIssuePoll=0;
  while(true){
     tick(db);
     try{await dispatchDueCiRetries(db);}catch{console.error('CI_RETRY_DISPATCH_ERROR');}
@@ -510,6 +511,13 @@ export async function runWorker(db,{interval=300}={}) {
       lastPrPoll=Date.now();
       try{enqueuePrReviewIfReady(db,token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey}));claimPrDevelopmentIfNeeded(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
+    }
+    // #36: explicitly injected trusted intake only. Default production path
+    // remains disabled; no issue text/env flag can grant execution.
+    if(issueIntake && Date.now()-lastIssuePoll>=30000){
+      lastIssuePoll=Date.now();
+      try{await pollAuthorizedIssueOnce({db,...issueIntake});}
+      catch{console.error('ISSUE_INTAKE_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
   }
