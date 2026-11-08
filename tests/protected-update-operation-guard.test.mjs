@@ -64,3 +64,27 @@ test('UNKNOWN operation preserves exclusive lock; never silently reacquires it',
   await assert.rejects(withProtectedOperationGuard(f.root,async()=>true));
   assert.equal(existsSync(join(f.root,'.protected-original-restored')),false);
 });
+
+test('confirmed pre-mutation rejection releases lock; the next safe operation can proceed',async t=>{
+ for(const rejected of ['invalid-signature','unhealthy-baseline','expiry']){
+  const f=fixture(t);let effectStarted=false;
+  await assert.rejects(withProtectedOperationGuard(f.root,async()=>{
+    effectStarted=true;return true;
+  },{verifyReadOnly:()=>{
+    throw Error('confirmed_read_only_'+rejected);
+  }}),/confirmed_read_only_/);
+  assert.equal(effectStarted,false);
+  assert.equal(existsSync(join(f.root,'.protected-operation.lock')),false);
+  const approved=await withProtectedOperationGuard(f.root,async()=>true,
+    {verifyReadOnly:()=>true});
+  assert.equal(approved,true);
+ }
+});
+test('read-only preflight returning anything except true cannot enter mutation',async t=>{
+ const f=fixture(t);let mutated=false;
+ await assert.rejects(withProtectedOperationGuard(f.root,async()=>{
+   mutated=true;return true;
+ },{verifyReadOnly:()=>false}),denied);
+ assert.equal(mutated,false);
+ assert.equal(existsSync(join(f.root,'.protected-operation.lock')),false);
+});
