@@ -59,9 +59,11 @@ export function assertPinnedProtectedLauncher(root,expectedSha256){
  * intentionally leaves the lock; no automatic stale-lock theft/replay.
  * The lock spans ALL root-side verification, switch and health/rollback.
  */
-export async function withProtectedOperationGuard(root,work){
+export async function withProtectedOperationGuard(root,work,{verifyReadOnly}={}){
   const owner=checkedRoot(root);
-  if(typeof work!=='function'||hasPath(join(root,FENCE)))deny();
+  if(typeof work!=='function'||
+     (verifyReadOnly!==undefined&&typeof verifyReadOnly!=='function')||
+     hasPath(join(root,FENCE)))deny();
   const lock=join(root,LOCK);
   const fd=openSync(lock,constants.O_WRONLY|constants.O_CREAT|
     constants.O_EXCL|constants.O_NOFOLLOW,0o600);
@@ -72,6 +74,17 @@ export async function withProtectedOperationGuard(root,work){
        (st.mode&0o777)!==0o600)deny();
     fsyncSync(fd);syncRoot(root);
     if(hasPath(join(root,FENCE)))deny();
+    // A confirmed pre-mutation rejection must not permanently block an
+    // operator. This phase MUST be strictly read-only immutable root code.
+    // Once work() begins, every failure is UNKNOWN and retains the lock.
+    if(verifyReadOnly){
+      try{
+        if(await verifyReadOnly()!==true)deny();
+      }catch(e){
+        unlinkSync(lock);syncRoot(root);
+        throw e;
+      }
+    }
     const result=await work();
     if(result===undefined)deny();
     unlinkSync(lock);syncRoot(root);
