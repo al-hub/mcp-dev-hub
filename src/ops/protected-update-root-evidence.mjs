@@ -19,7 +19,7 @@ const readFlags=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const rootOnly=(st)=>st.uid===0&&(st.mode&0o022)===0;
 const OWNERS=Object.freeze({
   'github-token':4096,'reviewer-public.pem':4096,
-  'approval-public.pem':4096
+  'codex-reviewer-public.pem':4096,'approval-public.pem':4096
 });
 function checkedRootDirectory(p){
   const st=lstatSync(p);
@@ -44,19 +44,24 @@ export function readRootProtectedUpdateTrust(){
   for(const path of PATHS)checkedRootDirectory(path);
   const githubToken=readPinnedFile('github-token');
   const reviewerPublicKeyPem=readPinnedFile('reviewer-public.pem');
+  const codexReviewerPublicKeyPem=readPinnedFile('codex-reviewer-public.pem');
   const approvalPublicKeyPem=readPinnedFile('approval-public.pem');
   if(!/^[A-Za-z0-9_.-]{8,4096}$/.test(githubToken))fail();
   try{
     const r=createPublicKey(reviewerPublicKeyPem);
+    const c=createPublicKey(codexReviewerPublicKeyPem);
     const a=createPublicKey(approvalPublicKeyPem);
     if(r.asymmetricKeyType!=='ed25519'||
-       a.asymmetricKeyType!=='ed25519'||
-       r.export({type:'spki',format:'der'}).equals(
-         a.export({type:'spki',format:'der'})))fail();
+       c.asymmetricKeyType!=='ed25519'||
+       a.asymmetricKeyType!=='ed25519')fail();
+    const pub=k=>k.export({type:'spki',format:'der'});
+    if(pub(r).equals(pub(c))||pub(r).equals(pub(a))||
+       pub(c).equals(pub(a)))fail();
   }catch{fail();}
   // Token is NEVER serialized/logged or returned through any public API.
   return Object.freeze({
-    githubToken,reviewerPublicKeyPem,approvalPublicKeyPem
+    githubToken,reviewerPublicKeyPem,codexReviewerPublicKeyPem,
+    approvalPublicKeyPem
   });
 }
 /** Root process only: GitHub verification, separately signed review, signed
@@ -85,7 +90,7 @@ export async function preflightAuthenticatedProtectedUpdate({
   const proof=await fetchAndVerifyGitHubUpdateEvidence({
     prNumber,head,base,ciRunId,nowMs,reviewJson,
     reviewSignatureBase64,githubToken:trust.githubToken,
-    pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
     pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem
   });
   const approved=verifySignedProtectedUpdateApproval({
