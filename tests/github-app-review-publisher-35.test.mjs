@@ -147,6 +147,10 @@ test('PR39 separate app client preflight is exact and restricted',async()=>{
         permissions:{pull_requests:'write'}
       };
       if(url.endsWith('/pulls/39'))return {base:{repo:{id:99}}};
+      if(url.endsWith('/pulls/39/reviews')&&options.method==='POST')
+       return {id:702,body:JSON.parse(options.body).body};
+      if(url.endsWith('/graphql')&&options.method==='POST')
+       return {data:{repository:{pullRequest:{headRefOid:HEAD,reviewDecision:'APPROVED'}}}};
       throw Error('unknown synthetic URL');
     }};
   };
@@ -184,6 +188,17 @@ test('PR39 separate app client preflight is exact and restricted',async()=>{
     ()=>client.api(method,path,body),/unapproved/
   );
   assert.equal(endpoints.length,beforeDenied);
+  // Preserve the two narrowly permitted operations used by the real
+  // publisher after its independent provenance/PR validations.
+  const approved=await client.api('POST',reviewPath,validReview);
+  assert.equal(approved.id,702);
+  const readonlyQuery='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
+  const graph=await client.api('POST','/graphql',{
+    query:readonlyQuery,
+    variables:{owner:'al-hub',name:'mcp-dev-hub',number:39}
+  });
+  assert.equal(graph.data.repository.pullRequest.headRefOid,HEAD);
+  assert.equal(endpoints.length,beforeDenied+2);
 });
 test('PR17 existing workflow is still accepted without #35 privileged gates',()=>{
   const e=evidence();delete e.prNumber;delete e.scope;
