@@ -136,9 +136,29 @@ export async function createScopedAppClient({appId,installationId,repositoryId,
    {repository_ids:[repositoryId],permissions:{pull_requests:'write'}},jwt);
  if(typeof access.token!=='string'||access.token.length<20||
     access.permissions?.pull_requests!=='write')fail('insufficient scoped installation token');
+ // Restrict BOTH HTTP verbs and endpoint payloads. An App installation
+ // token is not authorization for a generic GraphQL mutation or PR edit.
+ // Each client is bound to ONE requested PR, including review publication.
+ const prPath='/repos/'+REPO+'/pulls/'+prNumber;
+ const graphQuery='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
+ const exactKeys=(o,keys)=>o!==null&&typeof o==='object'&&
+   !Array.isArray(o)&&Object.keys(o).length===keys.length&&
+   keys.every(k=>Object.hasOwn(o,k));
  const scoped=async (method,path,body)=>{
-  if(!/^\/repos\/al-hub\/mcp-dev-hub\/(pulls\/(?:17|39)(\/reviews(\?per_page=100)?)?)$/.test(path)
-     && path!=='/graphql')fail('unapproved GitHub App API path');
+  const get=method==='GET'&&body===undefined&&
+    (path===prPath||path===prPath+'/reviews?per_page=100');
+  const approve=method==='POST'&&path===prPath+'/reviews'&&
+    exactKeys(body,['commit_id','event','body'])&&
+    SHA.test(body.commit_id||'')&&body.event==='APPROVE'&&
+    typeof body.body==='string'&&
+    /^AI-assisted independent Codex technical review \\(not a human review\\). Evidence: verified-[a-z0-9-]{6,100}$/.test(body.body);
+  const graph=method==='POST'&&path==='/graphql'&&
+    exactKeys(body,['query','variables'])&&body.query===graphQuery&&
+    exactKeys(body.variables,['owner','name','number'])&&
+    body.variables.owner==='al-hub'&&
+    body.variables.name==='mcp-dev-hub'&&
+    body.variables.number===prNumber;
+  if(!get&&!approve&&!graph)fail('unapproved GitHub App API path or payload');
   return call(method,path,body,access.token);
  };
  const repos=await scoped('GET','/repos/al-hub/mcp-dev-hub/pulls/'+prNumber);
