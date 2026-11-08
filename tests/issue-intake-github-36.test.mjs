@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readGitHubIssueSnapshot,buildCandidateFromLiveGitHub}
- from '../src/jobs/issue-intake-github.mjs';
+import {DatabaseSync} from 'node:sqlite';
+import {readIssueIntake,blockIssueIntake} from '../src/jobs/issue-intake-ledger.mjs';
+import {readGitHubIssueSnapshot,buildCandidateFromLiveGitHub,
+ recordLiveGitHubIssueCandidate} from '../src/jobs/issue-intake-github.mjs';
 
 const NOW=1800000000000;
 const PREFIX='https://api.github.com/repos/al-hub/mcp-dev-hub';
@@ -101,4 +103,70 @@ test('no missing/Issue-supplied token or invalid Issue number is accepted',async
   {issueNumber:601,tokenProvider:async()=>null}
  ])await assert.rejects(readGitHubIssueSnapshot({...opts,fetchImpl:api()}),
   /snapshot_unavailable/);
+});
+
+test('#36 one live Issue fetch durably records a candidate, never a Worker job',async()=>{
+ const db=new DatabaseSync(':memory:');
+ let calls=0;
+ const fetchOnce=async(...args)=>{calls++;return api()(...args);};
+ try{
+  const opts={db,issueNumber:601,policy:policy(),verifyPolicy:()=>true,
+   tokenProvider,fetchImpl:fetchOnce,nowMs:NOW};
+  const first=await recordLiveGitHubIssueCandidate(opts);
+  assert.equal(first.state,'candidate_only');
+  assert.equal(first.inserted,true);
+  const second=await recordLiveGitHubIssueCandidate(opts);
+  assert.equal(second.inserted,false);
+  assert.equal(second.candidateId,first.candidateId);
+  assert.equal(calls,2); // each explicit invocation reads once; no internal retry
+  const saved=readIssueIntake(db,first.candidateId);
+  assert.equal(saved.state,'candidate_only');
+  assert.equal(saved.issueNumber,601);
+  assert.equal('body' in saved,false);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM issue_intake_candidates').get().n,1);
+  assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='jobs'").get(),undefined);
+  assert.equal(blockIssueIntake(db,first.candidateId,'policy_revoked'),true);
+  assert.equal((await recordLiveGitHubIssueCandidate(opts)).state,'blocked');
+ }finally{db.close();}
+});
+
+test('#36 changed policy conflicts, and 429 cannot create or replay a candidate',async()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  const common={db,issueNumber:601,policy:policy(),verifyPolicy:()=>true,
+   tokenProvider,fetchImpl:api(),nowMs:NOW};
+  const accepted=await recordLiveGitHubIssueCandidate(common);
+  const changed={...policy(),policyDigest:'c'.repeat(64)};
+  const result=await recordLiveGitHubIssueCandidate({...common,policy:changed});
+  assert.equal(result.state,'conflict');
+  assert.equal(result.inserted,false);
+  assert.equal(result.candidateId,accepted.candidateId);
+  let failedCalls=0;
+  await assert.rejects(recordLiveGitHubIssueCandidate({
+   ...common,fetchImpl:async()=>{failedCalls++;
+    return new Response('{}',{status:429,headers:{'Content-Type':'application/json'}});
+   }
+  }),/snapshot_unavailable/);
+  assert.equal(failedCalls,1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM issue_intake_candidates').get().n,1);
+  assert.equal(readIssueIntake(db,accepted.candidateId).state,'candidate_only');
+ }finally{db.close();}
+});
+
+test('#36 no ledger or externally verified policy means no live request',async()=>{
+ let calls=0;
+ const fetchOnce=async()=>{calls++;return api()('unexpected');};
+ await assert.rejects(recordLiveGitHubIssueCandidate({
+  issueNumber:601,policy:policy(),verifyPolicy:()=>true,
+  tokenProvider,fetchImpl:fetchOnce,nowMs:NOW
+ }),/snapshot_unavailable/);
+ assert.equal(calls,0);
+ const db=new DatabaseSync(':memory:');
+ try{
+  await assert.rejects(recordLiveGitHubIssueCandidate({
+   db,issueNumber:601,policy:policy(),tokenProvider,
+   fetchImpl:fetchOnce,nowMs:NOW
+  }),/snapshot_unavailable/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sqlite_master WHERE name=\'issue_intake_candidates\'').get().n,0);
+ }finally{db.close();}
 });
