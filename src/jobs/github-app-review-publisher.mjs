@@ -178,6 +178,14 @@ export async function publishIndependentApproval({
   pinnedCodexPublicKeyPem,pinnedIssuerReviewerPublicKeyPem,packDigest
  });
  validateProtectionEvidence({headSha,protectionEvidence,verifyProtectionEvidence,prNumber});
+ // A receipt can expire while awaiting GitHub. This check is repeated at the
+ // irreversible POST and again before any confirmed/reused approval result.
+ const requireCurrentCodexReceipt=()=>{
+  if(prNumber===39)validateReviewEvidence({
+   headSha,evidence,verifyEvidence,prNumber,baseSha,signedCodexReceipt,
+   pinnedCodexPublicKeyPem,pinnedIssuerReviewerPublicKeyPem,packDigest
+  });
+ };
  const prefix='/repos/'+REPO;
  const pr=await api('GET',prefix+'/pulls/'+prNumber);
  if(pr.number!==prNumber||pr.state!=='open'||pr.head?.sha!==headSha||
@@ -221,6 +229,9 @@ export async function publishIndependentApproval({
   if(!Array.isArray(prePostReviews)||prePostReviews.length>=100||
      prePostReviews.some(x=>x.user?.login===actor))
    fail('review submission changed or incomplete; reconcile before POST');
+  // Receipt validity is rechecked after the last network read and directly
+  // before the non-replayable approval POST.
+  requireCurrentCodexReceipt();
   // Uncertain POST is never repeated. Any error needs an explicit live reconciliation.
   review=await api('POST',prefix+'/pulls/'+prNumber+'/reviews',{
    commit_id:headSha,event:'APPROVE',
@@ -249,5 +260,8 @@ export async function publishIndependentApproval({
  if(afterPr.number!==prNumber||afterPr.head?.sha!==headSha||
     afterPr.state!=='open'||(prNumber===39&&afterPr.base?.sha!==baseSha))
   fail('PR HEAD moved during approval confirmation');
+ // An expired receipt must not turn a previously published Bot review into
+ // a fresh, authoritative current-head endorsement.
+ requireCurrentCodexReceipt();
  return {state:'approved',reviewId:review.id,reviewUrl:review.html_url??null,headSha,actor};
 }
