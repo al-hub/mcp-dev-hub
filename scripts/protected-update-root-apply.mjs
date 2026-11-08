@@ -20,7 +20,7 @@ import {preflightAuthenticatedProtectedUpdate,readRootProtectedUpdateTrust}
   from '../src/ops/protected-update-root-evidence.mjs';
 import {inspectProtectedCurrentSnapshot,RELEASE_FILES}
   from '../src/ops/protected-update-release-pointer.mjs';
-import {applyProtectedUpdateCandidate}
+import {applyProtectedUpdateCandidate,preflightProtectedUpdateAdmission}
   from '../src/ops/protected-update-transaction.mjs';
 import {verifyIndependentSignedReview,
   fetchAndVerifyOfficialReviewerApproval}
@@ -214,6 +214,16 @@ export async function applyOneProtectedUpdateFixedRoot(){
       head:req.head,base:req.base,prNumber:req.prNumber,
       nowMs:finalNowMs
     });
+    // Duplicate operation IDs, stale journals, old staged releases and
+    // no-op updates are rejected BEFORE entry to mutation/UNKNOWN state.
+    const admission=preflightProtectedUpdateAdmission({
+      root:ROOT,stateDir:STATE,manifestJson:req.manifestJson,
+      approvalJson:req.approvalJson,signatureBase64:req.signatureBase64,
+      pinnedPublicKey:trust.approvalPublicKeyPem,
+      proof:verified.proof,operationId:req.operationId,nowMs:finalNowMs,
+      contents:verified.contents,oldFiles:prior.files
+    });
+    if(admission.state!=='read_only_transaction_admitted')deny();
     return true;
   }});
 }
