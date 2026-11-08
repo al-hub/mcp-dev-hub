@@ -124,13 +124,20 @@ test('prior poll claim respects blocked or missing immutable candidate without G
   assert.deepEqual(await pollAuthorizedIssueOnce({
    db,...opts(),fetchImpl:get
   }),{state:'blocked',attempted:false});
+  assert.equal(db.prepare("SELECT state FROM issue_intake_poll_attempts").get().state,
+   'blocked');
+  // Later candidate tampering must never resurrect a terminal poll claim.
+  db.prepare("UPDATE issue_intake_candidates SET state='candidate_only' WHERE candidate_id=?").run(row.id);
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'blocked',attempted:false});
   db.prepare("DELETE FROM issue_intake_candidates WHERE candidate_id=?").run(row.id);
   assert.deepEqual(await pollAuthorizedIssueOnce({
    db,...opts(),fetchImpl:get
-  }),{state:'unknown',attempted:false});
+  }),{state:'blocked',attempted:false});
   assert.equal(calls,1);
   assert.equal(db.prepare("SELECT state FROM issue_intake_poll_attempts").get().state,
-   'candidate_only');
+   'blocked');
  }finally{db.close();}
 });
 
@@ -173,4 +180,25 @@ test('prior candidate scope or file-list mismatch cannot reuse a poll admission'
    assert.equal(credentials,1);
   }finally{db.close();}
  }
+});
+
+test('missing immutable candidate persists terminal unknown without another GET',async()=>{
+ const db=new DatabaseSync(':memory:');
+ let calls=0;
+ const get=async()=>{calls++;return fetchFixture();};
+ try{
+  assert.equal((await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  })).state,'candidate_only');
+  db.prepare("DELETE FROM issue_intake_candidates").run();
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'unknown',attempted:false});
+  assert.equal(db.prepare("SELECT state FROM issue_intake_poll_attempts").get().state,
+   'unknown');
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'unknown',attempted:false});
+  assert.equal(calls,1);
+ }finally{db.close();}
 });
