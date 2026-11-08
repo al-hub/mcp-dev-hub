@@ -5,6 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pollAuthorizedIssueOnce} from '../src/jobs/issue-intake-poll.mjs';
+import {pollTrustedWorkerIssueOnce} from '../scripts/worker.mjs';
 import {readIssueIntake,blockIssueIntake} from '../src/jobs/issue-intake-ledger.mjs';
 
 const NOW=1800000000000;
@@ -206,4 +207,23 @@ test('missing immutable candidate persists terminal unknown without another GET'
   }),{state:'unknown',attempted:false});
   assert.equal(calls,1);
  }finally{db.close();}
+});
+
+test('Worker pins its own SQLite DB even when injected intake supplies a db field',async()=>{
+ const workerDb=new DatabaseSync(':memory:');
+ const injectedDb=new DatabaseSync(':memory:');
+ let gets=0;
+ try{
+  const intake={...opts(),db:injectedDb,
+   fetchImpl:async()=>{gets++;return fetchFixture();}};
+  assert.deepEqual(await pollTrustedWorkerIssueOnce(workerDb,intake),
+   {state:'candidate_only',attempted:true});
+  assert.equal(workerDb.prepare(
+   "SELECT COUNT(*) AS n FROM issue_intake_poll_attempts").get().n,1);
+  assert.equal(workerDb.prepare(
+   "SELECT COUNT(*) AS n FROM issue_intake_candidates").get().n,1);
+  assert.equal(injectedDb.prepare(
+   "SELECT COUNT(*) AS n FROM sqlite_master WHERE name='issue_intake_poll_attempts'").get().n,0);
+  assert.equal(gets,1);
+ }finally{workerDb.close();injectedDb.close();}
 });
