@@ -42,9 +42,22 @@ export async function pollAuthorizedIssueOnce({
    "issue_intake_poll_attempts WHERE repository=? AND issue_number=?")
    .get(REPO,issueNumber);
   if(previous){
+   const same=previous.digest===policy.policyDigest;
+   let state=same?previous.state:'conflict';
+   // An earlier poll claim is not proof the immutable candidate still exists.
+   // A later terminal block or missing ledger row must not appear admitted.
+   // Reconcile only local SQLite state; NEVER repeat the external Issue GET.
+   if(same&&state==='candidate_only'){
+    const candidate=db.prepare("SELECT state FROM issue_intake_candidates "+
+     "WHERE repository=? AND issue_id=? AND issue_number=? "+
+     "AND issue_updated_at=? AND policy_digest=? AND base_sha=?")
+     .get(REPO,policy.issueId,issueNumber,policy.issueUpdatedAt,
+      policy.policyDigest,policy.baseSha);
+    state=candidate?.state==='candidate_only'?'candidate_only':
+     candidate?.state==='blocked'?'blocked':'unknown';
+   }
    db.exec('COMMIT');
-   return Object.freeze({state:previous.digest===policy.policyDigest?
-    previous.state:'conflict',attempted:false});
+   return Object.freeze({state,attempted:false});
   }
   db.prepare("INSERT INTO issue_intake_poll_attempts "+
    "(repository,issue_number,policy_digest,state,recorded_at,updated_at) "+
