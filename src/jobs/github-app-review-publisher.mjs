@@ -137,7 +137,14 @@ export async function publishIndependentApproval({
   return relevant.at(-1);
  };
  const own=latestActorReview(reviews);
- if(own && (own.state!=='APPROVED'||own.commit_id!==headSha))fail('existing Bot review needs reconciliation');
+ // An existing same-HEAD APPROVED is reusable only when it endorses the
+ // precise independently verified evidence presented in THIS invocation.
+ // Otherwise do not treat an unrelated Bot review as proof or POST again.
+ const expectedReviewBody=
+  'AI-assisted independent Codex technical review (not a human review). Evidence: '+evidence.evidenceId;
+ if(own && (own.state!=='APPROVED'||own.commit_id!==headSha||
+    (prNumber===39&&own.body!==expectedReviewBody)))
+  fail('existing Bot review needs reconciliation');
  let review=own;
  if(!review){
   // Check the HEAD and existing Bot reviews at the last possible point before POST.
@@ -154,13 +161,15 @@ export async function publishIndependentApproval({
   // Uncertain POST is never repeated. Any error needs an explicit live reconciliation.
   review=await api('POST',prefix+'/pulls/'+prNumber+'/reviews',{
    commit_id:headSha,event:'APPROVE',
-   body:'AI-assisted independent Codex technical review (not a human review). Evidence: '+evidence.evidenceId
+   body:expectedReviewBody
   });
  }
  const after=await api('GET',prefix+'/pulls/'+prNumber+'/reviews?per_page=100');
  const effective=Array.isArray(after)&&after.length<100?latestActorReview(after):null;
  const confirmed=Number.isSafeInteger(review?.id)&&effective?.id===review.id&&
-    effective.state==='APPROVED'&&effective.commit_id===headSha&&effective.user?.login===actor;
+    effective.state==='APPROVED'&&effective.commit_id===headSha&&
+    effective.user?.login===actor&&
+    (prNumber!==39||effective.body===expectedReviewBody);
  if(!confirmed)fail('review submission not confirmed; do not retry');
  const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid reviewDecision}}}';
  const result=await api('POST','/graphql',{query,variables:{owner:'al-hub',name:'mcp-dev-hub',number:prNumber}});
