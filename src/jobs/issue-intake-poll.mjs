@@ -49,13 +49,20 @@ export async function pollAuthorizedIssueOnce({
    // A later terminal block or missing ledger row must not appear admitted.
    // Reconcile only local SQLite state; NEVER repeat the external Issue GET.
    if(same&&state==='candidate_only'){
-    const candidate=db.prepare("SELECT state FROM issue_intake_candidates "+
+    const candidate=db.prepare("SELECT state,scope_id AS scopeId, "+
+     "allowed_files_json AS filesJson FROM issue_intake_candidates "+
      "WHERE repository=? AND issue_id=? AND issue_number=? "+
      "AND issue_updated_at=? AND policy_digest=? AND base_sha=?")
      .get(REPO,policy.issueId,issueNumber,policy.issueUpdatedAt,
       policy.policyDigest,policy.baseSha);
-    state=candidate?.state==='candidate_only'?'candidate_only':
-     candidate?.state==='blocked'?'blocked':'unknown';
+    // Prior admission is usable only for the same pinned scope and file set.
+    // Never issue another GET or trust a drifted persisted candidate.
+    const identical=Array.isArray(policy.allowedFiles)&&
+     candidate?.scopeId===policy.scopeId&&
+     candidate?.filesJson===JSON.stringify([...policy.allowedFiles].sort());
+    state=!identical?'unknown':
+     candidate.state==='candidate_only'?'candidate_only':
+     candidate.state==='blocked'?'blocked':'unknown';
    }
    db.exec('COMMIT');
    return Object.freeze({state,attempted:false});
