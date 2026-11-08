@@ -136,26 +136,40 @@ function atomicWrite(stateDir,operationId,journal) {
   renameSync(staged,target);
   syncDir(stateDir);
 }
-export function beginStoredProtectedUpdateJournal(stateDir,args) {
+// The SAME nonmutating admission gate is used both before the root operation
+// crosses its irreversible boundary and once more inside the journal lock.
+// It never creates a journal ID, starts an update or removes stale state.
+function admittedJournal(stateDir,args){
+  const j=startProtectedUpdateJournal(args);
+  const ids=listJournalIds(stateDir);
+  if(ids.length>=128||ids.includes(j.operationId))fail();
+  const records=timeline(stateDir,ids);
+  const prior=records.at(-1);
+  if(prior){
+    if(!TERMINAL.has(prior.phase)||
+       j.createdAtMs<=prior.updatedAtMs)fail();
+    const expectedCommit=prior.phase==='verified'?prior.head:
+      prior.previousCommit;
+    const expectedHashes=prior.phase==='verified'?prior.newHashes:
+      prior.oldHashes;
+    if(j.previousCommit!==expectedCommit||
+       !matchesHashes(j.oldHashes,expectedHashes))fail();
+  }
+  return j;
+}
+export function preflightStoredProtectedUpdateJournal(stateDir,args){
+  checkedDir(stateDir);
+  const before=readdirSync(stateDir);
+  if(before.includes('.lock'))fail();
+  const j=admittedJournal(stateDir,args);
+  const after=readdirSync(stateDir);
+  if(after.includes('.lock')||
+     before.slice().sort().join(',')!==after.slice().sort().join(','))fail();
+  return Object.freeze({state:'read_only_admitted',operationId:j.operationId});
+}
+export function beginStoredProtectedUpdateJournal(stateDir,args){
   return withLock(stateDir,()=>{
-    const j=startProtectedUpdateJournal(args);
-    const ids=listJournalIds(stateDir);
-    if(ids.length>=128||ids.includes(j.operationId))fail();
-    // Bind each revision to the actual previous durable terminal state.
-    // A clock rollback, ambiguous ordering, incompatible old hashes or a
-    // pending operation blocks admission BEFORE consuming a new ID.
-    const records=timeline(stateDir,ids);
-    const prior=records.at(-1);
-    if(prior){
-      if(!TERMINAL.has(prior.phase)||
-         j.createdAtMs<=prior.updatedAtMs)fail();
-      const expectedCommit=prior.phase==='verified'?prior.head:
-        prior.previousCommit;
-      const expectedHashes=prior.phase==='verified'?prior.newHashes:
-        prior.oldHashes;
-      if(j.previousCommit!==expectedCommit||
-         !matchesHashes(j.oldHashes,expectedHashes))fail();
-    }
+    const j=admittedJournal(stateDir,args);
     atomicWrite(stateDir,j.operationId,j);
     return j;
   });
