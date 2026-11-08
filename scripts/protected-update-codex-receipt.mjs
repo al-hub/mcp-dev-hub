@@ -30,7 +30,7 @@ const HASH=/^[0-9a-f]{64}$/;
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 // Fixed byte bound for owner-pinned CLI, companion and sandbox executables.
 export function supportedProtectedExecutableSize(bytes){
-  return Number.isSafeInteger(bytes)&&bytes>=1&&bytes<=64*1024*1024;
+  return Number.isSafeInteger(bytes)&&bytes>=1&&bytes<=384*1024*1024;
 }
 const deny=()=>{throw Error('protected_codex_execution_denied_or_unknown');};
 function directory(path,owner,mode){
