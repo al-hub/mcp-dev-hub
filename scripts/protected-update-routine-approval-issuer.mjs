@@ -50,9 +50,9 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
     process.stdout.write(JSON.stringify({
       approvalJson:r.approvalJson,
       approvalSignatureBase64:r.approvalSignatureBase64
-    })+'\\n');
+    })+'\n');
   }catch{
-    process.stderr.write('protected_routine_approver_denied_or_unknown\\n');
+    process.stderr.write('protected_routine_approver_denied_or_unknown\n');
     process.exitCode=1;
   }
 }
