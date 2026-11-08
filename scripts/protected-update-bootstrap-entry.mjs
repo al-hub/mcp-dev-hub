@@ -22,6 +22,12 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from '../src/ops/protected-update-github-evidence.mjs';
 import {migrateProtectedOriginalPairCandidate}
   from '../src/ops/protected-update-bootstrap-migration.mjs';
+import {readFixedIndependentCodexReceipt}
+  from '../src/ops/protected-update-issuer-runtime.mjs';
+import {verifyIndependentSignedReview}
+  from '../src/ops/protected-update-github-evidence.mjs';
+import {deriveSignedCodexEvidenceId}
+  from '../src/ops/protected-update-bootstrap-issuer.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -143,6 +149,17 @@ export async function bootstrapOneShotFixedRoot(){
   });
   if(review.state!=='official_github_bot_review_confirmed'||
      review.head!==verified.head)fail();
+  const codexReceipt=readFixedIndependentCodexReceipt();
+  const codex=verifyIndependentSignedReview({
+    reviewJson:codexReceipt.reviewJson,
+    signatureBase64:codexReceipt.reviewSignatureBase64,
+    pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
+    pinnedApprovalPublicKeyPem:trust.reviewerPublicKeyPem,
+    head:verified.head,base,prNumber,nowMs:Date.now()
+  });
+  if(review.reviewEvidenceId!==deriveSignedCodexEvidenceId({
+    reviewDigest:codex.reviewDigest,packDigest:pinned
+  }))fail();
   // No owner approval is implied by the signatures; OS installation remains
   // a separately explicit administrator action. This candidate cannot grant
   // itself sudo access or perform the initial immutable file installation.
