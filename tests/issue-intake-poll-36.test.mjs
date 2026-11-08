@@ -92,6 +92,11 @@ test('changed policy cannot replace immutable poll claim',async()=>{
    db,...opts(),policy:policy('c'.repeat(64)),fetchImpl:get
   });
   assert.deepEqual(changed,{state:'conflict',attempted:false});
+  assert.equal(db.prepare("SELECT state FROM issue_intake_poll_attempts").get().state,
+   'conflict');
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'conflict',attempted:false});
   assert.equal(calls,1);
  }finally{db.close();}
 });
