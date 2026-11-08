@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {applyOneProtectedUpdateFixedRoot,rootSupplementaryGroupsCleared}
   from '../scripts/protected-update-root-apply.mjs';
@@ -41,4 +42,16 @@ test('Codex P1: root effective GID stays visible after groups are cleared',()=>{
   assert.equal(rootSupplementaryGroupsCleared([0,1000],0),false);
   assert.equal(rootSupplementaryGroupsCleared([1000],0),false);
   assert.equal(rootSupplementaryGroupsCleared([0,0],0),false);
+});
+
+test('immutable root Codex review checks select the independently pinned key at both boundaries',()=>{
+  const adapter=new URL('../src/ops/protected-update-root-evidence.mjs',
+    import.meta.url);
+  for(const file of [source,adapter]){
+    const code=readFileSync(file,'utf8');
+    assert.match(code,
+      /pinnedReviewerPublicKeyPem:trust\\.codexReviewerPublicKeyPem/);
+    assert.doesNotMatch(code,
+      /pinnedReviewerPublicKeyPem:trust\\.reviewerPublicKeyPem/);
+  }
 });
