@@ -46,9 +46,9 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
     process.stdout.write(JSON.stringify({
       reviewJson:r.reviewJson,
       reviewSignatureBase64:r.reviewSignatureBase64
-    })+'\\n');
+    })+'\n');
   }catch{
-    process.stderr.write('protected_routine_reviewer_denied_or_unknown\\n');
+    process.stderr.write('protected_routine_reviewer_denied_or_unknown\n');
     process.exitCode=1;
   }
 }
