@@ -28,6 +28,10 @@ const ISOLATED_HOME='/home'+'/agent';
 const SHA=/^[0-9a-f]{40}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
+// Fixed byte bound for owner-pinned CLI, companion and sandbox executables.
+export function supportedProtectedExecutableSize(bytes){
+  return Number.isSafeInteger(bytes)&&bytes>=1&&bytes<=64*1024*1024;
+}
 const deny=()=>{throw Error('protected_codex_execution_denied_or_unknown');};
 function directory(path,owner,mode){
   const s=lstatSync(path);
@@ -62,7 +66,7 @@ function assertExecutable(path){
   try{
     const s=fstatSync(fd);
     if(!s.isFile()||s.uid!==0||s.nlink!==1||
-       (s.mode&0o777)!==0o755||s.size<1||s.size>64*1024*1024)deny();
+       (s.mode&0o777)!==0o755||!supportedProtectedExecutableSize(s.size))deny();
   }finally{closeSync(fd);}
 }
 function assertPinnedExecutable(path,expectedSha256){
@@ -71,8 +75,7 @@ function assertPinnedExecutable(path,expectedSha256){
   try{
     const before=fstatSync(fd);
     if(!before.isFile()||before.uid!==0||before.nlink!==1||
-       (before.mode&0o777)!==0o755||before.size<1||
-       before.size>64*1024*1024)deny();
+       (before.mode&0o777)!==0o755||!supportedProtectedExecutableSize(before.size))deny();
     const hash=createHash('sha256');
     const buffer=Buffer.alloc(65536);
     let offset=0;
