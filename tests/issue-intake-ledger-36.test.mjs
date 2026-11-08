@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {openDb} from '../scripts/worker.mjs';
 import {buildIssueIntakeCandidate} from '../src/jobs/issue-intake-candidate.mjs';
 import {ensureIssueIntakeLedger,recordIssueIntakeCandidate,
   readIssueIntake,blockIssueIntake} from '../src/jobs/issue-intake-ledger.mjs';
@@ -98,4 +102,30 @@ test('different Issues retain separate immutable states',()=>{
   const num=db.prepare('SELECT COUNT(*) AS n FROM issue_intake_candidates').get().n;
   assert.equal(num,2);
  }finally{db.close();}
+});
+
+test('#36 existing Worker SQLite schema keeps prior data across candidate ledger reopen',()=>{
+ const root=mkdtempSync(join(tmpdir(),'mcp36-ledger-fixture-'));
+ const previous=process.env.MCP_DEV_HUB_STATE_DIR;
+ try{
+  process.env.MCP_DEV_HUB_STATE_DIR=root;
+  const one=openDb();
+  const c=candidate(508);
+  try{
+   one.prepare("INSERT INTO jobs(id,kind,project,target,workspace,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)")
+    .run('synthetic-job-508','synthetic-one','sample','local','sample','queued',
+      '2026-11-08T00:00:00Z','2026-11-08T00:00:00Z');
+   assert.equal(recordIssueIntakeCandidate(one,c).inserted,true);
+  }finally{one.close();}
+  const two=openDb();
+  try{
+   assert.equal(two.prepare('SELECT COUNT(*) AS n FROM jobs').get().n,1);
+   assert.equal(readIssueIntake(two,c.candidateId).state,'candidate_only');
+   assert.equal(two.prepare('SELECT COUNT(*) AS n FROM job_events').get().n,1);
+  }finally{two.close();}
+ }finally{
+  if(previous===undefined)delete process.env.MCP_DEV_HUB_STATE_DIR;
+  else process.env.MCP_DEV_HUB_STATE_DIR=previous;
+  rmSync(root,{recursive:true,force:true});
+ }
 });
