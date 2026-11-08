@@ -11,7 +11,12 @@ const DENIED=/protected_issuer_staging_denied_or_unknown/;
 const expected=[
   'scripts/protected-update-review-issuer.mjs',
   'scripts/protected-update-approval-issuer.mjs',
+  'scripts/protected-update-routine-review-issuer.mjs',
+  'scripts/protected-update-routine-approval-issuer.mjs',
   'src/ops/protected-update-bootstrap-issuer.mjs',
+  'src/ops/protected-update-routine-issuer.mjs',
+  'src/ops/protected-update-approval.mjs',
+  'src/ops/protected-update-manifest.mjs',
   'src/ops/protected-update-install-attestation.mjs',
   'src/ops/protected-update-issuer-runtime.mjs',
   'src/ops/protected-update-github-evidence.mjs'
@@ -19,7 +24,7 @@ const expected=[
 const files=()=>PROTECTED_BOOTSTRAP_FILES.map(path=>({
   path,sha256:'a'.repeat(64),bytes:100
 }));
-test('issuer stage source closure is fixed to six least-privilege reviewed files',()=>{
+test('issuer stage source closure is fixed to eleven least-privilege reviewed files',()=>{
   const rows=selectFixedIssuerSourceRows(files());
   assert.deepEqual(rows.map(f=>f.path),expected);
   assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(
