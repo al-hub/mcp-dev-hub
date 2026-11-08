@@ -31,7 +31,8 @@ export async function pollAuthorizedIssueOnce({
     !policy||policy.version!==1||policy.repository!==REPO||
     policy.issueNumber!==issueNumber||!HASH.test(policy.policyDigest||'')||
     !Number.isSafeInteger(policy.expiresAtMs)||
-    policy.expiresAtMs<=nowMs||policy.expiresAtMs>nowMs+86400000)deny();
+    policy.expiresAtMs<=Math.max(nowMs,Date.now())||
+    policy.expiresAtMs>nowMs+86400000)deny();
  // Issue body, labels, model output and env flags cannot self-authorize.
  try{if(verifyPolicy(policy)!==true)deny();}catch{deny();}
  ensureIssueIntakePollLedger(db);
