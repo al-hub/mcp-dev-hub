@@ -1,6 +1,7 @@
 // #36: authenticated, read-only GitHub Issue snapshot adapter.
 // No polling, execution, policy issuance, GitHub mutation, or retry authority.
 import {buildIssueIntakeCandidate} from './issue-intake-candidate.mjs';
+import {recordIssueIntakeCandidate} from './issue-intake-ledger.mjs';
 
 const REPO='al-hub/mcp-dev-hub';
 const ORIGIN='https://api.github.com';
@@ -76,5 +77,26 @@ export async function buildCandidateFromLiveGitHub({
   issue,policy,verifyPolicy,
   verifyLiveIssue:current=>current===issue,
   nowMs
+ });
+}
+
+/**
+ * Persist one independently policy-verified, live GitHub Issue snapshot as a
+ * non-executable intake candidate. This is a single bounded read, NOT a poll
+ * loop or a Worker job; the caller supplies an external trusted policy verifier.
+ * On network/429/uncertain outcomes it throws without retrying or recording
+ * any authorization. Exact duplicate admission is idempotent in the ledger.
+ */
+export async function recordLiveGitHubIssueCandidate({
+ db,issueNumber,policy,verifyPolicy,tokenProvider,fetchImpl=fetch,
+ nowMs=Date.now()
+}={}){
+ if(!db||typeof db.exec!=='function'||typeof db.prepare!=='function'||
+    !Number.isSafeInteger(nowMs)||nowMs<0)deny();
+ const candidate=await buildCandidateFromLiveGitHub({
+  issueNumber,policy,verifyPolicy,tokenProvider,fetchImpl,nowMs
+ });
+ return recordIssueIntakeCandidate(db,candidate,{
+  at:new Date(nowMs).toISOString()
  });
 }
