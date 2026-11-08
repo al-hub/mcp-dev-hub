@@ -1,5 +1,12 @@
 # Handoff status
 
+## 2026-11-08 #36 trusted policy expiry across network I/O (Draft PR #44)
+
+- A caller-supplied `nowMs` can be stale, and the authenticated Issue GET can finish after a short-lived externally verified policy expires. The existing one-shot adapter now checks `Math.max(nowMs, Date.now())` before token access and AGAIN after the bounded HTTP GET, before constructing an immutable candidate. The opt-in polling preflight rejects already expired policy before a durable attempt claim.
+- Existing source/test HEAD `a005f9d3c345d8e57c9d842d55a842c63846fcd7`. Microduck focused GitHub/poll regression **19/19 PASS**, including expired caller clock and mid-flight expiry, full Node tests exit 0, privacy candidate check **117 files PASS**, `git diff --check` PASS. Final documentation HEAD requires exact-head strict GitHub CI.
+- Source-only negative hardening; no new trust issuer, read credential, live Issue GET, Worker dispatch, AGY/Codex execution, official reviewer App APPROVED, root deployment, PR merge or Issue Close. Keep Draft, #36 OPEN, AI_WRITE=0 / AI_PUSH=0, branch protection and Worker/Dashboard/private state unchanged.
+
+
 ## 2026-11-08 #36 stale polling claim reconciliation (Draft PR #44)
 
 - Existing opt-in polling now checks the immutable SQLite candidate ledger before reporting a previously persisted `candidate_only` state. A revoked/blocked candidate reports `blocked`; a missing or otherwise unverified candidate reports `unknown`. No external GitHub GET, token access, agent dispatch or new write authority is introduced by reconciliation.
