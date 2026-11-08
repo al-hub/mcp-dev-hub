@@ -26,7 +26,12 @@ const WRITE=constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|
 const SELECTED=Object.freeze([
   'scripts/protected-update-review-issuer.mjs',
   'scripts/protected-update-approval-issuer.mjs',
+  'scripts/protected-update-routine-review-issuer.mjs',
+  'scripts/protected-update-routine-approval-issuer.mjs',
   'src/ops/protected-update-bootstrap-issuer.mjs',
+  'src/ops/protected-update-routine-issuer.mjs',
+  'src/ops/protected-update-approval.mjs',
+  'src/ops/protected-update-manifest.mjs',
   'src/ops/protected-update-install-attestation.mjs',
   'src/ops/protected-update-issuer-runtime.mjs',
   'src/ops/protected-update-github-evidence.mjs'
