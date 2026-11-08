@@ -55,6 +55,31 @@ test('independent policy approval is mandatory; stale Issue snapshot refuses adm
  }),/untrusted/);
 });
 
+test('untrusted or mismatched policy cannot trigger credential access or Issue GET',async()=>{
+ let gets=0,credentials=0;
+ const common={
+  issueNumber:601,policy:policy(),nowMs:NOW,
+  verifyPolicy:()=>true,
+  tokenProvider:async()=>{credentials++;return 'synthetic_token_only_1234567890';},
+  fetchImpl:async()=>{gets++;return new Response(JSON.stringify(payload()),{
+   headers:{'Content-Type':'application/json'}
+  });}
+ };
+ for(const bad of [
+  {verifyPolicy:()=>false},
+  {verifyPolicy:()=>{throw Error('denied');}},
+  {verifyPolicy:undefined},
+  {policy:{...policy(),repository:'other/repo'}},
+  {policy:{...policy(),issueNumber:602}},
+  {policy:{...policy(),expiresAtMs:NOW-1}},
+  {issueNumber:602},
+  {nowMs:-1}
+ ])await assert.rejects(buildCandidateFromLiveGitHub({...common,...bad}),
+   /snapshot_unavailable/);
+ assert.equal(gets,0);
+ assert.equal(credentials,0);
+});
+
 test('invalid repo/number/PR identity fail closed even with a good token',async()=>{
  for(const bad of [
   {...payload(),repository_url:'https://api.github.com/repos/attacker/repo'},

@@ -71,7 +71,15 @@ export async function readGitHubIssueSnapshot({
 export async function buildCandidateFromLiveGitHub({
  issueNumber,policy,verifyPolicy,tokenProvider,fetchImpl=fetch,nowMs=Date.now()
 }={}){
- if(typeof verifyPolicy!=='function'||!policy)deny();
+ // Never issue an authenticated outbound GET until the independently
+ // supplied policy verifier and exact requested scope have passed.
+ if(typeof verifyPolicy!=='function'||!policy||typeof policy!=='object'||
+    Array.isArray(policy)||policy.version!==1||policy.repository!==REPO||
+    !Number.isSafeInteger(issueNumber)||issueNumber<1||
+    policy.issueNumber!==issueNumber||!Number.isSafeInteger(nowMs)||nowMs<0||
+    !Number.isSafeInteger(policy.expiresAtMs)||policy.expiresAtMs<=nowMs||
+    policy.expiresAtMs>nowMs+86400000)deny();
+ try{if(verifyPolicy(policy)!==true)deny();}catch{deny();}
  const issue=await readGitHubIssueSnapshot({issueNumber,tokenProvider,fetchImpl});
  return buildIssueIntakeCandidate({
   issue,policy,verifyPolicy,
