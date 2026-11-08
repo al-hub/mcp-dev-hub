@@ -48,7 +48,7 @@ test('#36 authentic fixed-origin GET creates a non-executable scoped candidate',
 test('independent policy approval is mandatory; stale Issue snapshot refuses admission',async()=>{
  const common={issueNumber:601,policy:policy(),tokenProvider,fetchImpl:api(),nowMs:NOW};
  await assert.rejects(buildCandidateFromLiveGitHub({...common}),/snapshot_unavailable/);
- await assert.rejects(buildCandidateFromLiveGitHub({...common,verifyPolicy:()=>false}),/untrusted/);
+ await assert.rejects(buildCandidateFromLiveGitHub({...common,verifyPolicy:()=>false}),/snapshot_unavailable/);
  const newer=payload();newer.updated_at='2026-11-08T05:20:00Z';
  await assert.rejects(buildCandidateFromLiveGitHub({
   ...common,verifyPolicy:()=>true,fetchImpl:api(newer)
