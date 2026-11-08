@@ -1,5 +1,14 @@
 # Handoff status
 
+## 2026-11-08 #36 terminal poll ledger reconciliation (source only, not installed)
+
+- Continued existing Draft PR #44 at source/test commit `77ea69284b8fff94ce4da8a09b6d0cdb1048e00f`. No separate operational activation or PR merge.
+- Found a durable-observability defect: when the immutable SQLite candidate was blocked, missing or a newly presented signed policy conflicted, `pollAuthorizedIssueOnce` returned a terminal state but left the original `issue_intake_poll_attempts.state` as `candidate_only`. This could mislead independent SQLite readback.
+- Updated `src/jobs/issue-intake-poll.mjs` to commit a one-way `candidate_only` → `blocked`/`unknown`/`conflict` transition inside its existing SQLite transaction. Previously terminal claims cannot be resurrected by restoring a candidate row or resupplying the prior policy; no extra GitHub GET or token request occurs.
+- Extended `tests/issue-intake-poll-36.test.mjs`. Before the code fix, 2 new/strengthened checks failed (7/9 passed), showing persisted candidate-only rows; after the code fix focused 9/9 PASS, full Node 194/194 PASS, privacy candidate scan 117 files PASS, `git diff --check` PASS, changed-file diff manually checked, Microduck workspace clean and exact branch HEAD synchronized.
+- **Source-only NO-GO:** The default production Worker still has no separately installed trusted policy issuer, read-only GitHub credential/injected intake, or actual Issue GET→SQLite candidate readback. No real AGY development, independent Codex PASS, authenticated GitHub App APPROVED, protected root updates, protected merge, main CI or Issue Close. Preserve `AI_WRITE=0`, `AI_PUSH=0`, service/state/root protection and Draft PR #44. #37 remains 0/3.
+
+
 ## 2026-11-08 #36 persisted candidate scope/file-list reconciliation (Draft PR #44)
 
 - An earlier polling admission had matched immutable candidate identity, Issue revision, policy digest and base SHA but omitted the persisted scope ID and allowed-file set. Existing `candidate_only` readback now also checks both; mismatch is `unknown` without another credential request, GitHub GET or Worker dispatch. This is a synthetic negative gate, not evidence of database compromise or a production incident.
