@@ -10,6 +10,8 @@ import {INDEPENDENT_REVIEW_DOMAIN,verifyIndependentSignedReview}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
+import {supportedProtectedExecutableSize}
+  from '../scripts/protected-update-codex-receipt.mjs';
 
 const HEAD='a'.repeat(40),BASE='b'.repeat(40);
 const RUN='c'.repeat(32),NOW=Date.parse('2026-11-08T02:00:00Z');
@@ -119,4 +121,13 @@ test('runner and verifier are in exact, uninstalled source-only package',()=>{
     'src/ops/protected-update-codex-terminal.mjs',
     'src/ops/protected-update-github-evidence.mjs'
   ])assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(name));
+});
+
+test('bounded pinned runtime accepts the actually installed CLI and companion sizes',()=>{
+  // Recorded read-only root-owned executable metadata, not binary fixture bytes.
+  for(const bytes of [72160,77997328,319346888,384*1024*1024])
+    assert.equal(supportedProtectedExecutableSize(bytes),true);
+  for(const bytes of [0,-1,384*1024*1024+1,Number.MAX_SAFE_INTEGER,
+   Infinity,1.5,'319346888'])
+    assert.equal(supportedProtectedExecutableSize(bytes),false);
 });
