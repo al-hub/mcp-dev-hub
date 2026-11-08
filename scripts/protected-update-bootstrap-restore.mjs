@@ -11,6 +11,8 @@ import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
 import {restoreOriginalControllerCandidate}
   from '../src/ops/protected-update-bootstrap-migration.mjs';
+import {withProtectedOperationGuard,markProtectedOriginalRecovery}
+  from '../src/ops/protected-update-operation-guard.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -57,7 +59,7 @@ export function validatePinnedOriginalHashes(raw){
  * Note this restores JUST the previous flat controller: it does not
  * remove preserved version/journal data, or assert live Worker health.
  */
-export function restoreProtectedOriginalFixedRoot(){
+export async function restoreProtectedOriginalFixedRoot(){
   if(process.geteuid?.()!==0||process.getuid?.()!==0||
      process.argv.length!==2||fileURLToPath(import.meta.url)!==ENTRY)
     fail();
@@ -77,19 +79,24 @@ export function restoreProtectedOriginalFixedRoot(){
   const originalHashes=validatePinnedOriginalHashes(
     readTrust('baseline-files.json')
   );
-  const result=restoreOriginalControllerCandidate({
-    root:ROOT,baselineCommit,originalHashes,
-    expectedWrapperSha256:wrapper.sha256
-  });
-  if(result.phase!=='original_controller_restored')fail();
-  return Object.freeze({
-    phase:'original_controller_restored_pending_operator_health',
-    baselineCommit,safeToRetry:false
+  return await withProtectedOperationGuard(ROOT,async()=>{
+    // Fence routine updater admission durably BEFORE replacing the wrapper.
+    // A failed restore leaves both the fence and UNKNOWN lock intact.
+    markProtectedOriginalRecovery(ROOT);
+    const result=restoreOriginalControllerCandidate({
+      root:ROOT,baselineCommit,originalHashes,
+      expectedWrapperSha256:wrapper.sha256
+    });
+    if(result.phase!=='original_controller_restored')fail();
+    return Object.freeze({
+      phase:'original_controller_restored_pending_operator_health',
+      baselineCommit,safeToRetry:false
+    });
   });
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{
-    const result=restoreProtectedOriginalFixedRoot();
+    const result=await restoreProtectedOriginalFixedRoot();
     process.stdout.write(JSON.stringify(result)+'\n');
   }catch{
     process.stderr.write('protected_bootstrap_restore_denied_or_unknown\n');
