@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {
-  chmodSync,lstatSync,mkdirSync,mkdtempSync,readdirSync,rmSync
+  chmodSync,existsSync,lstatSync,mkdirSync,mkdtempSync,readdirSync,rmSync
 } from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -15,8 +15,11 @@ import {
   readStoredProtectedUpdateJournal
 } from '../src/ops/protected-update-journal-store.mjs';
 import {
-  preflightProtectedUpdate,applyProtectedUpdateCandidate
+  preflightProtectedUpdate,preflightProtectedUpdateAdmission,
+  applyProtectedUpdateCandidate
 } from '../src/ops/protected-update-transaction.mjs';
+import {withProtectedOperationGuard}
+  from '../src/ops/protected-update-operation-guard.mjs';
 const A='a'.repeat(40),B='b'.repeat(40),C='c'.repeat(40);
 const ID1='1'.repeat(32),ID2='2'.repeat(32),now=1793900000000;
 const pair=generateKeyPairSync('ed25519');
@@ -179,4 +182,47 @@ test('corrupt existing release denies next operation before journal write',async
   }),/protected_release_guard_failed/);
   assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID2),null);
   assert.equal(inspectProtectedRelease(env.root,{files:env.oldFiles}),A);
+});
+
+test('rollback request replay refuses under read-only guard without stranding root lock',async t=>{
+  const env=dirs(t),req=request();
+  const admission=()=>preflightProtectedUpdateAdmission({...env,...req});
+  const first=await withProtectedOperationGuard(env.root,()=>
+    applyProtectedUpdateCandidate({...env,...req,observeHealth:async()=>false}),
+    {verifyReadOnly:()=>admission().state==='read_only_transaction_admitted'}
+  );
+  assert.equal(first.phase,'rolled_back');
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID1).phase,
+    'rolled_back');
+  await assert.rejects(withProtectedOperationGuard(env.root,()=>
+    applyProtectedUpdateCandidate({...env,...req,observeHealth:async()=>true}),
+    {verifyReadOnly:()=>admission().state==='read_only_transaction_admitted'}
+  ),/protected_journal_store_guard_failed/);
+  assert.equal(existsSync(join(env.root,'.protected-operation.lock')),false);
+  assert.equal(inspectProtectedRelease(env.root,{files:env.oldFiles}),A);
+  // A genuinely new authorization/ID may proceed without an admin unlock.
+  const next={...request({id:ID2}),nowMs:now+100};
+  const second=await withProtectedOperationGuard(env.root,()=>
+    applyProtectedUpdateCandidate({...env,...next,observeHealth:async()=>true}),
+    {verifyReadOnly:()=>preflightProtectedUpdateAdmission({
+      ...env,...next
+    }).state==='read_only_transaction_admitted'}
+  );
+  assert.equal(second.phase,'verified');
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID2).phase,
+    'verified');
+});
+test('actual mutation-phase unknown retains guard lock and journal without replay',async t=>{
+  const env=dirs(t),req=request();
+  await assert.rejects(withProtectedOperationGuard(env.root,()=>
+    applyProtectedUpdateCandidate({...env,...req,observeHealth:async()=>{
+      throw Error('synthetic_lost_health_confirmation');
+    }}),{verifyReadOnly:()=>preflightProtectedUpdateAdmission({
+      ...env,...req
+    }).state==='read_only_transaction_admitted'}
+  ),/synthetic_lost_health_confirmation/);
+  assert.equal(existsSync(join(env.root,'.protected-operation.lock')),true);
+  assert.equal(readStoredProtectedUpdateJournal(env.stateDir,ID1).phase,
+    'switched');
+  await assert.rejects(withProtectedOperationGuard(env.root,async()=>true));
 });
