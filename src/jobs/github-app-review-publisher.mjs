@@ -151,7 +151,7 @@ export async function createScopedAppClient({appId,installationId,repositoryId,
     exactKeys(body,['commit_id','event','body'])&&
     SHA.test(body.commit_id||'')&&body.event==='APPROVE'&&
     typeof body.body==='string'&&
-    /^AI-assisted independent Codex technical review \\(not a human review\\). Evidence: verified-[a-z0-9-]{6,100}$/.test(body.body);
+    /^AI-assisted independent Codex technical review \(not a human review\). Evidence: verified-[a-z0-9-]{6,100}$/.test(body.body);
   const graph=method==='POST'&&path==='/graphql'&&
     exactKeys(body,['query','variables'])&&body.query===graphQuery&&
     exactKeys(body.variables,['owner','name','number'])&&
