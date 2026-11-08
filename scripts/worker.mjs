@@ -504,7 +504,8 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
 export async function pollTrustedWorkerIssueOnce(db,issueIntake){
  if(!issueIntake||typeof issueIntake!=='object'||Array.isArray(issueIntake))
   throw Error('issue_intake_not_configured');
- return pollAuthorizedIssueOnce({db,...issueIntake});
+ // Trusted intake can supply only poll options; it cannot replace Worker SQLite.
+ return pollAuthorizedIssueOnce({...issueIntake,db});
 }
 export async function runWorker(db,{interval=300,issueIntake=null}={}) {
  let lastPrPoll=0,lastIssuePoll=0;
