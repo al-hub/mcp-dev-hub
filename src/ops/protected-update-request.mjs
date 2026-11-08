@@ -8,13 +8,14 @@ const B64=/^[A-Za-z0-9+/]{86}==$/;
 const KEYS=Object.freeze([
   'version','repository','prNumber','head','base','ciRunId','operationId',
   'manifestJson','approvalJson','approvalSignatureBase64',
-  'reviewJson','reviewSignatureBase64'
+  'reviewJson','reviewSignatureBase64',
+  'routineReviewJson','routineReviewSignatureBase64'
 ]);
 const fail=()=>{throw Error('protected_update_request_denied');};
 const bounded=(s,n)=>typeof s==='string'&&
   Buffer.byteLength(s,'utf8')>=1&&Buffer.byteLength(s,'utf8')<=n;
 export function parseProtectedUpdateRequest(raw){
-  if(!bounded(raw,12500))fail();
+  if(!bounded(raw,16000))fail();
   let v;
   try{v=JSON.parse(raw);}catch{fail();}
   if(!v||typeof v!=='object'||Array.isArray(v)||
@@ -28,10 +29,13 @@ export function parseProtectedUpdateRequest(raw){
      typeof v.operationId!=='string'||!ID.test(v.operationId)||
      !bounded(v.manifestJson,4096)||!bounded(v.approvalJson,2048)||
      !bounded(v.reviewJson,2048)||
+     !bounded(v.routineReviewJson,2048)||
      typeof v.approvalSignatureBase64!=='string'||
      !B64.test(v.approvalSignatureBase64)||
      typeof v.reviewSignatureBase64!=='string'||
-     !B64.test(v.reviewSignatureBase64))fail();
+     !B64.test(v.reviewSignatureBase64)||
+     typeof v.routineReviewSignatureBase64!=='string'||
+     !B64.test(v.routineReviewSignatureBase64))fail();
   // The caller may not choose installer path, command, signer, key, PID,
   // credential, permissions, root policy, restart or recovery behavior.
   return Object.freeze({
@@ -40,6 +44,8 @@ export function parseProtectedUpdateRequest(raw){
     approvalJson:v.approvalJson,
     signatureBase64:v.approvalSignatureBase64,
     reviewJson:v.reviewJson,
-    reviewSignatureBase64:v.reviewSignatureBase64
+    reviewSignatureBase64:v.reviewSignatureBase64,
+    routineReviewJson:v.routineReviewJson,
+    routineReviewSignatureBase64:v.routineReviewSignatureBase64
   });
 }
