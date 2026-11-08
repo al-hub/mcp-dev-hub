@@ -150,3 +150,27 @@ test('expired policy cannot record poll claim when caller supplies stale clock',
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='issue_intake_poll_attempts'").get().n,0);
  }finally{db.close();}
 });
+
+test('prior candidate scope or file-list mismatch cannot reuse a poll admission',async()=>{
+ for(const mutation of [
+  db=>db.prepare("UPDATE issue_intake_candidates SET scope_id=?").run('other_scope'),
+  db=>db.prepare("UPDATE issue_intake_candidates SET allowed_files_json=?")
+   .run(JSON.stringify(['tests/other.test.mjs']))
+ ]){
+  const db=new DatabaseSync(':memory:');
+  let gets=0,credentials=0;
+  const get=async()=>{gets++;return fetchFixture();};
+  const token=async()=>{credentials++;return authenticated();};
+  try{
+   assert.deepEqual(await pollAuthorizedIssueOnce({
+    db,...opts(),tokenProvider:token,fetchImpl:get
+   }),{state:'candidate_only',attempted:true});
+   mutation(db);
+   assert.deepEqual(await pollAuthorizedIssueOnce({
+    db,...opts(),tokenProvider:token,fetchImpl:get
+   }),{state:'unknown',attempted:false});
+   assert.equal(gets,1);
+   assert.equal(credentials,1);
+  }finally{db.close();}
+ }
+});
