@@ -29,8 +29,8 @@ const args=(api,ev=evidence())=>({
   protectionEvidence:protection,verifyProtectionEvidence:verified
 });
 function fixture({draft=false,baseRepo='al-hub/mcp-dev-hub',
-  head=HEAD,decision=null,author='developer'}={}){
-  let posted=0;const reviews=[];const calls=[];
+  head=HEAD,decision=null,author='developer',initialReviews=[]}={}){
+  let posted=0;const reviews=[...initialReviews];const calls=[];
   async function api(method,path,body){
     calls.push({method,path,body});
     if(path==='/repos/al-hub/mcp-dev-hub/pulls/39')
@@ -42,7 +42,7 @@ function fixture({draft=false,baseRepo='al-hub/mcp-dev-hub',
     if(path==='/repos/al-hub/mcp-dev-hub/pulls/39/reviews'&&method==='POST'){
       posted++;
       const review={id:500,user:{login:BOT},state:'APPROVED',
-        commit_id:body.commit_id,html_url:null};
+        commit_id:body.commit_id,body:body.body,html_url:null};
       reviews.push(review);return review;
     }
     if(path==='/graphql')return {
@@ -167,4 +167,23 @@ test('PR39 accepts authenticated real Bot review under nullable GitHub decision,
   await assert.rejects(publishIndependentApproval(args(refused.api)),
     /GitHub does not confirm/);
   assert.equal(refused.posted,1); // A submitted review is never blindly retried.
+});
+
+test('PR39 does not reuse a same-HEAD Bot approval tied to different evidence',async()=>{
+  const f=fixture({initialReviews:[{
+    id:490,user:{login:BOT},state:'APPROVED',commit_id:HEAD,
+    body:'AI-assisted independent Codex technical review (not a human review). Evidence: verified-other-review'
+  }]});
+  await assert.rejects(publishIndependentApproval(args(f.api)),
+    /reconciliation/);
+  assert.equal(f.posted,0);
+  assert.equal(f.calls.filter(x=>x.method==='POST').length,0);
+});
+test('PR39 rejects an existing same-HEAD Bot approval without evidence body',async()=>{
+  const f=fixture({initialReviews:[{
+    id:491,user:{login:BOT},state:'APPROVED',commit_id:HEAD
+  }]});
+  await assert.rejects(publishIndependentApproval(args(f.api)),
+    /reconciliation/);
+  assert.equal(f.posted,0);
 });
