@@ -1,5 +1,12 @@
 # Handoff status
 
+## 2026-11-08 #36 stale polling claim reconciliation (Draft PR #44)
+
+- Existing opt-in polling now checks the immutable SQLite candidate ledger before reporting a previously persisted `candidate_only` state. A revoked/blocked candidate reports `blocked`; a missing or otherwise unverified candidate reports `unknown`. No external GitHub GET, token access, agent dispatch or new write authority is introduced by reconciliation.
+- Source/test checkpoint `633dd024dcfab58c1f3b0b2d320bf0cecc6cfecd`: Microduck exact-branch focused poll tests **6/6 PASS**, full Node suite exit 0, privacy candidate scanner **117 files PASS**, `git diff --check` PASS. Final documentation HEAD needs its own strict GitHub CI confirmation.
+- Still source-only. No trusted production policy issuer/credential, live Worker intake, independent Codex security PASS, official App APPROVED, protected root installation, merge, main CI or Issue Close. Keep Draft/OPEN, AI_WRITE=0 / AI_PUSH=0 and branch protection unchanged.
+
+
 ## 2026-11-08 #36 preflight policy-before-GET fix (Draft PR #44)
 
 - The separately exposed one-shot intake now rejects missing, invalid, expired or mismatched policies before token-provider access or external GitHub Issue GET. Independent policy verification is required before outbound I/O; downstream candidate validation remains in force.
