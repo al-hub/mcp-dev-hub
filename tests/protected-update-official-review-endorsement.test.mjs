@@ -12,7 +12,9 @@ function approved(patch={}){
     user:{id:BOT_ID,type:'Bot',login:'reviewer-app[bot]'},
     pull_request_url:
       'https://api.github.com/repos/al-hub/mcp-dev-hub/pulls/39',
-    submitted_at:new Date(NOW-30000).toISOString(),...patch
+    submitted_at:new Date(NOW-30000).toISOString(),
+    body:'AI-assisted independent Codex technical review (not a human review). Evidence: verified-synthetic-123456',
+    ...patch
   };
 }
 const verify=(reviews=[approved()],extra={})=>
@@ -35,6 +37,14 @@ test('reject old commit, untrusted review writer and copied PR URL',()=>{
       'https://api.github.com/repos/attacker/fork/pulls/39'},
     {state:'COMMENTED'}
   ])denied(()=>verify([approved(patch)]));
+});
+test('reject Bot approvals without a verified protected evidence marker',()=>{
+ for(const body of [
+   undefined,'','APPROVED','Evidence: verified-synthetic-123456',
+   'AI-assisted independent Codex technical review (not a human review). Evidence: fake',
+   'AI-assisted independent Codex technical review (not a human review). Evidence: verified-synthetic-123456\\n'
+ ])denied(()=>verify([approved({body})]));
+ assert.equal(verify().reviewEvidenceId,'verified-synthetic-123456');
 });
 test('latest review dismisses previous APPROVED and denies replay',()=>{
   const old=approved({id:1,submitted_at:new Date(NOW-90000).toISOString()});
