@@ -1,3 +1,26 @@
+## 2026-11-08 #35 signed Codex proof mandatory in App publisher — SOURCE ONLY
+
+- Existing PR #39 only: the non-privileged publisher library now requires
+  a fresh, canonical independent Codex Ed25519 receipt on exact PR39 HEAD
+  and BASE, distinct signer public keys supplied from an out-of-band
+  pinned trust boundary, and the exact immutable package digest-derived
+  evidence ID BEFORE any GitHub App API call. An actual GitHub PR BASE
+  mismatch also fails before APPROVE. Existing PR17 behavior is preserved.
+- Added synthetic negative tests rejecting missing/forged/stale/mismatched
+  signature keys, unrelated package/evidence IDs and moved PR base.
+  Source/test commit 9aace760; exact-HEAD GitHub CI 42440188549 SUCCESS.
+- This cryptographic binding does NOT prove the independent Codex process
+  actually ran: no fixed, independently operated execution-to-receipt
+  signer has been installed/audited. The root-owned App caller with live
+  pinned key provenance, scoped PR-write token, official Bot APPROVED,
+  privilege audit, root trust/updater and two physical updates (0/2)
+  likewise remain unverified. No root/sudo, services, secrets, existing
+  App credentials, branch policy or data were changed.
+- NO-GO: do not invoke approval or protected installation until the
+  fixed audited receipt producer and trusted publisher are installed,
+  fresh exact-final-HEAD independent privileged-security GO is obtained,
+  and the owner separately authorizes a minimal bootstrap.
+
 ## 2026-11-08 #35 Bot review-to-proof binding — SOURCE ONLY, NO-GO
 
 - Existing PR #39 only: the fixed-scope GitHub App review publisher now
