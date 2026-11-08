@@ -163,6 +163,27 @@ test('PR39 separate app client preflight is exact and restricted',async()=>{
     ()=>client.api('GET','/repos/al-hub/mcp-dev-hub/actions/runs'),
     /unapproved/
   );
+  // A client pinned to PR39 must not expose the installation token as a
+  // generic PR-edit or GraphQL mutation capability.
+  const beforeDenied=endpoints.length;
+  const reviewPath='/repos/al-hub/mcp-dev-hub/pulls/39/reviews';
+  const validReview={commit_id:HEAD,event:'APPROVE',
+    body:'AI-assisted independent Codex technical review (not a human review). Evidence: verified-safe-review'};
+  for(const [method,path,body] of [
+    ['PATCH','/repos/al-hub/mcp-dev-hub/pulls/39',{title:'changed'}],
+    ['POST','/repos/al-hub/mcp-dev-hub/pulls/39',{state:'closed'}],
+    ['POST','/graphql',{query:'mutation { __typename }',
+      variables:{owner:'al-hub',name:'mcp-dev-hub',number:39}}],
+    ['POST','/graphql',{query:'query { __typename }',variables:{}}],
+    ['POST',reviewPath,{...validReview,event:'COMMENT'}],
+    ['POST',reviewPath,{...validReview,body:'unverified human approval'}],
+    ['POST',reviewPath,{...validReview,extra:'ignored'}],
+    ['POST','/repos/al-hub/mcp-dev-hub/pulls/17/reviews',validReview],
+    ['GET',reviewPath+'?per_page=100',{unexpected:true}]
+  ])await assert.rejects(
+    ()=>client.api(method,path,body),/unapproved/
+  );
+  assert.equal(endpoints.length,beforeDenied);
 });
 test('PR17 existing workflow is still accepted without #35 privileged gates',()=>{
   const e=evidence();delete e.prNumber;delete e.scope;
