@@ -29,6 +29,8 @@ import {verifySignedProtectedUpdateApproval}
   from '../src/ops/protected-update-approval.mjs';
 import {deriveSignedCodexEvidenceId}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
+import {buildRoutineApprovalClaim}
+  from '../src/ops/protected-update-routine-issuer.mjs';
 import {observeProtectedWorkerHealth}
   from '../src/ops/protected-update-health-probe.mjs';
 
@@ -36,7 +38,7 @@ const FIXED='/usr/local/lib/mcp-dev-hub/protected-updater/code/scripts/protected
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const STATE='/var/lib/mcp-dev-hub/protected-update';
 const TRUST='/etc/mcp-dev-hub/protected-update';
-const REQ_LIMIT=12500;
+const REQ_LIMIT=16000;
 const deny=()=>{throw Error('protected_root_apply_denied');};
 /** Synthetic group inspection only; root authority comes from OS getgroups
  * after setgroups([]), not from a caller-supplied array.
@@ -162,6 +164,31 @@ export async function applyOneProtectedUpdateFixedRoot(){
        reviewDigest:verified.proof.reviewDigest,
        packDigest:trust.approvedPackDigest
      }))deny();
+  // The routine reviewer signature is a distinct operational trust boundary,
+  // NEVER interchangeable with the independent Codex signed receipt.
+  const routineContext=Object.freeze({
+    version:1,repository:'al-hub/mcp-dev-hub',scope:'controller-pair',
+    head:req.head,base:req.base,prNumber:req.prNumber,
+    ciRunId:req.ciRunId,reviewerBotId,
+    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]',
+    operationId:req.operationId,manifestJson:req.manifestJson,
+    packDigest:trust.approvedPackDigest
+  });
+  const verifyOperationalReviewer=(nowMs)=>buildRoutineApprovalClaim({
+    context:routineContext,githubEvidence:verified.proof,
+    officialApproval:official,
+    codexReceipt:{
+      reviewJson:req.reviewJson,
+      reviewSignatureBase64:req.reviewSignatureBase64,
+      codexReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
+      issuerReviewerPublicKeyPem:trust.reviewerPublicKeyPem
+    },
+    reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    reviewJson:req.routineReviewJson,
+    reviewSignatureBase64:req.routineReviewSignatureBase64,
+    nowMs
+  });
+  verifyOperationalReviewer(Date.now());
   const prior=inspectProtectedCurrentSnapshot(ROOT);
   if(prior.commit===req.head||prior.commit===null)deny();
   const previousHashes=hashes(prior.files);
@@ -205,6 +232,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
       expectedCommit:prior.commit,expectedHashes:previousHashes
     })!==true)deny();
     finalNowMs=Date.now();
+    verifyOperationalReviewer(finalNowMs);
     verifySignedProtectedUpdateApproval({
       manifestJson:req.manifestJson,approvalJson:req.approvalJson,
       signatureBase64:req.signatureBase64,
