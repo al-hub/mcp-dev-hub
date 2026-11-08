@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {generateKeyPairSync} from 'node:crypto';
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -8,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {Script} from 'node:vm';
 import {
   verifyRootSignerProvisionPlan,provisionIndependentProtectedIssuersOnce,
+  requirePinnedCodexPublicKey,decodeRootTrustBytes,
   PROTECTED_ISSUER_KEYGEN_PROGRAM
 } from '../scripts/protected-update-issuer-provision.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
@@ -18,6 +20,34 @@ const fixture=()=>({
   workerUid:1000,workerGid:1000,rootPackVerified:true,
   accountNames:['mcp35_reviewer','mcp35_approver']
 });
+test('independent public-key preflight rejects private PEM before 0444 copy',()=>{
+  const signer=generateKeyPairSync('ed25519');
+  const publicPem=signer.publicKey.export({type:'spki',format:'pem'});
+  const privatePem=signer.privateKey.export({type:'pkcs8',format:'pem'});
+  assert.equal(requirePinnedCodexPublicKey(publicPem),publicPem);
+  for(const bad of [privatePem,publicPem.trim(),publicPem+'extra',
+    publicPem.replace('PUBLIC KEY','PRIVATE KEY'),null,undefined,''])
+    denied(()=>requirePinnedCodexPublicKey(bad));
+  const rsa=generateKeyPairSync('rsa',{modulusLength:2048});
+  denied(()=>requirePinnedCodexPublicKey(rsa.publicKey
+    .export({type:'spki',format:'pem'})));
+});
+test('root public key trust reader preserves canonical PEM final newline',()=>{
+  const publicPem=generateKeyPairSync('ed25519')
+    .publicKey.export({type:'spki',format:'pem'});
+  const raw=Buffer.from(publicPem);
+  const actual=readFileSync(new URL(
+    '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+  assert.match(actual,
+    /trust\('codex-reviewer-public\.pem',4096,true\)/);
+  assert.equal(decodeRootTrustBytes(raw,true),publicPem);
+  assert.equal(requirePinnedCodexPublicKey(
+    decodeRootTrustBytes(raw,true)),publicPem);
+  assert.notEqual(decodeRootTrustBytes(raw,false),publicPem);
+  denied(()=>requirePinnedCodexPublicKey(decodeRootTrustBytes(raw,false)));
+  denied(()=>decodeRootTrustBytes(Buffer.alloc(0),true));
+});
+
 test('two distinct roles are pinned and provisioning never signs authorization',()=>{
   const x=verifyRootSignerProvisionPlan(fixture());
   assert.equal(x.roles,2);

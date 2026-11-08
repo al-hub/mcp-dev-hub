@@ -8,7 +8,8 @@ import {resolve} from 'node:path';
 import {buildBootstrapReviewerClaim}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
 import {assertRoleRuntimeInstalled,readFixedIssuerContext,
-  readFixedIssuerToken,fetchFixedIssuerEvidence,
+  readFixedIssuerToken,readFixedIndependentCodexReceipt,
+  fetchFixedIssuerEvidence,
   signFixedRolePayload}
   from '../src/ops/protected-update-issuer-runtime.mjs';
 
@@ -21,7 +22,8 @@ export async function issueFixedIndependentBootstrapReview(){
   const {githubEvidence,officialApproval}=
     await fetchFixedIssuerEvidence(context,token);
   const claim=buildBootstrapReviewerClaim({
-    context,githubEvidence,officialApproval,nowMs:Date.now()
+    context,githubEvidence,officialApproval,
+    codexReceipt:readFixedIndependentCodexReceipt(),nowMs:Date.now()
   });
   const reviewSignatureBase64=signFixedRolePayload({
     role:'reviewer',domain:claim.signDomain,json:claim.reviewJson

@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign,createHash} from 'node:crypto';
 import {
   parsePinnedBootstrapIssuerContext,derivePinnedOfficialReviewRunId,
+  deriveSignedCodexEvidenceId,
   buildBootstrapReviewerClaim,buildBootstrapApprovalClaim
 } from '../src/ops/protected-update-bootstrap-issuer.mjs';
 import {BOOTSTRAP_REVIEW_DOMAIN,BOOTSTRAP_APPROVAL_DOMAIN,
   verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
+import {INDEPENDENT_REVIEW_DOMAIN}
+  from '../src/ops/protected-update-github-evidence.mjs';
 
 const NOW=1794028500000;
 const denied=fn=>assert.throws(fn,/protected_bootstrap_issuer_denied/);
@@ -28,13 +31,33 @@ const fixture=()=>{
   };
   const githubEvidence={head:context.head,base:context.base,
     ciRunId:context.ciRunId,ciPassed:true,strictProtection:true};
+  // Synthetic independent Ed25519 Codex execution receipt; OS code must
+  // read its actual key and bytes from fixed root-owned locations.
+  const codexSigner=keys(),separateIssuerSigner=keys();
+  const reviewJson=JSON.stringify({
+    version:1,repository:'al-hub/mcp-dev-hub',
+    prNumber:39,head:context.head,base:context.base,
+    reviewer:'independent-codex',
+    reviewRunId:'f'.repeat(32),reviewVerdict:'PASS',findings:[],
+    issuedAtMs:NOW-1000,expiresAtMs:NOW+180000
+  });
+  const codexReceipt={
+    reviewJson,
+    reviewSignatureBase64:signed(codexSigner.privateKey,
+      INDEPENDENT_REVIEW_DOMAIN,reviewJson),
+    codexReviewerPublicKeyPem:publicPem(codexSigner),
+    issuerReviewerPublicKeyPem:publicPem(separateIssuerSigner)
+  };
+  const codexEvidenceId=deriveSignedCodexEvidenceId({
+    reviewDigest:digest(reviewJson),packDigest:context.packDigest
+  });
   const officialApproval={
     state:'official_github_bot_review_confirmed',
     head:context.head,prNumber:39,reviewerBotId:2222,
     reviewActor:'independent-reviewer[bot]',reviewId:3333,
-    reviewEvidenceId:'verified-actual-codex-audit-35'
+    reviewEvidenceId:codexEvidenceId
   };
-  return {context,githubEvidence,officialApproval};
+  return {context,githubEvidence,officialApproval,codexReceipt};
 };
 function reviewed(){
   const f=fixture(),reviewer=keys(),approver=keys();
@@ -115,8 +138,31 @@ test('reviewer run identity is derived, never Worker supplied',()=>{
     head:f.context.head,reviewId:3334,
     evidenceId:f.officialApproval.reviewEvidenceId
   }));
-  assert.equal(id,buildBootstrapReviewerClaim({...f,nowMs:NOW})
-    .reviewRunId);
+  // GitHub body-only ID is not an authenticated model run ID.
+  assert.notEqual(id,'f'.repeat(32));
+  assert.equal(buildBootstrapReviewerClaim({...f,nowMs:NOW})
+    .reviewRunId,'f'.repeat(32));
+});
+test('issuer refuses missing, forged or mismatched Codex signatures before PASS',()=>{
+  const f=fixture();
+  for(const change of [
+    {codexReceipt:undefined},
+    {codexReceipt:{...f.codexReceipt,reviewSignatureBase64:'AA=='}},
+    {codexReceipt:{...f.codexReceipt,
+      codexReviewerPublicKeyPem:publicPem(keys())}},
+    {codexReceipt:{...f.codexReceipt,
+      issuerReviewerPublicKeyPem:f.codexReceipt.codexReviewerPublicKeyPem}},
+    {officialApproval:{...f.officialApproval,
+      reviewEvidenceId:'verified-fake-untrusted-review-id'}},
+    {context:{...f.context,packDigest:hash('f')}}
+  ])denied(()=>buildBootstrapReviewerClaim({...f,...change,nowMs:NOW}));
+  const f2=reviewed();
+  denied(()=>buildBootstrapApprovalClaim({
+    ...f2,codexReceipt:undefined,
+    reviewerPublicKeyPem:publicPem(f2.reviewer),
+    reviewJson:f2.review.reviewJson,
+    reviewSignatureBase64:f2.reviewSignatureBase64,nowMs:NOW+1000
+  }));
 });
 test('approval issuer denies fake, expired, wrong-SHA, wrong-identity review',()=>{
   const f=reviewed();
@@ -136,7 +182,7 @@ test('approval issuer denies fake, expired, wrong-SHA, wrong-identity review',()
     {reviewSignatureBase64:corruptedSignature.toString('base64')},
     {reviewJson:wrong},
     {nowMs:NOW+130000},
-    {officialApproval:{...f.officialApproval,reviewId:4455}},
+    {officialApproval:{...f.officialApproval,reviewEvidenceId:'verified-fake-codex-claim'}},
     {context:{...f.context,packDigest:hash('f')}},
     {githubEvidence:{...f.githubEvidence,ciPassed:false}}
   ])denied(()=>buildBootstrapApprovalClaim({...base,...patch}));

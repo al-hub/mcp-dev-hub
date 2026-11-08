@@ -5,6 +5,31 @@ bootstrap and the independent evidence requirements. It contains **no
 secret, owner identity, device path or installation authorization**.
 No source checkout may be run as root.
 
+## 2026-11-08 signed Codex provenance gate  source only, NOT DEPLOYED
+
+The candidate issuer previously constructed a PASS and synthetic review run ID
+from an official GitHub Bot review text evidence ID. The fixed reviewer and
+approval issuers now BOTH require a short-lived canonical Ed25519-signed
+independent Codex receipt, tied to the exact PR HEAD/BASE and a deterministic
+evidence ID that also binds the immutable package digest. The signer public
+key must be owner-pinned independently of the protected reviewer/approval
+issuer keys; a mutable checkout or GitHub comment cannot supply it.
+
+Candidate role runners read only fixed root-owned 0444 public proof files
+under the separately controlled signer evidence directory. The owner-managed
+provisioner requires the pre-approved independent Codex public key before
+any user/account side effects; it does not generate or rotate it. No
+operational private key, Codex signer, evidence producer or root installation
+was created by these source changes.
+
+**Critically, a cryptographically valid receipt only authenticates its
+signer. Actual independent Codex execution provenance also requires a
+separately audited trusted runner that captures real terminal output and
+signs only verified final verdicts. That production runner and trusted
+GitHub App APPROVED publisher are not installed. Until both are verified
+and the initial bootstrap/recovery is independently accepted, keep NO-GO,
+formal review zero, physical updates 0/2 and Issue #35 OPEN.**
+
 ## 2026-11-07 source handoff refinement: exact PR #39
 
 The existing GitHub reviewer App publisher previously hardcoded only

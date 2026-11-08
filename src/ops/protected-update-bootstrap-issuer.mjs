@@ -6,6 +6,8 @@
 import {createHash,createPublicKey,verify} from 'node:crypto';
 import {BOOTSTRAP_REVIEW_DOMAIN}
   from './protected-update-install-attestation.mjs';
+import {verifyIndependentSignedReview}
+  from './protected-update-github-evidence.mjs';
 
 const REPO='al-hub/mcp-dev-hub';
 const SHA=/^[0-9a-f]{40}$/,HASH=/^[0-9a-f]{64}$/;
@@ -56,6 +58,13 @@ export function derivePinnedOfficialReviewRunId({
   return digest('mcp-dev-hub/verified-bot-review/v1\n'+
     head+'\n'+reviewId+'\n'+evidenceId).slice(0,32);
 }
+/** A deterministic link between an independently signed Codex receipt
+ * and the official Bot text, not a substitute for verifying the signature.
+ */
+export function deriveSignedCodexEvidenceId({reviewDigest,packDigest}={}){
+  if(!HASH.test(reviewDigest||'')||!HASH.test(packDigest||''))deny();
+  return 'verified-'+digest(reviewDigest+'\n'+packDigest).slice(0,32);
+}
 function assertEvidence(c,gh,official){
   if(gh?.head!==c.head||gh.base!==c.base||
      gh.ciRunId!==c.ciRunId||gh.ciPassed!==true||
@@ -64,7 +73,35 @@ function assertEvidence(c,gh,official){
      official.head!==c.head||official.prNumber!==c.prNumber||
      official.reviewerBotId!==c.reviewerBotId||
      official.reviewActor!==c.reviewerBotActor||
+     !Number.isSafeInteger(official.reviewId)||official.reviewId<1||
      !EV.test(official.reviewEvidenceId||''))deny();
+}
+/** An official Bot review body is not proof that Codex was executed.
+ * The protected issuer must receive a separately pinned, Ed25519-signed
+ * exact-HEAD Codex receipt from root-owned public evidence storage. The
+ * signer and the independent Codex reviewer MUST be different principals.
+ */
+function requireSignedActualCodex({context,officialApproval,codexReceipt,nowMs}){
+  if(!codexReceipt||typeof codexReceipt!=='object')deny();
+  let verified;
+  try{
+    verified=verifyIndependentSignedReview({
+      reviewJson:codexReceipt.reviewJson,
+      signatureBase64:codexReceipt.reviewSignatureBase64,
+      pinnedReviewerPublicKeyPem:codexReceipt.codexReviewerPublicKeyPem,
+      pinnedApprovalPublicKeyPem:codexReceipt.issuerReviewerPublicKeyPem,
+      head:context.head,base:context.base,prNumber:context.prNumber,
+      nowMs
+    });
+  }catch{deny();}
+  // Bind the actual signed Codex run to the immutable package fingerprint.
+  // The Bot evidence ID must be derived by the trusted PR39 publisher from
+  // this identical receipt, not constructed from its own review text.
+  const expected=deriveSignedCodexEvidenceId({
+    reviewDigest:verified.reviewDigest,packDigest:context.packDigest
+  });
+  if(officialApproval.reviewEvidenceId!==expected)deny();
+  return verified;
 }
 /** Pure candidate claim only. The fixed reviewer issuer must obtain live
  * authenticated evidence itself. Signed GitHub Bot text is NOT independently
@@ -72,15 +109,17 @@ function assertEvidence(c,gh,official){
  * execution with independent signed provenance before posting approval.
  */
 export function buildBootstrapReviewerClaim({
-  context,githubEvidence,officialApproval,nowMs
+  codexReceipt,context,githubEvidence,officialApproval,nowMs
 }={}){
   if(!context||!exact(context,KEYS)||!clock(nowMs))deny();
   parsePinnedBootstrapIssuerContext(JSON.stringify(context));
   assertEvidence(context,githubEvidence,officialApproval);
-  const reviewRunId=derivePinnedOfficialReviewRunId({
-    head:context.head,reviewId:officialApproval.reviewId,
-    evidenceId:officialApproval.reviewEvidenceId
+  // Never fabricate PASS or a run ID from the GitHub review's text.
+  // The exact PASS and run ID below were authenticated by Ed25519.
+  const codex=requireSignedActualCodex({
+    context,officialApproval,codexReceipt,nowMs
   });
+  const reviewRunId=codex.reviewRunId;
   const claim={
     version:1,repository:REPO,scope:'protected-bootstrap',
     head:context.head,base:context.base,
@@ -102,7 +141,7 @@ export function buildBootstrapReviewerClaim({
  * different principal's approval payload.
  */
 export function buildBootstrapApprovalClaim({
-  context,githubEvidence,officialApproval,
+  codexReceipt,context,githubEvidence,officialApproval,
   reviewerPublicKeyPem,reviewJson,reviewSignatureBase64,nowMs
 }={}){
   if(!context||!exact(context,KEYS)||!clock(nowMs)||
@@ -112,6 +151,9 @@ export function buildBootstrapApprovalClaim({
      !B64.test(reviewSignatureBase64))deny();
   parsePinnedBootstrapIssuerContext(JSON.stringify(context));
   assertEvidence(context,githubEvidence,officialApproval);
+  const actualCodex=requireSignedActualCodex({
+    context,officialApproval,codexReceipt,nowMs
+  });
   let review;
   try{review=JSON.parse(reviewJson);}catch{deny();}
   if(!exact(review,REVIEW_KEYS)||
@@ -124,10 +166,7 @@ export function buildBootstrapApprovalClaim({
      !clock(review.issuedAtMs)||!clock(review.expiresAtMs)||
      review.issuedAtMs>nowMs||review.expiresAtMs<=nowMs||
      review.expiresAtMs-review.issuedAtMs>600000||
-     review.reviewRunId!==derivePinnedOfficialReviewRunId({
-       head:context.head,reviewId:officialApproval.reviewId,
-       evidenceId:officialApproval.reviewEvidenceId
-     }))deny();
+     review.reviewRunId!==actualCodex.reviewRunId)deny();
   for(const field of [
     'head','base','packDigest','baselineCommit','baselineDigest',
     'prNumber','ciRunId'

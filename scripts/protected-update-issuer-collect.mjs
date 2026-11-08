@@ -27,6 +27,8 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from '../src/ops/protected-update-github-evidence.mjs';
 import {verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
+import {readFixedIndependentCodexReceipt}
+  from '../src/ops/protected-update-issuer-runtime.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -217,6 +219,7 @@ export async function collectFixedBootstrapIssuerAttestations(){
   buildBootstrapApprovalClaim({
     context,githubEvidence:gh,officialApproval:official,
     reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    codexReceipt:readFixedIndependentCodexReceipt(),
     ...review,nowMs:Date.now()
   });
   writeRoot(BASE+'/review-handoff.json',JSON.stringify(review),0o444);

@@ -140,6 +140,22 @@ export function readFixedReviewerHandoff(){
     reviewJson:value.reviewJson,
     reviewSignatureBase64:value.reviewSignatureBase64};
 }
+/** Fixed root-staged independent Codex receipt. No Worker/PR supplied
+ * key path, unsigned boolean or review-body text can replace this receipt.
+ */
+export function readFixedIndependentCodexReceipt(){
+  checkedDir(BASE,0);
+  return Object.freeze({
+    reviewJson:readExact(BASE+'/codex-review.json',
+      {owner:0,mode:0o444,maxBytes:2048}),
+    reviewSignatureBase64:readExact(BASE+'/codex-review.sig',
+      {owner:0,mode:0o444,maxBytes:256}).trim(),
+    codexReviewerPublicKeyPem:readExact(BASE+'/codex-reviewer-public.pem',
+      {owner:0,mode:0o444,maxBytes:4096}),
+    issuerReviewerPublicKeyPem:readExact(BASE+'/reviewer-public.pem',
+      {owner:0,mode:0o444,maxBytes:4096})
+  });
+}
 export function readFixedIssuerToken(role){
   if(!Object.hasOwn(ROLE,role))deny();
   // No access to the peer role's private key or token.

@@ -1,3 +1,17 @@
+## 2026-11-08 #35 signed Codex provenance hardening  SOURCE ONLY
+
+- Existing PR39 WSL isolated worktree: reviewed P2 root supplementary-group
+  cleanup pushed in a separate tested commit; previous full Node tests
+  401/401 and independent read-only Codex P2 diff audit PASS.
+- Candidate root issuer now requires a canonical, short-lived Ed25519-signed
+  independent Codex receipt and exact package/HEAD-bound Bot evidence ID
+  before either signer can construct a PASS. Synthetic issuer/collector
+  verification tests 12/12 PASS. Full CI and final-source audit still pending.
+- The independent receipt producer, trusted reviewer App production publisher,
+  root-owned activation, real signers and two physical updates remain
+  uninstalled or unverified. No new credentials or root changes. NO-GO
+  for privileged installation/PR merge/Issue #35 Close.
+
 ## 2026-11-07 #35 trusted GitHub App preflight candidate — NOT DEPLOYED
 
 - Reuse the existing installed reviewer App and its original owner-protected key. No credential or global repository policy change.

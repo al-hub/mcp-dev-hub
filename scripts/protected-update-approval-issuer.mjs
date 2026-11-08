@@ -11,6 +11,7 @@ import {BOOTSTRAP_APPROVAL_DOMAIN}
   from '../src/ops/protected-update-install-attestation.mjs';
 import {assertRoleRuntimeInstalled,readFixedIssuerContext,
   readFixedIssuerToken,readFixedReviewerHandoff,
+  readFixedIndependentCodexReceipt,
   fetchFixedIssuerEvidence,signFixedRolePayload}
   from '../src/ops/protected-update-issuer-runtime.mjs';
 
@@ -25,6 +26,7 @@ export async function issueFixedIndependentBootstrapApproval(){
     await fetchFixedIssuerEvidence(context,token);
   const claim=buildBootstrapApprovalClaim({
     context,githubEvidence,officialApproval,
+    codexReceipt:readFixedIndependentCodexReceipt(),
     ...handoff,nowMs:Date.now()
   });
   const approvalSignatureBase64=signFixedRolePayload({
