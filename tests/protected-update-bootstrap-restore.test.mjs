@@ -34,8 +34,8 @@ test('uncanonical and poisoned baseline manifests refuse restore',()=>{
     JSON.stringify([{...original()[0],extra:'x'},original()[1]])
   ])assert.throws(()=>validatePinnedOriginalHashes(bad),DENIED);
 });
-test('non-root Worker cannot restore any protected OS source',()=>{
-  assert.throws(()=>restoreProtectedOriginalFixedRoot(),DENIED);
+test('non-root Worker cannot restore any protected OS source',async()=>{
+  await assert.rejects(restoreProtectedOriginalFixedRoot(),DENIED);
 });
 test('calling emergency entry from checkout never succeeds or touches root',()=>{
   const src=fileURLToPath(new URL(
