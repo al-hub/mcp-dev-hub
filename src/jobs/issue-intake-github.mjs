@@ -77,14 +77,19 @@ export async function buildCandidateFromLiveGitHub({
     Array.isArray(policy)||policy.version!==1||policy.repository!==REPO||
     !Number.isSafeInteger(issueNumber)||issueNumber<1||
     policy.issueNumber!==issueNumber||!Number.isSafeInteger(nowMs)||nowMs<0||
-    !Number.isSafeInteger(policy.expiresAtMs)||policy.expiresAtMs<=nowMs||
+    !Number.isSafeInteger(policy.expiresAtMs)||
+    policy.expiresAtMs<=Math.max(nowMs,Date.now())||
     policy.expiresAtMs>nowMs+86400000)deny();
  try{if(verifyPolicy(policy)!==true)deny();}catch{deny();}
  const issue=await readGitHubIssueSnapshot({issueNumber,tokenProvider,fetchImpl});
+ // Network/credential access may outlive a short-lived policy. Recheck the
+ // real clock after the GET; a caller's old nowMs cannot extend authority.
+ const admissionNowMs=Math.max(nowMs,Date.now());
+ if(policy.expiresAtMs<=admissionNowMs)deny();
  return buildIssueIntakeCandidate({
   issue,policy,verifyPolicy,
   verifyLiveIssue:current=>current===issue,
-  nowMs
+  nowMs:admissionNowMs
  });
 }
 
