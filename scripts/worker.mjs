@@ -500,6 +500,12 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
  }
  return {state:'remediation_required',claimed:result.claimed,jobId};
 }
+// #36 opt-in intake boundary. Worker must always use its own persistent DB.
+export async function pollTrustedWorkerIssueOnce(db,issueIntake){
+ if(!issueIntake||typeof issueIntake!=='object'||Array.isArray(issueIntake))
+  throw Error('issue_intake_not_configured');
+ return pollAuthorizedIssueOnce({db,...issueIntake});
+}
 export async function runWorker(db,{interval=300,issueIntake=null}={}) {
  let lastPrPoll=0,lastIssuePoll=0;
  while(true){
@@ -516,7 +522,7 @@ export async function runWorker(db,{interval=300,issueIntake=null}={}) {
     // remains disabled; no issue text/env flag can grant execution.
     if(issueIntake && Date.now()-lastIssuePoll>=30000){
       lastIssuePoll=Date.now();
-      try{await pollAuthorizedIssueOnce({db,...issueIntake});}
+      try{await pollTrustedWorkerIssueOnce(db,issueIntake);}
       catch{console.error('ISSUE_INTAKE_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
