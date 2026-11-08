@@ -152,7 +152,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
   verifyIndependentSignedReview({
     reviewJson:req.reviewJson,
     signatureBase64:req.reviewSignatureBase64,
-    pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+    pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
     pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
     head:req.head,base:req.base,prNumber:req.prNumber,nowMs:finalNowMs
   });
