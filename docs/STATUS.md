@@ -1,5 +1,11 @@
 # Handoff status
 
+## 2026-11-08 #36 persisted candidate scope/file-list reconciliation (Draft PR #44)
+
+- An earlier polling admission had matched immutable candidate identity, Issue revision, policy digest and base SHA but omitted the persisted scope ID and allowed-file set. Existing `candidate_only` readback now also checks both; mismatch is `unknown` without another credential request, GitHub GET or Worker dispatch. This is a synthetic negative gate, not evidence of database compromise or a production incident.
+- Code/test commit `1d7db5d3a398794968aecf9fc9976261ed5c3e1f`. Actual Microduck #36 worktree fast-forwarded cleanly. Focused poll tests **8/8 PASS**, full Node tests **exit 0**, privacy candidate check **117 files PASS**, `git diff --check` PASS. Final documentation HEAD requires exact GitHub CI readback.
+- No external trusted policy issuer or operating read credential was deployed; no live Issue GET, AGY, independent Codex PASS, App APPROVED, root protection, merge/main CI or Issue Close. Keep #36 OPEN, PR44 Draft, #37 0/3; AI_WRITE=0 / AI_PUSH=0, operating files and branch protection unchanged.
+
 ## 2026-11-08 #36 trusted policy expiry across network I/O (Draft PR #44)
 
 - A caller-supplied `nowMs` can be stale, and the authenticated Issue GET can finish after a short-lived externally verified policy expires. The existing one-shot adapter now checks `Math.max(nowMs, Date.now())` before token access and AGAIN after the bounded HTTP GET, before constructing an immutable candidate. The opt-in polling preflight rejects already expired policy before a durable attempt claim.
