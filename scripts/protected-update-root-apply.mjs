@@ -27,6 +27,8 @@ import {verifyIndependentSignedReview,
   from '../src/ops/protected-update-github-evidence.mjs';
 import {verifySignedProtectedUpdateApproval}
   from '../src/ops/protected-update-approval.mjs';
+import {deriveSignedCodexEvidenceId}
+  from '../src/ops/protected-update-bootstrap-issuer.mjs';
 import {observeProtectedWorkerHealth}
   from '../src/ops/protected-update-health-probe.mjs';
 
@@ -155,7 +157,11 @@ export async function applyOneProtectedUpdateFixedRoot(){
     prNumber:req.prNumber,head:req.head,reviewerBotId,
     githubToken:trust.githubToken,nowMs:Date.now()
   });
-  if(official.state!=='official_github_bot_review_confirmed')deny();
+  if(official.state!=='official_github_bot_review_confirmed'||
+     official.reviewEvidenceId!==deriveSignedCodexEvidenceId({
+       reviewDigest:verified.proof.reviewDigest,
+       packDigest:trust.approvedPackDigest
+     }))deny();
   const prior=inspectProtectedCurrentSnapshot(ROOT);
   if(prior.commit===req.head||prior.commit===null)deny();
   const previousHashes=hashes(prior.files);
