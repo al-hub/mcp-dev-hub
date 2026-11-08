@@ -49,9 +49,9 @@ test('immutable root Codex review checks select the independently pinned key at 
     import.meta.url);
   for(const file of [source,adapter]){
     const code=readFileSync(file,'utf8');
-    assert.match(code,
-      /pinnedReviewerPublicKeyPem:trust\\.codexReviewerPublicKeyPem/);
-    assert.doesNotMatch(code,
-      /pinnedReviewerPublicKeyPem:trust\\.reviewerPublicKeyPem/);
+    assert.ok(code.includes(
+      'pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem'));
+    assert.ok(!code.includes(
+      'pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem'));
   }
 });
