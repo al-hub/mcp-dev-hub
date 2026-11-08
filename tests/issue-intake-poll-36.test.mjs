@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pollAuthorizedIssueOnce} from '../src/jobs/issue-intake-poll.mjs';
-import {readIssueIntake} from '../src/jobs/issue-intake-ledger.mjs';
+import {readIssueIntake,blockIssueIntake} from '../src/jobs/issue-intake-ledger.mjs';
 
 const NOW=1800000000000;
 const PREFIX='https://api.github.com/repos/al-hub/mcp-dev-hub';
@@ -108,5 +108,28 @@ test('missing/mismatched scope never initiates network or records claim',async()
   }),/issue_intake_poll_unavailable/);
   assert.equal(calls,0);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='issue_intake_poll_attempts'").get().n,0);
+ }finally{db.close();}
+});
+
+test('prior poll claim respects blocked or missing immutable candidate without GET',async()=>{
+ const db=new DatabaseSync(':memory:');
+ let calls=0;
+ const get=async()=>{calls++;return fetchFixture();};
+ try{
+  assert.equal((await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  })).state,'candidate_only');
+  const row=db.prepare("SELECT candidate_id AS id FROM issue_intake_candidates").get();
+  assert.equal(blockIssueIntake(db,row.id,'policy_revoked'),true);
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'blocked',attempted:false});
+  db.prepare("DELETE FROM issue_intake_candidates WHERE candidate_id=?").run(row.id);
+  assert.deepEqual(await pollAuthorizedIssueOnce({
+   db,...opts(),fetchImpl:get
+  }),{state:'unknown',attempted:false});
+  assert.equal(calls,1);
+  assert.equal(db.prepare("SELECT state FROM issue_intake_poll_attempts").get().state,
+   'candidate_only');
  }finally{db.close();}
 });
