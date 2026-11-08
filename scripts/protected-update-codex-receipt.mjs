@@ -92,6 +92,18 @@ function assertPinnedExecutable(path,expectedSha256){
        hash.digest('hex')!==expectedSha256)deny();
   }finally{closeSync(fd);}
 }
+// Persist the parent directory entry before dispatch or treating a receipt
+// as durable. File fsync alone does not survive an abrupt power loss.
+function syncPrivateDirectory(){
+  const fd=openSync(PRIVATE,constants.O_RDONLY|constants.O_DIRECTORY|
+    constants.O_NOFOLLOW);
+  try{
+    const st=fstatSync(fd);
+    if(!st.isDirectory()||st.uid!==process.getuid()||
+       (st.mode&0o777)!==0o700)deny();
+    fsyncSync(fd);
+  }finally{closeSync(fd);}
+}
 function writeOnce(path,data,mode=0o600){
   const bytes=Buffer.isBuffer(data)?data:Buffer.from(data,'utf8');
   const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|
@@ -109,6 +121,8 @@ function writeOnce(path,data,mode=0o600){
        st.uid!==process.getuid()||st.size!==bytes.length||
        (st.mode&0o777)!==mode)deny();
   }finally{closeSync(fd);}
+  // Every fixed attempt/receipt file is a direct child of PRIVATE.
+  syncPrivateDirectory();
 }
 function pinnedPacket(raw){
   if(raw.length<170||raw.length>1024)deny();
