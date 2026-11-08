@@ -10,6 +10,9 @@ import {createPrivateKey,sign} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {parsePinnedBootstrapIssuerContext}
   from './protected-update-bootstrap-issuer.mjs';
+import {parsePinnedRoutineIssuerContext,ROUTINE_REVIEW_DOMAIN,
+  ROUTINE_APPROVAL_DOMAIN}
+  from './protected-update-routine-issuer.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval}
   from './protected-update-github-evidence.mjs';
@@ -19,8 +22,14 @@ const CODE='/usr/local/lib/mcp-dev-hub/protected-issuer/code';
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const deny=()=>{throw Error('protected_signer_runtime_denied');};
 const ROLE=Object.freeze({
-  reviewer:'protected-update-review-issuer.mjs',
-  approval:'protected-update-approval-issuer.mjs'
+  reviewer:Object.freeze([
+    'protected-update-review-issuer.mjs',
+    'protected-update-routine-review-issuer.mjs'
+  ]),
+  approval:Object.freeze([
+    'protected-update-approval-issuer.mjs',
+    'protected-update-routine-approval-issuer.mjs'
+  ])
 });
 function checkedDir(path,owner,mode=null){
   const s=lstatSync(path);
@@ -46,8 +55,8 @@ export function assertRoleRuntimeInstalled({role,moduleUrl,argv}={}){
      typeof process.getuid!=='function'||
      process.getuid()===0||process.geteuid?.()!==process.getuid()||
      !Array.isArray(argv)||argv.length!==2||
-     fileURLToPath(moduleUrl)!==
-       CODE+'/scripts/'+ROLE[role])deny();
+     !ROLE[role].some(name=>fileURLToPath(moduleUrl)===
+       CODE+'/scripts/'+name))deny();
   const uid=process.getuid(),gid=process.getgid();
   if(!Number.isSafeInteger(uid)||uid<=0||
      !Number.isSafeInteger(gid)||gid<=0)deny();
@@ -61,6 +70,13 @@ export function assertRoleRuntimeInstalled({role,moduleUrl,argv}={}){
   ])checkedDir(p,0);
   checkedDir(BASE+'/issuer-'+role,uid,0o700);
   return Object.freeze({role,uid,gid});
+}
+export function readFixedRoutineIssuerContext(){
+  checkedDir(BASE,0);
+  return parsePinnedRoutineIssuerContext(readExact(
+    BASE+'/approved-routine-context.json',
+    {owner:0,mode:0o444,maxBytes:6500}
+  ));
 }
 export function readFixedIssuerContext(){
   checkedDir(BASE,0);
@@ -111,13 +127,34 @@ export function signFixedRolePayload({role,domain,json}={}){
   if(!Object.hasOwn(ROLE,role)||
      typeof domain!=='string'||typeof json!=='string'||
      Buffer.byteLength(json,'utf8')>2048)deny();
-  const expected=role==='reviewer'
-    ?'mcp-dev-hub/bootstrap-independent-review/v1\n'
-    :'mcp-dev-hub/bootstrap-approval/v1\n';
-  if(domain!==expected)deny();
+  const allowed=role==='reviewer'
+    ?['mcp-dev-hub/bootstrap-independent-review/v1\n',
+      ROUTINE_REVIEW_DOMAIN]
+    :['mcp-dev-hub/bootstrap-approval/v1\n',
+      ROUTINE_APPROVAL_DOMAIN];
+  if(!allowed.includes(domain))deny();
   const {privateKey}=readPrivateIssuerMaterial(role);
   return sign(null,Buffer.from(domain+json),privateKey)
     .toString('base64');
+}
+export function readFixedRoutineReviewerHandoff(){
+  checkedDir(BASE,0);
+  const raw=readExact(BASE+'/routine-review-handoff.json',{
+    owner:0,mode:0o444,maxBytes:5000
+  });
+  let value;
+  try{value=JSON.parse(raw);}catch{deny();}
+  if(!value||Array.isArray(value)||
+     Object.keys(value).sort().join(',')!==
+       'reviewJson,reviewSignatureBase64'||
+     JSON.stringify(value)!==raw||
+     typeof value.reviewJson!=='string'||
+     typeof value.reviewSignatureBase64!=='string')deny();
+  const reviewerPublicKeyPem=readExact(
+    BASE+'/reviewer-public.pem',
+    {owner:0,mode:0o444,maxBytes:4096}
+  );
+  return {reviewerPublicKeyPem,...value};
 }
 export function readFixedReviewerHandoff(){
   checkedDir(BASE,0);
