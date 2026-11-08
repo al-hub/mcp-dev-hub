@@ -283,3 +283,40 @@ test('PR39 denies changed actual main base before any Bot approval POST',async()
  await assert.rejects(publishIndependentApproval(args(api)));
  assert.equal(f.posted,0);
 });
+
+test('PR39 Codex receipt expires while GitHub requests are pending: no approval POST',async()=>{
+ const f=fixture(),original=Date.now;
+ let clock=now+1000,reads=0;
+ Date.now=()=>clock;
+ const api=async(method,path,body)=>{
+  const r=await f.api(method,path,body);
+  if(method==='GET'&&path.endsWith('/reviews?per_page=100')&&++reads===2)
+   clock=now+300001;
+  return r;
+ };
+ try{
+  await assert.rejects(publishIndependentApproval(args(api)),
+   /independent signed Codex receipt invalid/);
+  assert.equal(f.posted,0);
+ }finally{Date.now=original;}
+});
+test('PR39 cannot reuse a same-HEAD Bot review after receipt expires during final readback',async()=>{
+ const expectedBody='AI-assisted independent Codex technical review (not a human review). Evidence: '+EVIDENCE_ID;
+ const f=fixture({initialReviews:[{
+  id:490,user:{login:BOT},state:'APPROVED',commit_id:HEAD,
+  body:expectedBody
+ }]}),original=Date.now;
+ let clock=now+1000,prReads=0;
+ Date.now=()=>clock;
+ const api=async(method,path,body)=>{
+  const r=await f.api(method,path,body);
+  if(method==='GET'&&path==='/repos/al-hub/mcp-dev-hub/pulls/39'&&
+     ++prReads===2)clock=now+300001;
+  return r;
+ };
+ try{
+  await assert.rejects(publishIndependentApproval(args(api)),
+   /independent signed Codex receipt invalid/);
+  assert.equal(f.posted,0);
+ }finally{Date.now=original;}
+});
