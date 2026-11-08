@@ -80,6 +80,35 @@ test('untrusted or mismatched policy cannot trigger credential access or Issue G
  assert.equal(credentials,0);
 });
 
+
+test('real clock rejects expired policy before credentials even with stale caller time',async()=>{
+ let credentials=0,gets=0;
+ const now=Date.now();
+ await assert.rejects(buildCandidateFromLiveGitHub({
+  issueNumber:601,policy:{...policy(),expiresAtMs:now-1000},
+  verifyPolicy:()=>true,nowMs:now-60000,
+  tokenProvider:async()=>{credentials++;return tokenProvider();},
+  fetchImpl:async()=>{gets++;return api()();}
+ }),/snapshot_unavailable/);
+ assert.equal(credentials,0);
+ assert.equal(gets,0);
+});
+
+test('policy expiring during authenticated GET cannot admit a candidate',async()=>{
+ const now=Date.now();
+ let gets=0;
+ await assert.rejects(buildCandidateFromLiveGitHub({
+  issueNumber:601,policy:{...policy(),expiresAtMs:now+350},
+  verifyPolicy:()=>true,nowMs:now,tokenProvider,
+  fetchImpl:async(...args)=>{
+   gets++;
+   await new Promise(resolve=>setTimeout(resolve,500));
+   return api()(...args);
+  }
+ }),/snapshot_unavailable/);
+ assert.equal(gets,1);
+});
+
 test('invalid repo/number/PR identity fail closed even with a good token',async()=>{
  for(const bad of [
   {...payload(),repository_url:'https://api.github.com/repos/attacker/repo'},
