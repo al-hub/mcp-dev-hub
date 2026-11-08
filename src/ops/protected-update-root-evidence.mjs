@@ -19,7 +19,8 @@ const readFlags=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const rootOnly=(st)=>st.uid===0&&(st.mode&0o022)===0;
 const OWNERS=Object.freeze({
   'github-token':4096,'reviewer-public.pem':4096,
-  'codex-reviewer-public.pem':4096,'approval-public.pem':4096
+  'codex-reviewer-public.pem':4096,'approval-public.pem':4096,
+  'approved-pack-digest':128
 });
 function checkedRootDirectory(p){
   const st=lstatSync(p);
@@ -46,7 +47,9 @@ export function readRootProtectedUpdateTrust(){
   const reviewerPublicKeyPem=readPinnedFile('reviewer-public.pem');
   const codexReviewerPublicKeyPem=readPinnedFile('codex-reviewer-public.pem');
   const approvalPublicKeyPem=readPinnedFile('approval-public.pem');
-  if(!/^[A-Za-z0-9_.-]{8,4096}$/.test(githubToken))fail();
+  const approvedPackDigest=readPinnedFile('approved-pack-digest').trim();
+  if(!/^[A-Za-z0-9_.-]{8,4096}$/.test(githubToken)||
+     !/^[a-f0-9]{64}$/.test(approvedPackDigest))fail();
   try{
     const r=createPublicKey(reviewerPublicKeyPem);
     const c=createPublicKey(codexReviewerPublicKeyPem);
@@ -61,7 +64,7 @@ export function readRootProtectedUpdateTrust(){
   // Token is NEVER serialized/logged or returned through any public API.
   return Object.freeze({
     githubToken,reviewerPublicKeyPem,codexReviewerPublicKeyPem,
-    approvalPublicKeyPem
+    approvalPublicKeyPem,approvedPackDigest
   });
 }
 /** Root process only: GitHub verification, separately signed review, signed
