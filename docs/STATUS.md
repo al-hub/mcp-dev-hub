@@ -1,5 +1,13 @@
 # Handoff status
 
+## 2026-11-08 #36 non-executable Issue intake foundation (Draft PR #44)
+
+- Added explicit per-Issue trusted scope/snapshot validation; Issue text never creates an execution, push or root grant. Different safe Issue requests produce distinct immutable candidate identities.
+- Added a durable SQLite candidate ledger initialized by the existing Worker. Exact duplicates are idempotent, changes to an already-recorded Issue/policy conflict without replacement, and blocked/unknown records never silently resume. No new executable task type is enabled.
+- Focused 6/6 intake and 6/6 ledger tests PASS, including Worker database reopen with existing job and event preservation. Microduck full Node suite exit 0; privacy scanner PASS. GitHub CI evidence is tracked in Draft PR #44.
+- This is source only: no real GitHub Issue polling, AGY changes, sandbox execution, Codex signed receipt, App approval, physical root updater, protected merge, main CI or Issue Close. #35 and #36 remain OPEN; #37 production E2E not accepted.
+- Existing Worker/Dashboard, production data, branch protection and global AI_WRITE=0/AI_PUSH=0 remain unchanged.
+
 ## 2026-11-04 #10 reviewer-app preflight
 
 - Added a separately invoked, bounded GitHub App connection preflight using the existing scoped App client. Checks expected App bot identity, exact PR HEAD, PR author/base/state. No APPROVE endpoint and no background automation are exposed.
