@@ -18,6 +18,7 @@ const MAX_PACKAGE=2*1024*1024;
 const SOURCE=Object.freeze([
   'scripts/protected-update-bootstrap-entry.mjs',
   'scripts/reviewer-app-trusted-preflight.mjs',
+  'scripts/protected-update-codex-receipt.mjs',
   'scripts/protected-update-os-activate.mjs',
   'scripts/protected-update-issuer-provision.mjs',
   'scripts/protected-update-issuer-stage.mjs',
@@ -33,6 +34,7 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-bootstrap-migration.mjs',
   'src/ops/protected-update-github-evidence.mjs',
+  'src/ops/protected-update-codex-terminal.mjs',
   'src/ops/protected-update-health-probe.mjs',
   'src/ops/protected-update-journal-store.mjs',
   'src/ops/protected-update-journal.mjs',
