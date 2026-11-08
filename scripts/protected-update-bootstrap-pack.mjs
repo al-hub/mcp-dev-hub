@@ -36,6 +36,7 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-github-evidence.mjs',
   'src/ops/protected-update-codex-terminal.mjs',
   'src/ops/protected-update-health-probe.mjs',
+  'src/ops/protected-update-operation-guard.mjs',
   'src/ops/protected-update-journal-store.mjs',
   'src/ops/protected-update-journal.mjs',
   'src/ops/protected-update-install-attestation.mjs',
