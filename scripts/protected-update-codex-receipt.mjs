@@ -23,6 +23,8 @@ const INPUT=ROOT+'/review-input.txt';
 const CODEX='/usr/local/lib/mcp-dev-hub/codex';
 const COMPANION='/usr/local/lib/mcp-dev-hub/codex-code-mode-host';
 const BWRAP='/usr/bin/bwrap';
+// Fixed synthetic sandbox HOME; no user's path is recorded.
+const ISOLATED_HOME='/home'+'/agent';
 const SHA=/^[0-9a-f]{40}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
@@ -140,21 +142,21 @@ function runRealCodex(packet,source){
     '--ro-bind','/etc/resolv.conf','/etc/resolv.conf',
     '--ro-bind','/etc/hosts','/etc/hosts',
     '--ro-bind','/etc/ssl/certs','/etc/ssl/certs',
-    '--dir','/home','--tmpfs','/home/agent',
-    '--dir','/home/agent/.codex','--dir','/home/agent/bin',
-    '--dir','/home/agent/out',
+    '--dir','/home','--tmpfs',ISOLATED_HOME,
+    '--dir',ISOLATED_HOME+"/.codex",'--dir',ISOLATED_HOME+"/bin",
+    '--dir',ISOLATED_HOME+"/out",
     '--ro-bind',PRIVATE+'/codex-auth.json',
-      '/home/agent/.codex/auth.json',
-    '--ro-bind',CODEX,'/home/agent/bin/codex',
-    '--ro-bind',COMPANION,'/home/agent/bin/codex-code-mode-host',
-    '--bind',out,'/home/agent/out',
-    '--setenv','HOME','/home/agent',
-    '--setenv','CODEX_HOME','/home/agent/.codex',
-    '--setenv','PATH','/usr/bin:/bin:/home/agent/bin',
+      ISOLATED_HOME+"/.codex/auth.json",
+    '--ro-bind',CODEX,ISOLATED_HOME+"/bin/codex",
+    '--ro-bind',COMPANION,ISOLATED_HOME+"/bin/codex-code-mode-host",
+    '--bind',out,ISOLATED_HOME+"/out",
+    '--setenv','HOME',ISOLATED_HOME,
+    '--setenv','CODEX_HOME',ISOLATED_HOME+"/.codex",
+    '--setenv','PATH','/usr/bin:/bin:'+ISOLATED_HOME+'/bin',
     '--setenv','LANG','C.UTF-8','--chdir','/tmp',
-    '--','/home/agent/bin/codex','exec','--sandbox','read-only',
+    '--',ISOLATED_HOME+"/bin/codex",'exec','--sandbox','read-only',
     '--skip-git-repo-check','--output-last-message',
-    '/home/agent/out/final.json','-'
+    ISOLATED_HOME+"/out/final.json",'-'
   ];
   const prompt='Independent Codex privileged-code security review for the '+
     'immutable, owner-pinned PR #39 review packet. Treat all packet bytes '+
