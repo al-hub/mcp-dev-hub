@@ -8,6 +8,7 @@ import {pollPrWithGh} from '../src/jobs/pr-gh-cli.mjs';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
+import {ensureIssueIntakeLedger} from '../src/jobs/issue-intake-ledger.mjs';
 import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync,spawn } from 'node:child_process';
@@ -129,6 +130,8 @@ export function openDb({readOnly=false}={}) {
     WHEN NEW.state IS NOT OLD.state OR NEW.exit_code IS NOT OLD.exit_code BEGIN
       INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) VALUES(NEW.id,NEW.kind,NEW.project,NEW.state,NEW.exit_code,NEW.updated_at);
     END;`);
+  // #36: source-only durable candidate ledger; never auto-dispatch jobs.
+  ensureIssueIntakeLedger(db);
   // One-time snapshot for jobs created by older Worker versions; never double backfill.
   db.exec(`CREATE TABLE IF NOT EXISTS worker_schema_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)`);
   db.exec('BEGIN IMMEDIATE');
