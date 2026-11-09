@@ -4,6 +4,8 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {issueFixedIndependentAppAcceptanceApproval}
  from '../scripts/protected-update-app-acceptance-approval-issuer.mjs';
+import {APP_ACCEPTANCE_DOMAIN,assertFixedAppApprovalSigningScope}
+ from '../src/ops/protected-update-app-acceptance.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
  from '../scripts/protected-update-bootstrap-pack.mjs';
 import {selectFixedIssuerSourceRows}
@@ -41,4 +43,20 @@ test('untrusted extra payload/CLI args cannot turn checkout into a signer',()=>{
  });
  assert.equal(r.status,78);
  assert.equal(r.stdout,'');
+});
+
+test('large legitimate App packet allowed only for literal protected approver',()=>{
+ const fixed='/usr/local/lib/mcp-dev-hub/protected-issuer/code/'+
+   'scripts/protected-update-app-acceptance-approval-issuer.mjs';
+ const ok={role:'approval',domain:APP_ACCEPTANCE_DOMAIN,
+   json:'a'.repeat(11000),entryPath:fixed,argvLength:2};
+ assert.equal(assertFixedAppApprovalSigningScope(ok),true);
+ for(const changed of [
+  {role:'reviewer'}, {domain:'mcp-dev-hub/protected-update-approval/v1\\n'},
+  {entryPath:'/tmp/fake'}, {argvLength:3}, {json:''},
+  {json:'a'.repeat(12001)}, {json:'🙂'.repeat(3001)}
+ ]){
+  assert.throws(()=>assertFixedAppApprovalSigningScope({...ok,...changed}),
+    /independent_app_acceptance_denied/);
+ }
 });
