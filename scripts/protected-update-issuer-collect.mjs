@@ -352,14 +352,33 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
     safeToReplay:false
   });
 }
+// An optional root-pinned, single-purpose dispatch mode reuses the SAME
+// fixed collector entrypoint. No caller flags, environment modes, or added
+// privileged command. Absent mode retains the existing bootstrap behavior.
+function fixedRootCollectorMode(){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0||
+    fileURLToPath(import.meta.url)!==ENTRY||
+    process.argv.length!==2||resolve(process.argv[1])!==ENTRY)deny();
+ for(const path of ['/','/etc','/etc/mcp-dev-hub',TRUST])dir(path,0);
+ const file=TRUST+'/app-acceptance-collector-mode';
+ try{lstatSync(file);}catch(e){
+  if(e.code==='ENOENT')return 'bootstrap';
+  throw e;
+ }
+ if(readOwned(file,0,0o400,48).trim()!=='app-acceptance')deny();
+ return 'app-acceptance';
+}
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  try{
-    const result=await collectFixedBootstrapIssuerAttestations();
-    process.stdout.write(JSON.stringify(result)+'\n');
-  }catch{
-    process.stderr.write('protected_issuer_collect_denied_or_unknown\n');
-    process.exitCode=1;
-  }
+ try{
+  const mode=fixedRootCollectorMode();
+  const result=mode==='app-acceptance'
+    ?await collectFixedAppAcceptanceAttestations()
+    :await collectFixedBootstrapIssuerAttestations();
+  process.stdout.write(JSON.stringify(result)+'\n');
+ }catch{
+  process.stderr.write('protected_issuer_collect_denied_or_unknown\n');
+  process.exitCode=1;
+ }
 }
 
 
