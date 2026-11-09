@@ -5,7 +5,7 @@
 // NEVER installs sudoers, changes the running controller, or retries unknown
 // signer/HTTPS outcomes. Its outputs are root-only reviewed attestations.
 // Worker cannot invoke arbitrary commands, signers, keys or payloads.
-import {createHash} from 'node:crypto';
+import {createHash,createPublicKey} from 'node:crypto';
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,
   readFileSync,writeSync,fchmodSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
@@ -37,6 +37,10 @@ import {parseProtectedRoutineIntent}
   from '../src/ops/protected-update-routine-intent.mjs';
 import {buildRoutineApprovalClaim}
   from '../src/ops/protected-update-routine-issuer.mjs';
+import {verifyAppAcceptanceReviewer,verifySignedAppAcceptance}
+  from '../src/ops/protected-update-app-acceptance.mjs';
+import {validateReviewEvidence,validateProtectionEvidence}
+  from '../src/jobs/github-app-review-publisher.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -356,4 +360,128 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
     process.stderr.write('protected_issuer_collect_denied_or_unknown\n');
     process.exitCode=1;
   }
+}
+
+
+// Source-only fixed root collection of a **previously authenticated**
+// independent reviewer handoff. This cannot create reviewer evidence,
+// produce missing acceptance gates, install an issuer, or post GitHub reviews.
+// It will fail before creating an attempt if there is no genuine reviewer
+// signature and final-HEAD Codex receipt. A one-use fsynced intent is retained
+// on uncertain signer, network or filesystem outcomes; no automatic replay.
+export async function collectFixedAppAcceptanceAttestations(){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0||
+    fileURLToPath(import.meta.url)!==ENTRY||
+    process.argv.length!==2||resolve(process.argv[1])!==ENTRY)deny();
+ for(const path of [
+  '/','/usr','/usr/local','/usr/local/lib',ROOT,
+  PACK,PACK+'/code','/etc','/etc/mcp-dev-hub',TRUST,
+  '/var','/var/lib',BASE
+ ])dir(path,0);
+ assertFixedOperationalIssuerIsolation();
+ const pinned=rootString('approved-pack-digest',128);
+ if(!HASH.test(pinned))deny();
+ const pack=verifyProtectedBootstrapPack({
+  outputPath:PACK,expectedManifestSha256:pinned
+ });
+ if(pack.status!=='source_only_unprivileged_no_go')deny();
+ assertInstalledRuntime(selectFixedIssuerSourceRows(pack.files));
+ const context=parsePinnedBootstrapIssuerContext(readOwned(
+  BASE+'/approved-bootstrap-context.json',0,0o444,2048
+ ));
+ verifyRootContext(context,pack);
+ const trust=readRootProtectedUpdateTrust();
+ const raw=readOwned(BASE+'/app-acceptance.json',0,0o444,12000);
+ const reviewerSignature=readOwned(
+  BASE+'/app-acceptance.review.sig',0,0o444,256
+ ).trim();
+ const codexReceipt=readFixedIndependentCodexReceipt();
+ const der=k=>createPublicKey(k).export({type:'spki',format:'der'});
+ if(trust.approvedPackDigest!==pinned||
+    !der(codexReceipt.codexReviewerPublicKeyPem)
+      .equals(der(trust.codexReviewerPublicKeyPem))||
+    !der(codexReceipt.issuerReviewerPublicKeyPem)
+      .equals(der(trust.reviewerPublicKeyPem)))deny();
+ const handoff={
+  raw,reviewSignatureBase64:reviewerSignature,
+  pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+  head:context.head,base:context.base,
+  ciRunId:context.ciRunId,packDigest:pinned,nowMs:Date.now()
+ };
+ const reviewer=verifyAppAcceptanceReviewer(handoff);
+ const packet=reviewer.packet;
+ if(packet.issuedAtMs<1)deny();
+ const source={
+  prNumber:39,headSha:context.head,baseSha:context.base,
+  packDigest:pinned,evidence:packet.evidence,
+  verifyEvidence:()=>true,
+  protectionEvidence:packet.protectionEvidence,
+  verifyProtectionEvidence:()=>true,
+  signedCodexReceipt:{
+   reviewJson:codexReceipt.reviewJson,
+   signatureBase64:codexReceipt.reviewSignatureBase64
+  },
+  pinnedCodexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+  pinnedIssuerReviewerPublicKeyPem:trust.reviewerPublicKeyPem
+ };
+ // Both claims are cryptographically bound to the independently operated
+ // reviewer key. Root trust of physical PC/Galaxy/private-SSE results is a
+ // SEPARATE obligation for the reviewer producer, not a JSON assertion.
+ validateReviewEvidence(source);
+ validateProtectionEvidence(source);
+ await fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber:39,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,githubToken:trust.githubToken
+ });
+ const files=[
+  'app-acceptance-dispatch.intent.json','app-acceptance.json',
+  'app-acceptance.review.sig','app-acceptance.sig',
+  'app-acceptance.sha256'
+ ];
+ for(const name of files)absent(TRUST+'/'+name);
+ // The durable fence precedes ANY external approval-role dispatch. A
+ // post-intent failure stays UNKNOWN until separate trusted reconciliation.
+ writeRoot(TRUST+'/app-acceptance-dispatch.intent.json',JSON.stringify({
+  version:1,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,packDigest:pinned,
+  packetSha256:reviewer.packetSha256,
+  state:'issuer_dispatched_or_unknown',safeToReplay:false
+ }),0o400);
+ const output=runRole(
+  'protected-update-app-acceptance-approval-issuer.mjs','approval'
+ );
+ let signed;
+ try{signed=JSON.parse(output.trim());}catch{deny();}
+ if(!signed||Array.isArray(signed)||typeof signed!=='object'||
+    Object.keys(signed).sort().join(',')!==
+      'packetSha256,safeToInstall,safeToReplay,signatureBase64'||
+    signed.packetSha256!==reviewer.packetSha256||
+    signed.safeToInstall!==false||signed.safeToReplay!==false||
+    typeof signed.signatureBase64!=='string')deny();
+ verifySignedAppAcceptance({
+  ...handoff,signatureBase64:signed.signatureBase64,
+  pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+  nowMs:Date.now()
+ });
+ // After the role check, refetch the protected PR and exact CI again.
+ await fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber:39,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,githubToken:trust.githubToken
+ });
+ verifySignedAppAcceptance({
+  ...handoff,signatureBase64:signed.signatureBase64,
+  pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+  nowMs:Date.now()
+ });
+ // Never overwrite. Partial files and intent remain for trusted readback.
+ writeRoot(TRUST+'/app-acceptance.json',raw,0o400);
+ writeRoot(TRUST+'/app-acceptance.review.sig',reviewerSignature,0o400);
+ writeRoot(TRUST+'/app-acceptance.sig',signed.signatureBase64,0o400);
+ writeRoot(TRUST+'/app-acceptance.sha256',
+  reviewer.packetSha256,0o400);
+ return Object.freeze({
+  state:'dual_signatures_collected_pending_app_live_readback',
+  head:context.head,safeToReplay:false,
+  approvalPosted:false,installerAuthorized:false
+ });
 }
