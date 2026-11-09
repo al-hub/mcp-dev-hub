@@ -11,7 +11,7 @@ import {buildRoutineApprovalClaim}
   from '../src/ops/protected-update-routine-issuer.mjs';
 import {assertRoleRuntimeInstalled,readFixedRoutineIssuerContext,
   readFixedRoutineReviewerHandoff,readFixedIssuerToken,
-  readFixedIndependentCodexReceipt,fetchFixedIssuerEvidence,
+  readFixedRoutineCodexReceipt,fetchFixedIssuerEvidence,
   signFixedRolePayload}
   from '../src/ops/protected-update-issuer-runtime.mjs';
 
@@ -33,7 +33,7 @@ export async function issueFixedIndependentRoutineApproval(){
   ]);
   const claim=buildRoutineApprovalClaim({
     context,githubEvidence,officialApproval,
-    codexReceipt:readFixedIndependentCodexReceipt(),
+    codexReceipt:readFixedRoutineCodexReceipt(),
     ...handoff,nowMs:Date.now()
   });
   const approvalSignatureBase64=signFixedRolePayload({

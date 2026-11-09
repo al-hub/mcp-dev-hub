@@ -10,7 +10,7 @@ import {fetchAndVerifyGitHubControllerPair}
 import {buildRoutineReviewerClaim}
   from '../src/ops/protected-update-routine-issuer.mjs';
 import {assertRoleRuntimeInstalled,readFixedRoutineIssuerContext,
-  readFixedIssuerToken,readFixedIndependentCodexReceipt,
+  readFixedIssuerToken,readFixedRoutineCodexReceipt,
   fetchFixedIssuerEvidence,signFixedRolePayload}
   from '../src/ops/protected-update-issuer-runtime.mjs';
 
@@ -31,7 +31,7 @@ export async function issueFixedIndependentRoutineReview(){
   ]);
   const claim=buildRoutineReviewerClaim({
     context,githubEvidence,officialApproval,
-    codexReceipt:readFixedIndependentCodexReceipt(),nowMs:Date.now()
+    codexReceipt:readFixedRoutineCodexReceipt(),nowMs:Date.now()
   });
   const reviewSignatureBase64=signFixedRolePayload({
     role:'reviewer',domain:claim.signDomain,json:claim.reviewJson

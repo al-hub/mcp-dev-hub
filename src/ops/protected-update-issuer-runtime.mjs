@@ -18,6 +18,20 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from './protected-update-github-evidence.mjs';
 
 const BASE='/var/lib/mcp-dev-hub-signers';
+const ROUTINE_ID=/^[a-f0-9]{32}$/;
+export function fixedRoutineOperationId(value){
+  if(typeof value!=='string'||!ROUTINE_ID.test(value))
+    throw Error('protected_signer_runtime_denied');
+  return value;
+}
+function routineSlot(){
+  const id=fixedRoutineOperationId(process.env.MCP_PROTECTED_OPERATION_ID);
+  checkedDir(BASE,0);
+  checkedDir(BASE+'/routine-operations',0,0o755);
+  const slot=BASE+'/routine-operations/'+id;
+  checkedDir(slot,0,0o755);
+  return slot;
+}
 const CODE='/usr/local/lib/mcp-dev-hub/protected-issuer/code';
 const READ=constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK;
 const deny=()=>{throw Error('protected_signer_runtime_denied');};
@@ -69,12 +83,17 @@ export function assertRoleRuntimeInstalled({role,moduleUrl,argv}={}){
     '/var','/var/lib',BASE
   ])checkedDir(p,0);
   checkedDir(BASE+'/issuer-'+role,uid,0o700);
+  const routine=fileURLToPath(moduleUrl).includes(
+    '/scripts/protected-update-routine-');
+  if(routine)routineSlot();
+  else if(Object.hasOwn(process.env,'MCP_PROTECTED_OPERATION_ID'))deny();
   return Object.freeze({role,uid,gid});
+
 }
 export function readFixedRoutineIssuerContext(){
   checkedDir(BASE,0);
   return parsePinnedRoutineIssuerContext(readExact(
-    BASE+'/approved-routine-context.json',
+    routineSlot()+'/approved-routine-context.json',
     {owner:0,mode:0o444,maxBytes:6500}
   ));
 }
@@ -139,7 +158,7 @@ export function signFixedRolePayload({role,domain,json}={}){
 }
 export function readFixedRoutineReviewerHandoff(){
   checkedDir(BASE,0);
-  const raw=readExact(BASE+'/routine-review-handoff.json',{
+  const raw=readExact(routineSlot()+'/routine-review-handoff.json',{
     owner:0,mode:0o444,maxBytes:5000
   });
   let value;
@@ -197,4 +216,20 @@ export function readFixedIssuerToken(role){
   if(!Object.hasOwn(ROLE,role))deny();
   // No access to the peer role's private key or token.
   return readPrivateIssuerMaterial(role).token;
+}
+/** Operation-specific immutable Codex receipt. Bootstrap and App remain
+ * bound to their separate fixed receipt; never fall back to earlier updates.
+ */
+export function readFixedRoutineCodexReceipt(){
+  const dir=routineSlot();
+  return Object.freeze({
+    reviewJson:readExact(dir+'/codex-review.json',
+      {owner:0,mode:0o444,maxBytes:2048}),
+    reviewSignatureBase64:readExact(dir+'/codex-review.sig',
+      {owner:0,mode:0o444,maxBytes:256}).trim(),
+    codexReviewerPublicKeyPem:readExact(dir+'/codex-reviewer-public.pem',
+      {owner:0,mode:0o444,maxBytes:4096}),
+    issuerReviewerPublicKeyPem:readExact(dir+'/reviewer-public.pem',
+      {owner:0,mode:0o444,maxBytes:4096})
+  });
 }
