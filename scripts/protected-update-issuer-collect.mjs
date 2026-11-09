@@ -476,9 +476,11 @@ export async function collectFixedAppAcceptanceAttestations(){
  const source={
   prNumber:39,headSha:context.head,baseSha:context.base,
   packDigest:pinned,evidence:packet.evidence,
-  verifyEvidence:()=>true,
+  // These callbacks attest ONLY identity with the already authenticated
+  // reviewer-signed packet; they are not external device proof providers.
+  verifyEvidence:e=>e===packet.evidence,
   protectionEvidence:packet.protectionEvidence,
-  verifyProtectionEvidence:()=>true,
+  verifyProtectionEvidence:p=>p===packet.protectionEvidence,
   signedCodexReceipt:{
    reviewJson:codexReceipt.reviewJson,
    signatureBase64:codexReceipt.reviewSignatureBase64
