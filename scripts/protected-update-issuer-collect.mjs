@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,
   readFileSync,writeSync,fchmodSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
-import {resolve} from 'node:path';
+import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
@@ -29,10 +29,19 @@ import {verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
 import {readFixedIndependentCodexReceipt}
   from '../src/ops/protected-update-issuer-runtime.mjs';
+import {stageFixedRoutineOperation}
+  from '../src/ops/protected-update-routine-stage.mjs';
+import {assembleCollectedRoutineAuthorization}
+  from '../src/ops/protected-update-routine-collection.mjs';
+import {parseProtectedRoutineIntent}
+  from '../src/ops/protected-update-routine-intent.mjs';
+import {buildRoutineApprovalClaim}
+  from '../src/ops/protected-update-routine-issuer.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
 const ENTRY=PACK+'/code/scripts/protected-update-issuer-collect.mjs';
+const ROOT_APPLY=PACK+'/code/scripts/protected-update-root-apply.mjs';
 const CODE=ROOT+'/protected-issuer/code';
 const BASE='/var/lib/mcp-dev-hub-signers';
 const TRUST='/etc/mcp-dev-hub/protected-update';
@@ -66,7 +75,7 @@ function absent(path){
 }
 function writeRoot(path,text,mode){
   const bytes=Buffer.from(text,'utf8');
-  if(bytes.length<1||bytes.length>5000)deny();
+  if(bytes.length<1||bytes.length>16000)deny();
   const fd=openSync(path,WRITE,0o600);
   try{
     let n=0;
@@ -81,6 +90,11 @@ function writeRoot(path,text,mode){
     if(!s.isFile()||s.uid!==0||s.nlink!==1||
        (s.mode&0o777)!==mode||s.size!==bytes.length)deny();
   }finally{closeSync(fd);}
+  // The file's directory entry must survive a crash before the next
+  // irreversible role dispatch; fsync(file) alone is insufficient.
+  const parentFd=openSync(dirname(path),constants.O_RDONLY|
+    constants.O_NOFOLLOW|constants.O_DIRECTORY);
+  try{fsyncSync(parentFd);}finally{closeSync(parentFd);}
 }
 function ownerNumber(file){
   const raw=readOwned(TRUST+'/'+file,0,0o400,32).trim();
@@ -111,13 +125,14 @@ function parseSignedOutput(raw,keys){
      keys.some(k=>typeof o[k]!=='string'))deny();
   return o;
 }
-function runRole(name,role){
+function runRole(name,role,operationId=null){
   const uid=ownerNumber(role+'-uid'),gid=ownerNumber(role+'-gid');
   const path=CODE+'/scripts/'+name;
   const r=spawnSync('/usr/bin/node',[path],{
     uid,gid,cwd:'/',shell:false,encoding:'utf8',timeout:60000,
     maxBuffer:5000,stdio:['ignore','pipe','pipe'],
-    env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',HOME:'/'}
+    env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',HOME:'/',
+      ...(operationId===null?{}:{MCP_PROTECTED_OPERATION_ID:operationId})}
   });
   if(r.error||r.signal||r.status!==0||
      typeof r.stdout!=='string'||r.stdout.length>5000)deny();
@@ -237,6 +252,101 @@ export async function collectFixedBootstrapIssuerAttestations(){
   return Object.freeze({state:'attestations_pinned_pending_owner_activation',
     reviewRunId:verified.reviewRunId,
     realProtectedUpdates:0,safeToRetry:false});
+}
+/** Bound routine signer orchestration inside the existing fixed root-apply
+ * executable. Caller can only supply a canonical untrusted DATA intent.
+ * Root independently pins keys, GitHub CI/Bot, source pack and controller
+ * bytes BEFORE creating the immutable, one-use operation slot. No arbitrary
+ * argv, role script, sudo command, path or private key is accepted.
+ */
+export async function collectFixedRoutineIssuerAttestations({intent}={}){
+  if(process.getuid?.()!==0||process.geteuid?.()!==0||
+     process.argv.length!==2||
+     fileURLToPath(import.meta.url)!==ENTRY||
+     ![ENTRY,ROOT_APPLY].includes(resolve(process.argv[1])))deny();
+  const x=parseProtectedRoutineIntent(JSON.stringify(intent));
+  for(const path of [
+    '/','/usr','/usr/local','/usr/local/lib',ROOT,
+    PACK,PACK+'/code','/etc','/etc/mcp-dev-hub',TRUST,
+    '/var','/var/lib',BASE
+  ])dir(path,0);
+  assertFixedOperationalIssuerIsolation();
+  const trust=readRootProtectedUpdateTrust();
+  const pinned=rootString('approved-pack-digest',128);
+  if(!HASH.test(pinned)||trust.approvedPackDigest!==pinned)deny();
+  const pack=verifyProtectedBootstrapPack({
+    outputPath:PACK,expectedManifestSha256:pinned
+  });
+  if(pack.status!=='source_only_unprivileged_no_go')deny();
+  assertInstalledRuntime(selectFixedIssuerSourceRows(pack.files));
+  const context={
+    version:1,repository:'al-hub/mcp-dev-hub',scope:'controller-pair',
+    head:x.head,base:x.base,prNumber:x.prNumber,ciRunId:x.ciRunId,
+    reviewerBotId:ownerNumber('reviewer-bot-id'),
+    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]',
+    operationId:x.operationId,manifestJson:x.manifestJson,
+    packDigest:pinned
+  };
+  const codexReceipt={
+    reviewJson:x.reviewJson,
+    reviewSignatureBase64:x.reviewSignatureBase64,
+    codexReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
+    issuerReviewerPublicKeyPem:trust.reviewerPublicKeyPem
+  };
+  // The operation directory is a non-replayable durable attempt fence.
+  // Even a partial directory means UNKNOWN and is never erased/retried.
+  const staged=await stageFixedRoutineOperation({
+    context,codexReceipt
+  });
+  const slot=BASE+'/routine-operations/'+x.operationId;
+  const review=parseSignedOutput(runRole(
+    'protected-update-routine-review-issuer.mjs',
+    'reviewer',x.operationId
+  ),['reviewJson','reviewSignatureBase64']);
+  // Independently authenticate the review before exposing its canonical
+  // handoff to the approval role. Unlike a CLI exit, this verifies Ed25519.
+  buildRoutineApprovalClaim({
+    context,githubEvidence:staged.githubEvidence,
+    officialApproval:staged.officialApproval,codexReceipt,
+    reviewerPublicKeyPem:trust.reviewerPublicKeyPem,...review,
+    nowMs:Date.now()
+  });
+  writeRoot(slot+'/routine-review-handoff.json',JSON.stringify(review),0o444);
+  const approval=parseSignedOutput(runRole(
+    'protected-update-routine-approval-issuer.mjs',
+    'approval',x.operationId
+  ),['approvalJson','approvalSignatureBase64']);
+  // A second root-side live cross-check prevents a stale earlier evidence
+  // snapshot from being silently promoted by a later signing result.
+  const [gh,official]=await Promise.all([
+    fetchAndVerifyGitHubBootstrapEvidence({
+      prNumber:context.prNumber,head:context.head,base:context.base,
+      ciRunId:context.ciRunId,githubToken:trust.githubToken
+    }),
+    fetchAndVerifyOfficialReviewerApproval({
+      prNumber:context.prNumber,head:context.head,
+      reviewerBotId:context.reviewerBotId,
+      githubToken:trust.githubToken,nowMs:Date.now()
+    })
+  ]);
+  const result=assembleCollectedRoutineAuthorization({
+    context,githubEvidence:gh,officialApproval:official,codexReceipt,
+    review,approval,rootTrust:trust,nowMs:Date.now()
+  });
+  writeRoot(slot+'/routine-approval.json',approval.approvalJson,0o444);
+  writeRoot(slot+'/routine-approval.sig',approval.approvalSignatureBase64,
+    0o444);
+  writeRoot(slot+'/approved-request.json',result.requestJson,0o400);
+  writeRoot(slot+'/issuance-complete.json',JSON.stringify({
+    version:1,operationId:x.operationId,
+    requestSha256:digest(Buffer.from(result.requestJson,'utf8')),
+    phase:'both_signed_pending_root_apply',safeToReplay:false
+  }),0o400);
+  return Object.freeze({
+    status:'signed_routine_request_pending_root_guard',
+    operationId:x.operationId,requestJson:result.requestJson,
+    safeToReplay:false
+  });
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   try{

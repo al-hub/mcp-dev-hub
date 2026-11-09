@@ -14,6 +14,10 @@ import {assertPinnedProtectedLauncher,withProtectedOperationGuard}
   from '../src/ops/protected-update-operation-guard.mjs';
 import {parseProtectedUpdateRequest}
   from '../src/ops/protected-update-request.mjs';
+import {parseProtectedRoutineIntent}
+  from '../src/ops/protected-update-routine-intent.mjs';
+import {collectFixedRoutineIssuerAttestations}
+  from './protected-update-issuer-collect.mjs';
 import {assertFixedRootProtectedUpdateLayout}
   from '../src/ops/protected-update-root-layout.mjs';
 import {preflightAuthenticatedProtectedUpdate,readRootProtectedUpdateTrust}
@@ -139,13 +143,25 @@ export async function applyOneProtectedUpdateFixedRoot(){
       process.getgroups(),process.getgid()))deny();
   }catch{deny();}
   const raw=await readRequest();
-  const req=parseProtectedUpdateRequest(raw);
   assertFixedRootProtectedUpdateLayout();
-  // Authenticate the Worker-provided request BEFORE taking the durable
-  // exclusive lock. Invalid signatures, expired review or failed GitHub
-  // queries must never create a permanent root-side denial of service.
+  // Confirm trusted launcher and root pins BEFORE any routine staging write.
+  // A version-2 intent still requires real external Codex/Bot/CI evidence,
+  // and it cannot itself sign any approval.
   const launcherHash=pinnedLauncherDigest();
   const trust=readRootProtectedUpdateTrust();
+  let candidate;
+  try{candidate=JSON.parse(raw);}catch{deny();}
+  let req;
+  if(candidate?.version===2){
+    const intent=parseProtectedRoutineIntent(raw);
+    const collected=await collectFixedRoutineIssuerAttestations({intent});
+    req=parseProtectedUpdateRequest(collected.requestJson);
+  }else{
+    req=parseProtectedUpdateRequest(raw);
+  }
+  // Authenticate the complete signed request BEFORE taking the durable
+  // root mutation lock. Invalid or stale proofs may not alter controller.
+
   assertFixedOperationalIssuerIsolation();
   const uid=privateDecimal('worker-uid');
   const gid=privateDecimal('worker-gid');
