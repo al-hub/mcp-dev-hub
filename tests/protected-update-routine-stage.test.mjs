@@ -72,7 +72,7 @@ test('signed Codex, distinct role keys and exact head/pack guard staging',()=>{
  for(const patch of [
   {rootTrust:{...f.rootTrust,
    reviewerPublicKeyPem:f.rootTrust.codexReviewerPublicKeyPem}},
-  {context:{...f.context,operationId:'d'.repeat(32)}},
+  {context:{...f.context,operationId:'invalid-operation-id'}},
   {officialApproval:{...f.officialApproval,
    reviewEvidenceId:'verified-wrong-evidence'}},
   {codexReceipt:{...f.codexReceipt,
