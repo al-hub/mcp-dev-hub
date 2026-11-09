@@ -1,7 +1,7 @@
-// #35 fixed signed App-acceptance gate: source-only, never installation authority.
-// A root-owned JSON file or a checksum from its directory is NOT independent
-// approval. Only a canonical, fresh Ed25519 claim from the separately pinned
-// approval principal may endorse the evidence used by the fixed App publisher.
+// #35 uninstalled, fixed two-principal App acceptance gate.
+// Canonical packet + domain-separated reviewer/approval Ed25519 signatures
+// bind facts; they do NOT prove real-world evidence without separately
+// operated, immutable, audited issuer roles and independently checked gates.
 import {createHash,createPublicKey,verify} from 'node:crypto';
 
 export const APP_ACCEPTANCE_DOMAIN='mcp-dev-hub/app-acceptance/v1\n';
@@ -13,22 +13,14 @@ const SHA=/^[a-f0-9]{40}$/,HASH=/^[a-f0-9]{64}$/;
 const SIG=/^[A-Za-z0-9+/]{86}==$/;
 const deny=()=>{throw Error('independent_app_acceptance_denied');};
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
-export function verifySignedAppAcceptance({
- raw,signatureBase64,pinnedApprovalPublicKeyPem,
- reviewSignatureBase64,pinnedReviewerPublicKeyPem,
- head,base,ciRunId,packDigest,nowMs
-}={}){
+const der=k=>k.export({type:'spki',format:'der'});
+function canonical(raw,head,base,ciRunId,packDigest,nowMs){
  if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>12000||
-    typeof signatureBase64!=='string'||!SIG.test(signatureBase64)||
-    typeof reviewSignatureBase64!=='string'||!SIG.test(reviewSignatureBase64)||
-    typeof pinnedApprovalPublicKeyPem!=='string'||
-    typeof pinnedReviewerPublicKeyPem!=='string'||
     !SHA.test(head||'')||!SHA.test(base||'')||head===base||
     !HASH.test(packDigest||'')||
     !Number.isSafeInteger(ciRunId)||ciRunId<=0||
     !Number.isSafeInteger(nowMs)||nowMs<=0)deny();
- let p;
- try{p=JSON.parse(raw);}catch{deny();}
+ let p;try{p=JSON.parse(raw);}catch{deny();}
  if(!object(p)||Object.keys(p).length!==KEYS.length||
     !KEYS.every(k=>Object.hasOwn(p,k))||JSON.stringify(p)!==raw||
     p.version!==2||p.repository!=='al-hub/mcp-dev-hub'||
@@ -41,25 +33,47 @@ export function verifySignedAppAcceptance({
     !Number.isSafeInteger(p.expiresAtMs)||
     p.issuedAtMs>nowMs||p.expiresAtMs<=nowMs||
     p.expiresAtMs-p.issuedAtMs>120000)deny();
- try{
-  const key=createPublicKey(pinnedApprovalPublicKeyPem);
-  const reviewer=createPublicKey(pinnedReviewerPublicKeyPem);
-  if(key.asymmetricKeyType!=='ed25519'||
-     reviewer.asymmetricKeyType!=='ed25519'||
-     key.export({type:'spki',format:'der'}).equals(
-      reviewer.export({type:'spki',format:'der'})))deny();
-  for(const [signature,domain,pub] of [
-   [signatureBase64,APP_ACCEPTANCE_DOMAIN,key],
-   [reviewSignatureBase64,APP_ACCEPTANCE_REVIEW_DOMAIN,reviewer]
-  ]){
-   const sig=Buffer.from(signature,'base64');
-   if(sig.length!==64||sig.toString('base64')!==signature||
-      !verify(null,Buffer.from(domain+raw),pub,sig))deny();
-  }
- }catch{deny();}
+ return Object.freeze(p);
+}
+function keyOf(pem){
+ let k;try{k=createPublicKey(pem);}catch{deny();}
+ if(k.asymmetricKeyType!=='ed25519')deny();
+ return k;
+}
+function signed(raw,signatureBase64,domain,pub){
+ if(typeof signatureBase64!=='string'||!SIG.test(signatureBase64))deny();
+ const sig=Buffer.from(signatureBase64,'base64');
+ if(sig.length!==64||sig.toString('base64')!==signatureBase64||
+    !verify(null,Buffer.from(domain+raw),pub,sig))deny();
+}
+/** Independent reviewer must have first audited the genuine packet evidence.
+ * This function only checks the cryptographic handoff to the distinct approval
+ * principal; it cannot certify physical gate provenance on its own.
+ */
+export function verifyAppAcceptanceReviewer({
+ raw,reviewSignatureBase64,pinnedReviewerPublicKeyPem,
+ head,base,ciRunId,packDigest,nowMs
+}={}){
+ const p=canonical(raw,head,base,ciRunId,packDigest,nowMs);
+ signed(raw,reviewSignatureBase64,APP_ACCEPTANCE_REVIEW_DOMAIN,
+    keyOf(pinnedReviewerPublicKeyPem));
+ return Object.freeze({packet:p,
+  packetSha256:createHash('sha256').update(raw).digest('hex')});
+}
+export function verifySignedAppAcceptance({
+ raw,signatureBase64,pinnedApprovalPublicKeyPem,
+ reviewSignatureBase64,pinnedReviewerPublicKeyPem,
+ head,base,ciRunId,packDigest,nowMs
+}={}){
+ const reviewer=verifyAppAcceptanceReviewer({
+  raw,reviewSignatureBase64,pinnedReviewerPublicKeyPem,
+  head,base,ciRunId,packDigest,nowMs
+ });
+ const key=keyOf(pinnedApprovalPublicKeyPem);
+ if(der(key).equals(der(keyOf(pinnedReviewerPublicKeyPem))))deny();
+ signed(raw,signatureBase64,APP_ACCEPTANCE_DOMAIN,key);
  return Object.freeze({
-  packet:Object.freeze(p),
-  packetSha256:createHash('sha256').update(raw).digest('hex'),
-  expiresAtMs:p.expiresAtMs
+  packet:reviewer.packet,packetSha256:reviewer.packetSha256,
+  expiresAtMs:reviewer.packet.expiresAtMs
  });
 }
