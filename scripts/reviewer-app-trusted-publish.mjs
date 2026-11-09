@@ -93,13 +93,10 @@ export async function publishFixedTrustedAppApproval(){
  });
  if(client.actor!=='mcp-dev-hub-ai-reviewer[bot]')deny();
  const api=fenceApprovalPost({
-  api:async(method,path,body)=>{
-   // Re-check independent approval at the irreversible POST boundary:
-   // a packet valid at preflight may expire during live GitHub queries.
-   if(method==='POST'&&
-      path==='/repos/al-hub/mcp-dev-hub/pulls/39/reviews')accepted();
-   return client.api(method,path,body);
-  },directory:STATE,owner:0,
+  api:client.api,directory:STATE,owner:0,
+  // Check again immediately before writing the irreversible POST intent;
+  // an expired signature must not create a false UNKNOWN POST outcome.
+  validateBeforePost:accepted,
   head:packet.head,base:packet.base,evidenceId:packet.evidence.evidenceId
  });
  const result=await publishIndependentApproval({...args,api,actor:client.actor});
