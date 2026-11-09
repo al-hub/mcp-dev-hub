@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
+import {mkdtempSync,mkdirSync,existsSync,readFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {parseRoutineDispatchFence,acquireRoutineDispatchFence,
  releaseTerminalRoutineDispatchFence,requireNoRoutineDispatchFence}
@@ -34,4 +37,59 @@ test('guard is part of exact fixed package; checkout root apply denied',()=>{
  });
  assert.equal(result.status,1);
  assert.equal(result.stdout,'');
+});
+
+/** Nonroot integration simulation: use the production fence implementation
+ * unchanged except its fixed root gate and fixed OPS path, which are
+ * deliberately remapped to an isolated test directory. No sudo/OS writes.
+ */
+async function simulatedFence(ops,{raceAfterAcquire=false}={}){
+ const path=new URL('../src/ops/protected-update-routine-dispatch-fence.mjs',
+  import.meta.url);
+ let src=readFileSync(path,'utf8');
+ const rootPath="const OPS='/var/lib/mcp-dev-hub-signers/routine-operations';";
+ assert.equal(src.split(rootPath).length,2);
+ src=src.replace(rootPath,'const OPS='+JSON.stringify(ops)+';');
+ const guard=/function root\(\)\{[\s\S]*?\n\}\nfunction directorySync\(\)/;
+ assert.match(src,guard);
+ src=src.replace(guard,'function root() {}\nfunction directorySync()');
+ if(raceAfterAcquire){
+  const start='function slotAbsent(operationId){';
+  assert.equal(src.split(start).length,2);
+  // Only the scheduling result of the first pre-lock lookup is faked.
+  // All actual file syscalls, lock writes, fsync and cleanup remain intact.
+  src=src.replace(start,`let firstSlotCheck=true;
+function slotAbsent(operationId){
+ if(firstSlotCheck){firstSlotCheck=false;return true;}`);
+ }
+ const encoded=Buffer.from(src).toString('base64');
+ return await import('data:text/javascript;base64,'+encoded);
+}
+test('replayed completed routine slot is rejected without poisoning global fence',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-lock-'));
+ const ops=join(tmp,'routine-operations'),next='d'.repeat(32);
+ try{
+  mkdirSync(ops,{mode:0o755});
+  const f=await simulatedFence(ops);
+  mkdirSync(join(ops,ID),{mode:0o700});
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID),
+   /routine_dispatch_unknown_or_denied/);
+  assert.equal(existsSync(join(ops,'.active-routine')),false);
+  assert.equal(f.acquireRoutineDispatchFence(next).operationId,next);
+  assert.equal(existsSync(join(ops,'.active-routine')),true);
+  f.releaseTerminalRoutineDispatchFence(next,'verified');
+  assert.equal(existsSync(join(ops,'.active-routine')),false);
+ }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+test('old routine slot appearing between precheck and acquisition releases only fresh lock',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-race-'));
+ const ops=join(tmp,'routine-operations');
+ try{
+  mkdirSync(ops,{mode:0o755});
+  mkdirSync(join(ops,ID),{mode:0o700});
+  const f=await simulatedFence(ops,{raceAfterAcquire:true});
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID),
+   /routine_dispatch_unknown_or_denied/);
+  assert.equal(existsSync(join(ops,'.active-routine')),false);
+ }finally{rmSync(tmp,{recursive:true,force:true});}
 });
