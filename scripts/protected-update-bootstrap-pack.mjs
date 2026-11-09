@@ -28,6 +28,7 @@ const SOURCE=Object.freeze([
   'scripts/protected-update-approval-issuer.mjs',
   'scripts/protected-update-routine-review-issuer.mjs',
   'scripts/protected-update-routine-approval-issuer.mjs',
+  'scripts/protected-update-app-acceptance-approval-issuer.mjs',
   'scripts/protected-update-bootstrap-restore.mjs',
   'scripts/protected-update-bootstrap-pack.mjs',
   'scripts/protected-update-controller-wrapper.mjs',
