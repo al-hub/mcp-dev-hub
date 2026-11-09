@@ -5,6 +5,8 @@
 import {createHash,createPublicKey,verify} from 'node:crypto';
 
 export const APP_ACCEPTANCE_DOMAIN='mcp-dev-hub/app-acceptance/v1\n';
+export const APP_ACCEPTANCE_REVIEW_DOMAIN=
+ 'mcp-dev-hub/app-acceptance-independent-review/v1\n';
 const KEYS=['version','repository','scope','attestor','prNumber','head','base',
  'ciRunId','packDigest','evidence','protectionEvidence','issuedAtMs','expiresAtMs'];
 const SHA=/^[a-f0-9]{40}$/,HASH=/^[a-f0-9]{64}$/;
@@ -12,12 +14,15 @@ const SIG=/^[A-Za-z0-9+/]{86}==$/;
 const deny=()=>{throw Error('independent_app_acceptance_denied');};
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 export function verifySignedAppAcceptance({
- raw,signatureBase64,pinnedApprovalPublicKeyPem,head,base,ciRunId,
- packDigest,nowMs
+ raw,signatureBase64,pinnedApprovalPublicKeyPem,
+ reviewSignatureBase64,pinnedReviewerPublicKeyPem,
+ head,base,ciRunId,packDigest,nowMs
 }={}){
  if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>12000||
     typeof signatureBase64!=='string'||!SIG.test(signatureBase64)||
+    typeof reviewSignatureBase64!=='string'||!SIG.test(reviewSignatureBase64)||
     typeof pinnedApprovalPublicKeyPem!=='string'||
+    typeof pinnedReviewerPublicKeyPem!=='string'||
     !SHA.test(head||'')||!SHA.test(base||'')||head===base||
     !HASH.test(packDigest||'')||
     !Number.isSafeInteger(ciRunId)||ciRunId<=0||
@@ -38,10 +43,19 @@ export function verifySignedAppAcceptance({
     p.expiresAtMs-p.issuedAtMs>120000)deny();
  try{
   const key=createPublicKey(pinnedApprovalPublicKeyPem);
-  if(key.asymmetricKeyType!=='ed25519')deny();
-  const sig=Buffer.from(signatureBase64,'base64');
-  if(sig.length!==64||sig.toString('base64')!==signatureBase64||
-     !verify(null,Buffer.from(APP_ACCEPTANCE_DOMAIN+raw),key,sig))deny();
+  const reviewer=createPublicKey(pinnedReviewerPublicKeyPem);
+  if(key.asymmetricKeyType!=='ed25519'||
+     reviewer.asymmetricKeyType!=='ed25519'||
+     key.export({type:'spki',format:'der'}).equals(
+      reviewer.export({type:'spki',format:'der'})))deny();
+  for(const [signature,domain,pub] of [
+   [signatureBase64,APP_ACCEPTANCE_DOMAIN,key],
+   [reviewSignatureBase64,APP_ACCEPTANCE_REVIEW_DOMAIN,reviewer]
+  ]){
+   const sig=Buffer.from(signature,'base64');
+   if(sig.length!==64||sig.toString('base64')!==signature||
+      !verify(null,Buffer.from(domain+raw),pub,sig))deny();
+  }
  }catch{deny();}
  return Object.freeze({
   packet:Object.freeze(p),
