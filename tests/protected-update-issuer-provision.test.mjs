@@ -10,6 +10,7 @@ import {Script} from 'node:vm';
 import {
   verifyRootSignerProvisionPlan,provisionIndependentProtectedIssuersOnce,
   requirePinnedCodexPublicKey,decodeRootTrustBytes,
+  verifyOwnerPinnedExternalGateKeys,
   PROTECTED_ISSUER_KEYGEN_PROGRAM
 } from '../scripts/protected-update-issuer-provision.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
@@ -128,4 +129,40 @@ finally{fs.closeSync(fd);}`;
       assert.equal(r.stdout,String(0o444));
     }
   }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test('external proof key anchors are owner supplied, canonical, independently distinct',()=>{
+ const keys=Array.from({length:4},()=>generateKeyPairSync('ed25519'));
+ const pem=k=>k.publicKey.export({type:'spki',format:'pem'});
+ const good={
+  devicePublicPem:pem(keys[0]),
+  rootPublicPem:pem(keys[1]),codexPublicPem:pem(keys[2])
+ };
+ const result=verifyOwnerPinnedExternalGateKeys(good);
+ assert.equal(result.externallyProvisioned,true);
+ assert.equal(result.privateKeysGenerated,false);
+ assert.equal(result.installerAuthorized,false);
+ for(const bad of [
+  {...good,rootPublicPem:good.devicePublicPem},
+  {...good,devicePublicPem:good.codexPublicPem},
+  {...good,rootPublicPem:good.codexPublicPem},
+  {...good,devicePublicPem:undefined},
+  {...good,rootPublicPem:pem(keys[3]).trim()},
+  {...good,codexPublicPem:keys[3].privateKey.export({
+   type:'pkcs8',format:'pem'
+  })}
+ ])denied(()=>verifyOwnerPinnedExternalGateKeys(bad));
+});
+test('root provisioner must authenticate external keys before account creation',()=>{
+ const source=readFileSync(new URL(
+  '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+ const preflight=source.indexOf('const external=verifyOwnerPinnedExternalGateKeys(');
+ const accounts=source.indexOf("spawnSync('/usr/sbin/useradd'");
+ assert.ok(preflight>0&&accounts>preflight);
+ assert.ok(source.includes(
+  "writePublicIssuerFile('app-device-public.pem',external.devicePublicPem)"));
+ assert.ok(source.includes(
+  "writePublicIssuerFile('app-root-public.pem',external.rootPublicPem)"));
+ assert.ok(source.includes(
+  "writePublicIssuerFile('approval-public.pem',created.stdout)"));
 });
