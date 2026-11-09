@@ -50,10 +50,34 @@ function physicalOriginal(){
       st.size!==prior.size||raw.length!==st.size||
       after.ino!==st.ino||after.dev!==st.dev||
       after.size!==st.size||after.mtimeMs!==st.mtimeMs)deny();
-   files.push({name,bytes:raw.length,sha256:hash(raw)});
+   files.push({name,bytes:raw.length,sha256:hash(raw),
+    device:st.dev,inode:st.ino,mtimeMs:st.mtimeMs});
   }finally{closeSync(fd);}
  }
  return files;
+}
+/** Defend original-file TOCTOU across network fetches. The latest root
+ * physical snapshot MUST equal the authenticated prior snapshot immediately
+ * before signing. A file replacement with identical bytes is also rejected.
+ * This remains a pure check; neither snapshot creates authority on its own.
+ */
+export function verifyUnchangedPhysicalOriginal(before,after){
+ if(!Array.isArray(before)||!Array.isArray(after)||
+    before.length!==NAMES.length||after.length!==NAMES.length)deny();
+ for(let i=0;i<NAMES.length;i++){
+  const a=before[i],b=after[i];
+  if(!a||!b||a.name!==NAMES[i]||b.name!==NAMES[i]||
+     !Number.isSafeInteger(a.bytes)||a.bytes<1||a.bytes>256*1024||
+     a.bytes!==b.bytes||
+     !/^[a-f0-9]{64}$/.test(a.sha256||'')||
+     a.sha256!==b.sha256||
+     !Number.isSafeInteger(a.device)||a.device<0||
+     !Number.isSafeInteger(a.inode)||a.inode<=0||
+     a.device!==b.device||a.inode!==b.inode||
+     !Number.isFinite(a.mtimeMs)||a.mtimeMs<0||
+     a.mtimeMs!==b.mtimeMs)deny();
+ }
+ return true;
 }
 function validateLiveAcceptanceGates(p,context,codex,nowMs){
  if(p.head!==context.head||p.base!==context.base||
@@ -146,6 +170,9 @@ export async function issueFixedIndependentAppAcceptanceApproval(){
  });
  validateLiveAcceptanceGates(reviewer.packet,context,
   {...codex,reviewJson:receipt.reviewJson},finalTime);
+ // The network request must not leave an old file snapshot eligible for
+ // a later approval signature. Fail on replacement even with same SHA.
+ verifyUnchangedPhysicalOriginal(originals,physicalOriginal());
  const signatureBase64=signFixedRolePayload({
   role:'approval',domain:APP_ACCEPTANCE_DOMAIN,json:handoff.raw
  });
