@@ -202,6 +202,26 @@ export function requirePinnedCodexPublicKey(pem){
   if(canonical!==pem)deny();
   return canonical;
 }
+/** Owner-pinned external gate attestor identities. These must be installed
+ * from genuine independent device/root producers BEFORE any account creation,
+ * not manufactured by the root provisioner or the AI coding Worker.
+ */
+export function verifyOwnerPinnedExternalGateKeys({
+ devicePublicPem,rootPublicPem,codexPublicPem
+}={}){
+ const device=requirePinnedCodexPublicKey(devicePublicPem);
+ const independentRoot=requirePinnedCodexPublicKey(rootPublicPem);
+ const codex=requirePinnedCodexPublicKey(codexPublicPem);
+ const der=p=>createPublicKey(p).export({type:'spki',format:'der'});
+ if(der(device).equals(der(independentRoot))||
+    der(device).equals(der(codex))||
+    der(independentRoot).equals(der(codex)))deny();
+ return Object.freeze({
+  devicePublicPem:device,rootPublicPem:independentRoot,
+  externallyProvisioned:true,privateKeysGenerated:false,
+  installerAuthorized:false
+ });
+}
 export function verifyRootSignerProvisionPlan({
   workerUid,workerGid,accountNames,rootPackVerified
 }={}){
@@ -265,6 +285,16 @@ export function provisionIndependentProtectedIssuersOnce(){
     trust('codex-reviewer-public.pem',4096,true));
   const codexPublicDer=createPublicKey(codexPublicPem)
     .export({type:'spki',format:'der'});
+  // Two new external PUBLIC trust anchors must already be approved by the
+  // owner. No key generation, account creation or other side effect occurs
+  // until their identities are separately pinned and pairwise distinct.
+  const external=verifyOwnerPinnedExternalGateKeys({
+   devicePublicPem:trust('app-device-public.pem',4096,true),
+   rootPublicPem:trust('app-root-public.pem',4096,true),
+   codexPublicPem
+  });
+  const externalDers=[external.devicePublicPem,external.rootPublicPem]
+    .map(p=>createPublicKey(p).export({type:'spki',format:'der'}));
   const identities=[];
   // NO root-owned private keys are generated: each issuer child receives a
   // fixed literal keygen program and drops to its own OS account identity.
@@ -304,6 +334,11 @@ export function provisionIndependentProtectedIssuersOnce(){
   writePublicIssuerFile('approved-bootstrap-context.json',
     JSON.stringify(pinnedContext));
   writePublicIssuerFile('codex-reviewer-public.pem',codexPublicPem);
+  // Stage only owner-approved PUBLIC key copies for the nonroot reviewer.
+  // Actual signed gate receipts must be separately generated/authenticated;
+  // this provisioner neither invents nor signs any device/root gate PASS.
+  writePublicIssuerFile('app-device-public.pem',external.devicePublicPem);
+  writePublicIssuerFile('app-root-public.pem',external.rootPublicPem);
   for(const {role,uid,gid} of identities){
     const dirPath=BASE+'/issuer-'+role;
     mkdirSync(dirPath,{mode:0o700});
@@ -321,7 +356,9 @@ export function provisionIndependentProtectedIssuersOnce(){
       deny();
     const key=createPublicKey(created.stdout);
     if(key.asymmetricKeyType!=='ed25519'||
-       key.export({type:'spki',format:'der'}).equals(codexPublicDer))deny();
+       key.export({type:'spki',format:'der'}).equals(codexPublicDer)||
+       externalDers.some(k=>k.equals(
+        key.export({type:'spki',format:'der'}))))deny();
     const keyInfo=lstatSync(privatePath);
     if(!keyInfo.isFile()||keyInfo.isSymbolicLink()||
        keyInfo.uid!==uid||keyInfo.gid!==gid||
@@ -332,6 +369,8 @@ export function provisionIndependentProtectedIssuersOnce(){
     writeRootFile(role+'-gid',String(gid));
     if(role==='reviewer')
       writePublicIssuerFile('reviewer-public.pem',created.stdout);
+    if(role==='approval')
+      writePublicIssuerFile('approval-public.pem',created.stdout);
     copyIssuerReadonlyToken(role,uid,gid);
   }
   syncDir(BASE);syncDir(TRUST);
