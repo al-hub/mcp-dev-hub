@@ -13,7 +13,7 @@ import {parsePinnedBootstrapIssuerContext}
 import {parsePinnedRoutineIssuerContext,ROUTINE_REVIEW_DOMAIN,
   ROUTINE_APPROVAL_DOMAIN}
   from './protected-update-routine-issuer.mjs';
-import {APP_ACCEPTANCE_DOMAIN}
+import {APP_ACCEPTANCE_DOMAIN,assertFixedAppApprovalSigningScope}
   from './protected-update-app-acceptance.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval}
@@ -147,8 +147,7 @@ export async function fetchFixedIssuerEvidence(context,token){
 }
 export function signFixedRolePayload({role,domain,json}={}){
   if(!Object.hasOwn(ROLE,role)||
-     typeof domain!=='string'||typeof json!=='string'||
-     Buffer.byteLength(json,'utf8')>2048)deny();
+     typeof domain!=='string'||typeof json!=='string')deny();
   const allowed=role==='reviewer'
     ?['mcp-dev-hub/bootstrap-independent-review/v1\n',
       ROUTINE_REVIEW_DOMAIN]
@@ -157,9 +156,12 @@ export function signFixedRolePayload({role,domain,json}={}){
   if(role==='approval'&&domain===APP_ACCEPTANCE_DOMAIN){
    // Only the fixed, audited App acceptance role may use this new domain.
    // Existing bootstrap/routine signers cannot silently widen authority.
-   if(process.argv.length!==2||process.argv[1]!==
-       CODE+'/scripts/protected-update-app-acceptance-approval-issuer.mjs')deny();
-  }else if(!allowed.includes(domain))deny();
+   try{assertFixedAppApprovalSigningScope({
+    role,domain,json,entryPath:process.argv[1],
+    argvLength:process.argv.length
+   });}catch{deny();}
+  }else if(!allowed.includes(domain)||
+    Buffer.byteLength(json,'utf8')>2048)deny();
   const {privateKey}=readPrivateIssuerMaterial(role);
   return sign(null,Buffer.from(domain+json),privateKey)
     .toString('base64');
