@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign} from 'node:crypto';
-import {APP_ACCEPTANCE_DOMAIN,verifySignedAppAcceptance}
+import {APP_ACCEPTANCE_DOMAIN,APP_ACCEPTANCE_REVIEW_DOMAIN,
+ verifySignedAppAcceptance}
  from '../src/ops/protected-update-app-acceptance.mjs';
 
 const head='a'.repeat(40),base='b'.repeat(40),packDigest='c'.repeat(64);
 const now=1900000000000;
 const approval=generateKeyPairSync('ed25519');
+const reviewer=generateKeyPairSync('ed25519');
 const unrelated=generateKeyPairSync('ed25519');
 const pem=k=>k.publicKey.export({type:'spki',format:'pem'});
 const packet=()=>({
@@ -24,7 +26,11 @@ function fixture(p=packet(),key=approval){
  const raw=JSON.stringify(p);
  const signatureBase64=sign(null,Buffer.from(APP_ACCEPTANCE_DOMAIN+raw),
   key.privateKey).toString('base64');
- return {raw,signatureBase64,pinnedApprovalPublicKeyPem:pem(approval),
+ const reviewSignatureBase64=sign(null,Buffer.from(APP_ACCEPTANCE_REVIEW_DOMAIN+raw),
+  reviewer.privateKey).toString('base64');
+ return {raw,signatureBase64,reviewSignatureBase64,
+  pinnedReviewerPublicKeyPem:pem(reviewer),
+  pinnedApprovalPublicKeyPem:pem(approval),
   head,base,ciRunId:123,packDigest,nowMs:now};
 }
 const deny=x=>assert.throws(()=>verifySignedAppAcceptance(x),
@@ -40,6 +46,13 @@ test('JSON, same-owner checksum and absent signature cannot grant App approval',
  const f=fixture();
  for(const changed of [
   {...f,signatureBase64:undefined},
+  {...f,reviewSignatureBase64:undefined},
+  {...f,reviewSignatureBase64:f.signatureBase64},
+  {...f,pinnedReviewerPublicKeyPem:pem(approval)},
+  {...f,pinnedReviewerPublicKeyPem:pem(unrelated)},
+  {...f,reviewSignatureBase64:sign(null,
+    Buffer.from(APP_ACCEPTANCE_DOMAIN+f.raw),
+    reviewer.privateKey).toString('base64')},
   {...f,signatureBase64:'a'.repeat(88)},
   {...f,raw:JSON.stringify({...packet(),evidence:{verdict:'passed'}})},
   {...f,signatureBase64:fixture(packet(),unrelated).signatureBase64},
