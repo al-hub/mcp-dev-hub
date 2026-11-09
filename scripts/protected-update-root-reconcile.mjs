@@ -8,6 +8,8 @@ import {assertFixedRootProtectedUpdateLayout}
   from '../src/ops/protected-update-root-layout.mjs';
 import {reconcileProtectedUpdateCandidate}
   from '../src/ops/protected-update-reconcile.mjs';
+import {inspectFixedRoutineIssuerOperation}
+  from '../src/ops/protected-update-routine-reconcile.mjs';
 
 const SELF='/usr/local/lib/mcp-dev-hub/protected-updater/code/scripts/protected-update-root-reconcile.mjs';
 const ROOT='/usr/local/lib/mcp-dev-hub';
@@ -51,6 +53,13 @@ export async function reconcileOneProtectedUpdateFixedRoot(){
   const result=reconcileProtectedUpdateCandidate({
     root:ROOT,stateDir:STATE,operationId
   });
+  // A completed/unknown signing attempt may exist before a transaction
+  // journal was created. Do NOT misreport absence as permission to retry.
+  if(result.state==='absent'){
+    const issuer=inspectFixedRoutineIssuerOperation(operationId);
+    if(issuer.safeToReplay!==false)deny();
+    return issuer;
+  }
   if(result.safeToReplay!==false)deny();
   return result;
 }
