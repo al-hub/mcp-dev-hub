@@ -39,6 +39,30 @@ function readFence(){
   return parseRoutineDispatchFence(readFileSync(fd,'utf8'));
  }finally{closeSync(fd);}
 }
+/** Root-only readback: an existing active fence is never a retry grant.
+ * The returned state does not disclose another operation's identifier.
+ */
+export function inspectRoutineDispatchFence(operationId){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0||
+    !ID.test(operationId||''))deny();
+ try{root();}catch(e){
+  if(e.code==='ENOENT')return Object.freeze({
+   state:'not_provisioned',safeToReplay:false});
+  throw e;
+ }
+ let s;try{s=lstatSync(LOCK);}catch(e){
+  if(e.code==='ENOENT')return Object.freeze({
+   state:'inactive',safeToReplay:false});
+  throw e;
+ }
+ if(!s.isFile()||s.isSymbolicLink())deny();
+ const actual=readFence();
+ return Object.freeze({
+  state:actual.operationId===operationId
+    ?'active_same_operation_unknown':'other_operation_active_unknown',
+  safeToReplay:false
+ });
+}
 export function acquireRoutineDispatchFence(operationId){
  root();
  if(!ID.test(operationId||''))deny();

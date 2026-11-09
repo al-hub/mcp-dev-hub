@@ -6,6 +6,8 @@ import {constants,closeSync,fstatSync,lstatSync,openSync,
   readFileSync,readdirSync} from 'node:fs';
 import {parsePinnedRoutineIssuerContext}
   from './protected-update-routine-issuer.mjs';
+import {inspectRoutineDispatchFence}
+  from './protected-update-routine-dispatch-fence.mjs';
 import {parseProtectedUpdateRequest}
   from './protected-update-request.mjs';
 const ROOT='/var/lib/mcp-dev-hub-signers';
@@ -94,10 +96,15 @@ export function inspectFixedRoutineIssuerOperation(operationId){
  for(const p of ['/','/var','/var/lib',ROOT])directory(p);
  let os;
  try{os=lstatSync(OPS);}catch(e){
-  if(e.code==='ENOENT')return Object.freeze({
-   operationId,state:'not_staged',safeToReplay:false,
-   requiresReconciliation:true
-  });
+  if(e.code==='ENOENT'){
+   const fence=inspectRoutineDispatchFence(operationId);
+   return Object.freeze({
+    operationId,
+    state:fence.state==='active_same_operation_unknown'
+      ?'dispatch_unknown_before_slot':'not_staged',
+    safeToReplay:false,requiresReconciliation:true
+   });
+  }
   throw e;
  }
  if(!os.isDirectory()||os.isSymbolicLink()||os.uid!==0||
@@ -105,10 +112,15 @@ export function inspectFixedRoutineIssuerOperation(operationId){
  const slot=OPS+'/'+operationId;
  let st;
  try{st=lstatSync(slot);}catch(e){
-  if(e.code==='ENOENT')return Object.freeze({
-   operationId,state:'not_staged',safeToReplay:false,
-   requiresReconciliation:true
-  });
+  if(e.code==='ENOENT'){
+   const fence=inspectRoutineDispatchFence(operationId);
+   return Object.freeze({
+    operationId,
+    state:fence.state==='active_same_operation_unknown'
+      ?'dispatch_unknown_before_slot':'not_staged',
+    safeToReplay:false,requiresReconciliation:true
+   });
+  }
   throw e;
  }
  if(!st.isDirectory()||st.isSymbolicLink()||st.uid!==0||
