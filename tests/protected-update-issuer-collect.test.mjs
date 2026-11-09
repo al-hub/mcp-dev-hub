@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {verifyCollectedBootstrapSignatures,
   collectFixedBootstrapIssuerAttestations,collectFixedAppAcceptanceAttestations,
-  chooseFixedAppCollectionPhase}
+  chooseFixedAppCollectionPhase,preflightFixedAppCodexReceipt}
   from '../scripts/protected-update-issuer-collect.mjs';
 import {
   buildBootstrapReviewerClaim,buildBootstrapApprovalClaim,
@@ -75,8 +75,9 @@ function scenario(){
   const approval={approvalJson:approve.approvalJson,
     approvalSignatureBase64:signed(approver,
       BOOTSTRAP_APPROVAL_DOMAIN,approve.approvalJson)};
-  return {context,review,approval,rootTrust:{
+  return {context,review,approval,codexReceipt,rootTrust:{
     reviewerPublicKeyPem:pem(reviewer),
+    codexReviewerPublicKeyPem:pem(codexSigner),
     approvalPublicKeyPem:pem(approver)
   }};
 }
@@ -206,4 +207,49 @@ test('routine and App root collectors drop supplementary groups before role disp
   assert.ok(body.slice(0,run).includes(
    "typeof process.setgroups!=='function'"));
  }
+});
+
+test('Codex preflight rejects stale, unsigned or mismatched receipt before issuer dispatch',()=>{
+ const f=scenario();
+ const good={
+  context:f.context,receipt:f.codexReceipt,
+  trust:f.rootTrust,nowMs:NOW
+ };
+ const ok=preflightFixedAppCodexReceipt(good);
+ assert.match(ok.reviewDigest,/^[a-f0-9]{64}$/);
+ assert.equal(ok.safeToInstall,false);
+ const deny=patch=>assert.throws(
+  ()=>preflightFixedAppCodexReceipt({...good,...patch}),
+  /protected_issuer_collect_denied_or_unknown/
+ );
+ for(const patch of [
+  {nowMs:NOW+150001},
+  {nowMs:0},
+  {context:{...f.context,head:'9'.repeat(40)}},
+  {context:{...f.context,base:'8'.repeat(40)}},
+  {context:{...f.context,prNumber:38}},
+  {receipt:{...f.codexReceipt,reviewSignatureBase64:'a'.repeat(88)}},
+  {receipt:{...f.codexReceipt,reviewJson:'{}'}},
+  {receipt:{...f.codexReceipt,codexReviewerPublicKeyPem:
+    f.rootTrust.reviewerPublicKeyPem}},
+  {trust:{...f.rootTrust,reviewerPublicKeyPem:
+    f.rootTrust.approvalPublicKeyPem}},
+  {trust:{...f.rootTrust,codexReviewerPublicKeyPem:
+    f.rootTrust.approvalPublicKeyPem}},
+  {receipt:undefined}, {trust:undefined}
+ ])deny(patch);
+});
+test('App root collector never consumes reviewer intent before Codex preflight',()=>{
+ const source=readFileSync(new URL(
+  '../scripts/protected-update-issuer-collect.mjs',import.meta.url),'utf8');
+ const start=source.indexOf(
+  'export async function collectFixedAppAcceptanceAttestations(');
+ assert.ok(start>=0);
+ const app=source.slice(start);
+ const first=app.indexOf('preflightFixedAppCodexReceipt(');
+ const stage=app.indexOf("writeRoot(BASE+'/app-gate-receipts.json'");
+ const fence=app.indexOf("writeRoot(TRUST+'/app-review-dispatch.intent.json'");
+ assert.ok(first>=0 && stage>first && fence>stage);
+ const groupDrop=app.indexOf('process.setgroups([])');
+ assert.ok(groupDrop>first && groupDrop<stage);
 });
