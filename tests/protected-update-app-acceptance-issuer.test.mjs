@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {issueFixedIndependentAppAcceptanceApproval}
+import {issueFixedIndependentAppAcceptanceApproval,
+ verifyUnchangedPhysicalOriginal}
  from '../scripts/protected-update-app-acceptance-approval-issuer.mjs';
 import {APP_ACCEPTANCE_DOMAIN,assertFixedAppApprovalSigningScope}
  from '../src/ops/protected-update-app-acceptance.mjs';
@@ -59,4 +60,47 @@ test('large legitimate App packet allowed only for literal protected approver',(
   assert.throws(()=>assertFixedAppApprovalSigningScope({...ok,...changed}),
     /independent_app_acceptance_denied/);
  }
+});
+
+test('exact unchanged original identities required after network round-trip',()=>{
+ const prior=[
+  {name:'ai-github-canary-policy.mjs',bytes:200,sha256:'a'.repeat(64),
+   device:100,inode:20,mtimeMs:1000},
+  {name:'ai-github-canary.mjs',bytes:210,sha256:'b'.repeat(64),
+   device:100,inode:21,mtimeMs:1000}
+ ];
+ const guard=verifyUnchangedPhysicalOriginal;
+ assert.equal(guard(prior,prior.map(f=>({...f}))),true);
+ for(const [index,field,value] of [
+  [0,'sha256','c'.repeat(64)],
+  [0,'device',101],
+  [0,'inode',90],
+  [0,'mtimeMs',1001],
+  [0,'bytes',201],
+  [1,'name','ai-github-canary-policy.mjs'],
+  [1,'sha256','bad'],
+  [1,'inode',0],
+  [1,'mtimeMs',NaN]
+ ]){
+  const changed=prior.map(f=>({...f}));
+  changed[index][field]=value;
+  assert.throws(()=>guard(prior,changed),
+   /protected_app_acceptance_issuer_denied/);
+ }
+ for(const altered of [
+  null,[],[prior[0]],
+  [...prior,prior[0]],prior.slice().reverse(),
+  [{...prior[0],bytes:-1},prior[1]]
+ ])assert.throws(()=>guard(prior,altered),
+  /protected_app_acceptance_issuer_denied/);
+});
+test('approval issuer inspects originals again AFTER live evidence before signing',()=>{
+ const source=(await import('node:fs')).readFileSync(new URL(
+  '../scripts/protected-update-app-acceptance-approval-issuer.mjs',
+  import.meta.url),'utf8');
+ const second=source.indexOf(
+  'verifyUnchangedPhysicalOriginal(originals,physicalOriginal());');
+ const proof=source.indexOf('const [gh,baseline]=await Promise.all(');
+ const signing=source.indexOf('const signatureBase64=signFixedRolePayload({');
+ assert.ok(proof>0 && second>proof && signing>second);
 });
