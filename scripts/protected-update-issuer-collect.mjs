@@ -499,8 +499,8 @@ export async function collectFixedAppAcceptanceAttestations(){
  // Do not accept staged same-owner key substitution. Missing anchors deny.
  const devicePin=rootString('app-device-public.pem',4096);
  const rootPin=rootString('app-root-public.pem',4096);
- const same=(a,b)=>createPublicKey(a).export({type:'spki',format:'der')
-  .equals(createPublicKey(b).export({type:'spki',format:'der'));
+ const same=(a,b)=>createPublicKey(a).export({type:'spki',format:'der'})
+  .equals(createPublicKey(b).export({type:'spki',format:'der'}));
  if(!same(devicePin,readOwned(BASE+'/app-device-public.pem',
     0,0o444,4096))||
     !same(rootPin,readOwned(BASE+'/app-root-public.pem',
