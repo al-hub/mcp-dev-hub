@@ -13,6 +13,8 @@ import {parsePinnedBootstrapIssuerContext}
 import {parsePinnedRoutineIssuerContext,ROUTINE_REVIEW_DOMAIN,
   ROUTINE_APPROVAL_DOMAIN}
   from './protected-update-routine-issuer.mjs';
+import {APP_ACCEPTANCE_DOMAIN}
+  from './protected-update-app-acceptance.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval}
   from './protected-update-github-evidence.mjs';
@@ -42,7 +44,8 @@ const ROLE=Object.freeze({
   ]),
   approval:Object.freeze([
     'protected-update-approval-issuer.mjs',
-    'protected-update-routine-approval-issuer.mjs'
+    'protected-update-routine-approval-issuer.mjs',
+    'protected-update-app-acceptance-approval-issuer.mjs'
   ])
 });
 function checkedDir(path,owner,mode=null){
@@ -151,7 +154,12 @@ export function signFixedRolePayload({role,domain,json}={}){
       ROUTINE_REVIEW_DOMAIN]
     :['mcp-dev-hub/bootstrap-approval/v1\n',
       ROUTINE_APPROVAL_DOMAIN];
-  if(!allowed.includes(domain))deny();
+  if(role==='approval'&&domain===APP_ACCEPTANCE_DOMAIN){
+   // Only the fixed, audited App acceptance role may use this new domain.
+   // Existing bootstrap/routine signers cannot silently widen authority.
+   if(process.argv.length!==2||process.argv[1]!==
+       CODE+'/scripts/protected-update-app-acceptance-approval-issuer.mjs')deny();
+  }else if(!allowed.includes(domain))deny();
   const {privateKey}=readPrivateIssuerMaterial(role);
   return sign(null,Buffer.from(domain+json),privateKey)
     .toString('base64');
@@ -174,6 +182,26 @@ export function readFixedRoutineReviewerHandoff(){
     {owner:0,mode:0o444,maxBytes:4096}
   );
   return {reviewerPublicKeyPem,...value};
+}
+/** Root-staged, one-use acceptance data and independent reviewer handoff.
+ * These public data files never provide the approval role a signer key.
+ * A fixed root collector must independently verify and stage them.
+ */
+export function readFixedAppAcceptanceReviewerHandoff(){
+ checkedDir(BASE,0);
+ const raw=readExact(BASE+'/app-acceptance.json',{
+  owner:0,mode:0o444,maxBytes:12000
+ });
+ const reviewSignatureBase64=readExact(
+  BASE+'/app-acceptance.review.sig',{
+   owner:0,mode:0o444,maxBytes:256
+  }).trim();
+ const pinnedReviewerPublicKeyPem=readExact(
+  BASE+'/reviewer-public.pem',{
+   owner:0,mode:0o444,maxBytes:4096
+  });
+ return Object.freeze({raw,reviewSignatureBase64,
+  pinnedReviewerPublicKeyPem});
 }
 export function readFixedReviewerHandoff(){
   checkedDir(BASE,0);
