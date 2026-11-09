@@ -37,7 +37,8 @@ import {parseProtectedRoutineIntent}
   from '../src/ops/protected-update-routine-intent.mjs';
 import {buildRoutineApprovalClaim}
   from '../src/ops/protected-update-routine-issuer.mjs';
-import {verifyAppAcceptanceReviewer,verifySignedAppAcceptance}
+import {verifyAppAcceptanceReviewer,verifySignedAppAcceptance,
+  reconcileFixedAppAcceptanceArchive}
   from '../src/ops/protected-update-app-acceptance.mjs';
 import {validateReviewEvidence,validateProtectionEvidence}
   from '../src/jobs/github-app-review-publisher.mjs';
@@ -352,18 +353,14 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
     safeToReplay:false
   });
 }
-// A purely informational phase choice; does not authenticate paths, claims,
-// sign, dispatch a role, or authorize installation.
-export function chooseFixedAppCollectionPhase({completeArchive,reviewerStage}={}){
- if(typeof completeArchive!=='boolean'||typeof reviewerStage!=='boolean')deny();
- return completeArchive?'bootstrap':reviewerStage?'app-acceptance':'bootstrap';
+// Source-only, deterministic phase selector. Full archive cryptographic
+// verification is required for any complete record. Incomplete intent is
+// BLOCKED/UNKNOWN and must not dispatch the approval signer again.
+export function chooseFixedAppCollectionPhase(args){
+ const decision=reconcileFixedAppAcceptanceArchive(args);
+ if(decision.phase==='blocked_unknown')deny();
+ return decision.phase;
 }
-
-// The existing fixed root entrypoint uses ONLY root-staged, permission-
-// verified receipt state to choose its one-shot action. No extra trusted
-// mode file, caller flag, environment switch, or new privileged command.
-// A partial collection or UNKNOWN attempt stays fenced by the exact existing
-// intent; it must NEVER cause a second signer dispatch.
 function fixedRootCollectorMode(){
  if(process.getuid?.()!==0||process.geteuid?.()!==0||
     fileURLToPath(import.meta.url)!==ENTRY||
@@ -372,16 +369,46 @@ function fixedRootCollectorMode(){
   '/','/etc','/etc/mcp-dev-hub',TRUST,
   '/var','/var/lib',BASE
  ])dir(path,0);
- function present(path,mode,size){
-  try{readOwned(path,0,mode,size);return true;}
-  catch(e){if(e.code==='ENOENT')return false;throw e;}
+ function optional(path,mode,maxBytes){
+  try{return readOwned(path,0,mode,maxBytes);}
+  catch(e){if(e.code==='ENOENT')return null;throw e;}
  }
- // The checksum is the LAST fsynced artifact written after both signatures
- // were independently verified. Its existence allows bootstrap to proceed
- // to its OWN live Bot/Codex/signature checks, not to bypass any gate.
+ const stage=optional(BASE+'/app-acceptance.json',0o444,12000);
+ const intentRaw=optional(
+  TRUST+'/app-acceptance-dispatch.intent.json',0o400,2048
+ );
+ const raw=optional(TRUST+'/app-acceptance.json',0o400,12000);
+ const reviewSignatureBase64=optional(
+  TRUST+'/app-acceptance.review.sig',0o400,256
+ )?.trim()??null;
+ const signatureBase64=optional(
+  TRUST+'/app-acceptance.sig',0o400,256
+ )?.trim()??null;
+ const sha256=optional(
+  TRUST+'/app-acceptance.sha256',0o400,128
+ )?.trim()??null;
+ // Partial intent can be identified without reading or granting access to
+ // any signer key. It will cause a safe denial, not a second dispatch.
+ if([intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256]
+    .filter(x=>x!==null).length!==5)
+  return chooseFixedAppCollectionPhase({
+   reviewerStagePresent:stage!==null,
+   intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256
+  });
+ const context=parsePinnedBootstrapIssuerContext(readOwned(
+  BASE+'/approved-bootstrap-context.json',0,0o444,2048
+ ));
+ const trust=readRootProtectedUpdateTrust();
+ const packDigest=rootString('approved-pack-digest',128);
+ if(packDigest!==context.packDigest||
+    packDigest!==trust.approvedPackDigest)deny();
  return chooseFixedAppCollectionPhase({
-  completeArchive:present(TRUST+'/app-acceptance.sha256',0o400,128),
-  reviewerStage:present(BASE+'/app-acceptance.json',0o444,12000)
+  reviewerStagePresent:stage!==null,
+  intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256,
+  pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+  pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+  head:context.head,base:context.base,ciRunId:context.ciRunId,
+  packDigest,nowMs:Date.now()
  });
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
