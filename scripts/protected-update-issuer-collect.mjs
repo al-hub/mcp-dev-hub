@@ -307,6 +307,11 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
   const staged=await stageFixedRoutineOperation({
     context,codexReceipt
   });
+  // The signer runtime rejects inherited supplementary groups. The root
+  // parent must remove them before spawning the fixed nonroot role, not
+  // rely on uid/gid spawn options to clear them.
+  if(typeof process.setgroups!=='function')deny();
+  process.setgroups([]);
   const slot=BASE+'/routine-operations/'+x.operationId;
   const review=parseSignedOutput(runRole(
     'protected-update-routine-review-issuer.mjs',
@@ -548,6 +553,10 @@ export async function collectFixedAppAcceptanceAttestations(){
  // the nonroot reviewer. A crash after this single-write stage is UNKNOWN
  // until trusted read-only reconciliation; never auto-overwrite or replay.
  writeRoot(BASE+'/app-gate-receipts.json',externalRaw,0o444);
+ // Both App signer roles require a strict, supplementary-group-free
+ // child. Do not rely on uid/gid alone to drop inherited root groups.
+ if(typeof process.setgroups!=='function')deny();
+ process.setgroups([]);
  // The first signer dispatch is non-replayable even if review output is
  // lost. Owner must reconcile UNKNOWN, not generate another signature.
  writeRoot(TRUST+'/app-review-dispatch.intent.json',JSON.stringify({
