@@ -77,3 +77,18 @@ export function verifySignedAppAcceptance({
   expiresAtMs:reviewer.packet.expiresAtMs
  });
 }
+
+// This is a pure scope assertion, never an issuer or a signing oracle.
+// Only the fixed nonroot App approval entrypoint may sign the larger
+// canonical acceptance packet. Other signing domains keep the 2 KiB cap.
+export function assertFixedAppApprovalSigningScope({
+ role,domain,json,entryPath,argvLength
+}={}){
+ const fixed='/usr/local/lib/mcp-dev-hub/protected-issuer/code/'+
+  'scripts/protected-update-app-acceptance-approval-issuer.mjs';
+ if(role!=='approval'||domain!==APP_ACCEPTANCE_DOMAIN||
+    entryPath!==fixed||argvLength!==2||
+    typeof json!=='string'||Buffer.byteLength(json,'utf8')<1||
+    Buffer.byteLength(json,'utf8')>12000)deny();
+ return true;
+}
