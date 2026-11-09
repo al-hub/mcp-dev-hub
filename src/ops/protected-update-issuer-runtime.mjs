@@ -13,7 +13,8 @@ import {parsePinnedBootstrapIssuerContext}
 import {parsePinnedRoutineIssuerContext,ROUTINE_REVIEW_DOMAIN,
   ROUTINE_APPROVAL_DOMAIN}
   from './protected-update-routine-issuer.mjs';
-import {APP_ACCEPTANCE_DOMAIN,assertFixedAppApprovalSigningScope}
+import {APP_ACCEPTANCE_DOMAIN,APP_ACCEPTANCE_REVIEW_DOMAIN,
+  assertFixedAppApprovalSigningScope}
   from './protected-update-app-acceptance.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval}
@@ -40,7 +41,8 @@ const deny=()=>{throw Error('protected_signer_runtime_denied');};
 const ROLE=Object.freeze({
   reviewer:Object.freeze([
     'protected-update-review-issuer.mjs',
-    'protected-update-routine-review-issuer.mjs'
+    'protected-update-routine-review-issuer.mjs',
+    'protected-update-app-acceptance-review-issuer.mjs'
   ]),
   approval:Object.freeze([
     'protected-update-approval-issuer.mjs',
@@ -153,7 +155,14 @@ export function signFixedRolePayload({role,domain,json}={}){
       ROUTINE_REVIEW_DOMAIN]
     :['mcp-dev-hub/bootstrap-approval/v1\n',
       ROUTINE_APPROVAL_DOMAIN];
-  if(role==='approval'&&domain===APP_ACCEPTANCE_DOMAIN){
+  if(role==='reviewer'&&domain===APP_ACCEPTANCE_REVIEW_DOMAIN){
+   // Only the fixed independently evidenced App review role may mint the
+   // reviewer half of a future acceptance packet. No generic sign path.
+   if(process.argv.length!==2||process.argv[1]!==
+      CODE+'/scripts/protected-update-app-acceptance-review-issuer.mjs'||
+      Buffer.byteLength(json,'utf8')<1||
+      Buffer.byteLength(json,'utf8')>12000)deny();
+  }else if(role==='approval'&&domain===APP_ACCEPTANCE_DOMAIN){
    // Only the fixed, audited App acceptance role may use this new domain.
    // Existing bootstrap/routine signers cannot silently widen authority.
    try{assertFixedAppApprovalSigningScope({
@@ -185,6 +194,32 @@ export function readFixedRoutineReviewerHandoff(){
   );
   return {reviewerPublicKeyPem,...value};
 }
+/** Read-only, fixed-path external TEST attestor records. These PUBLIC
+ * Ed25519 keys are root-staged candidate copies, not independently approved
+ * trust anchors. The fixed root collector must compare their exact DER bytes
+ * to separately owner-pinned root-only keys before any reviewer dispatch.
+ */
+export function readFixedExternalAppGateEvidence(){
+ checkedDir(BASE,0);
+ return Object.freeze({
+  raw:readExact(BASE+'/app-gate-receipts.json',{
+   owner:0,mode:0o444,maxBytes:12000
+  }),
+  devicePublicKeyPem:readExact(BASE+'/app-device-public.pem',{
+   owner:0,mode:0o444,maxBytes:4096
+  }),
+  rootPublicKeyPem:readExact(BASE+'/app-root-public.pem',{
+   owner:0,mode:0o444,maxBytes:4096
+  }),
+  approvalPublicKeyPem:readExact(BASE+'/approval-public.pem',{
+   owner:0,mode:0o444,maxBytes:4096
+  }),
+  reviewerPublicKeyPem:readExact(BASE+'/reviewer-public.pem',{
+   owner:0,mode:0o444,maxBytes:4096
+  })
+ });
+}
+
 /** Root-staged, one-use acceptance data and independent reviewer handoff.
  * These public data files never provide the approval role a signer key.
  * A fixed root collector must independently verify and stage them.
