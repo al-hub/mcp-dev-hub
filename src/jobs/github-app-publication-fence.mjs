@@ -8,8 +8,11 @@ const hash=x=>createHash('sha256').update(x).digest('hex');
  * Exclusive, fsynced intent survives timeout/restart and prevents POST replay.
  * A later invocation may only reconcile through the existing publisher GETs.
  */
-export function fenceApprovalPost({api,directory,head,base,evidenceId,owner}={}){
- if(typeof api!=='function'||!/^\/[A-Za-z0-9_./-]+$/.test(directory||'')||
+export function fenceApprovalPost({api,directory,head,base,evidenceId,owner,
+ validateBeforePost}={}){
+ if(typeof api!=='function'||
+    (validateBeforePost!==undefined&&typeof validateBeforePost!=='function')||
+    !/^\/[A-Za-z0-9_./-]+$/.test(directory||'')||
     directory.split('/').includes('..')||
     !/^[a-f0-9]{40}$/.test(head||'')||
     !/^[a-f0-9]{40}$/.test(base||'')||head===base||
@@ -40,6 +43,14 @@ export function fenceApprovalPost({api,directory,head,base,evidenceId,owner}={})
    if(!body||Object.keys(body).sort().join(',')!=='body,commit_id,event'||
       body.commit_id!==head||body.event!=='APPROVE'||
       body.body!==expectedBody)deny();
+   // Refuse expired/revoked independent acceptance BEFORE creating the
+   // irreversible POST fence. A failed preflight must not consume the ID.
+   // This synchronous callback may only verify immutable signed evidence;
+   // never permit an asynchronous check or an API call here.
+   if(validateBeforePost){
+    const validated=validateBeforePost();
+    if(validated&&typeof validated.then==='function')deny();
+   }
    // Failure or a preexisting file is terminal; do not remove/retry it.
    durable('.intent.json',{version:1,head,base,evidenceId,
     bodySha256:hash(JSON.stringify(body)),state:'dispatched_or_unknown'});
