@@ -492,11 +492,78 @@ export async function collectFixedAppAcceptanceAttestations(){
  ));
  verifyRootContext(context,pack);
  const trust=readRootProtectedUpdateTrust();
- const raw=readOwned(BASE+'/app-acceptance.json',0,0o444,12000);
- const reviewerSignature=readOwned(
-  BASE+'/app-acceptance.review.sig',0,0o444,256
- ).trim();
  const codexReceipt=readFixedIndependentCodexReceipt();
+ const externalRaw=readOwned(BASE+'/app-gate-receipts.json',
+  0,0o444,12000);
+ // The device/root gate producer public keys are owner-pinned separately.
+ // Do not accept staged same-owner key substitution. Missing anchors deny.
+ const devicePin=rootString('app-device-public.pem',4096);
+ const rootPin=rootString('app-root-public.pem',4096);
+ const same=(a,b)=>createPublicKey(a).export({type:'spki',format:'der')
+  .equals(createPublicKey(b).export({type:'spki',format:'der'));
+ if(!same(devicePin,readOwned(BASE+'/app-device-public.pem',
+    0,0o444,4096))||
+    !same(rootPin,readOwned(BASE+'/app-root-public.pem',
+    0,0o444,4096))||
+    !same(trust.approvalPublicKeyPem,readOwned(
+     BASE+'/approval-public.pem',0,0o444,4096))||
+    !same(trust.reviewerPublicKeyPem,readOwned(
+     BASE+'/reviewer-public.pem',0,0o444,4096)))deny();
+ const external=verifyExternalAppGateReceipts({
+  raw:externalRaw,devicePublicKeyPem:devicePin,
+  rootPublicKeyPem:rootPin,
+  reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+  approvalPublicKeyPem:trust.approvalPublicKeyPem,
+  codexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+  head:context.head,base:context.base,ciRunId:context.ciRunId,
+  packDigest:pinned,nowMs:Date.now()
+ });
+ // Refetch GitHub before dispatch. Signed private test receipts, source CI
+ // and Codex are three independent evidence boundaries.
+ const githubBefore=await fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber:39,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,githubToken:trust.githubToken
+ });
+ if(githubBefore.head!==context.head||
+    githubBefore.base!==context.base||
+    githubBefore.ciRunId!==context.ciRunId||
+    githubBefore.ciPassed!==true||
+    githubBefore.strictProtection!==true)deny();
+ for(const name of [
+  'app-review-dispatch.intent.json',
+  'app-acceptance-dispatch.intent.json','app-acceptance.json',
+  'app-acceptance.review.sig','app-acceptance.sig',
+  'app-acceptance.sha256'
+ ])absent(TRUST+'/'+name);
+ for(const name of ['app-acceptance.json','app-acceptance.review.sig'])
+  absent(BASE+'/'+name);
+ // The first signer dispatch is non-replayable even if review output is
+ // lost. Owner must reconcile UNKNOWN, not generate another signature.
+ writeRoot(TRUST+'/app-review-dispatch.intent.json',JSON.stringify({
+  version:1,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,packDigest:pinned,
+  externalBundleSha256:external.evidenceBundleSha256,
+  state:'review_dispatched_or_unknown',safeToReplay:false
+ }),0o400);
+ const reviewerOutput=runRole(
+  'protected-update-app-acceptance-review-issuer.mjs','reviewer'
+ );
+ let reviewerReply;
+ try{reviewerReply=JSON.parse(reviewerOutput.trim());}catch{deny();}
+ const responseFields=['raw','reviewSignatureBase64','packetSha256',
+  'safeToInstall','safeToReplay','independentProducerInstalled'];
+ if(!reviewerReply||Array.isArray(reviewerReply)||
+    Object.keys(reviewerReply).length!==responseFields.length||
+    !responseFields.every(k=>Object.hasOwn(reviewerReply,k))||
+    typeof reviewerReply.raw!=='string'||
+    typeof reviewerReply.reviewSignatureBase64!=='string'||
+    typeof reviewerReply.packetSha256!=='string'||
+    reviewerReply.safeToInstall!==false||
+    reviewerReply.safeToReplay!==false||
+    reviewerReply.independentProducerInstalled!==false)deny();
+ const raw=reviewerReply.raw;
+ const reviewerSignature=reviewerReply.reviewSignatureBase64;
+ if(digest(raw)!==reviewerReply.packetSha256)deny();
  const der=k=>createPublicKey(k).export({type:'spki',format:'der'});
  if(trust.approvedPackDigest!==pinned||
     !der(codexReceipt.codexReviewerPublicKeyPem)
@@ -512,6 +579,20 @@ export async function collectFixedAppAcceptanceAttestations(){
  const reviewer=verifyAppAcceptanceReviewer(handoff);
  const packet=reviewer.packet;
  if(packet.issuedAtMs<1)deny();
+ // The root collector independently checks every device/root signed receipt
+ // against the actual packet row. Signed reviewer JSON alone cannot assert
+ // fake PC/Galaxy/root-recovery PASS.
+ for(const gate of EXTERNAL_APP_GATES){
+  const expected=external.gates[gate];
+  const actual=packet.evidence?.gates?.[gate];
+  if(!actual||Object.keys(actual).sort().join(',')!==
+     'evidenceId,headSha,verdict'||
+     actual.headSha!==expected.headSha||
+     actual.evidenceId!==expected.evidenceId||
+     actual.verdict!=='passed')deny();
+ }
+ writeRoot(BASE+'/app-acceptance.json',raw,0o444);
+ writeRoot(BASE+'/app-acceptance.review.sig',reviewerSignature,0o444);
  const source={
   prNumber:39,headSha:context.head,baseSha:context.base,
   packDigest:pinned,evidence:packet.evidence,
