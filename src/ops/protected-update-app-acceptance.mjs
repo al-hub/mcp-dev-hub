@@ -92,3 +92,51 @@ export function assertFixedAppApprovalSigningScope({
     Buffer.byteLength(json,'utf8')>12000)deny();
  return true;
 }
+
+// Read-only root archive phase verifier. A digest's mere existence is never
+// proof of a complete collection. Partial durable intents must stay UNKNOWN,
+// with no replay or implicit bootstrap promotion. Synthetic fixture users must
+// pin independent keys and expected context externally.
+export function reconcileFixedAppAcceptanceArchive({
+ reviewerStagePresent,intentRaw,raw,reviewSignatureBase64,
+ signatureBase64,sha256,pinnedReviewerPublicKeyPem,
+ pinnedApprovalPublicKeyPem,head,base,ciRunId,packDigest,nowMs
+}={}){
+ if(typeof reviewerStagePresent!=='boolean')deny();
+ const parts=[intentRaw,raw,reviewSignatureBase64,
+  signatureBase64,sha256];
+ if(parts.some(x=>x!==null&&typeof x!=='string'))deny();
+ const occupied=parts.filter(x=>x!==null).length;
+ if(occupied===0)return Object.freeze({
+  phase:reviewerStagePresent?'app-acceptance':'bootstrap',
+  safeToReplay:false,authorizationIssued:false
+ });
+ // A stage is already dispatched or has unknown partial side effects.
+ if(occupied!==5)return Object.freeze({
+  phase:'blocked_unknown',safeToReplay:false,
+  authorizationIssued:false
+ });
+ if(typeof sha256!=='string'||!HASH.test(sha256)||
+    createHash('sha256').update(raw).digest('hex')!==sha256)deny();
+ let intent;
+ try{intent=JSON.parse(intentRaw);}catch{deny();}
+ const fields=['version','head','base','ciRunId','packDigest',
+  'packetSha256','state','safeToReplay'];
+ if(!object(intent)||Object.keys(intent).length!==fields.length||
+    !fields.every(k=>Object.hasOwn(intent,k))||
+    JSON.stringify(intent)!==intentRaw||
+    intent.version!==1||intent.head!==head||intent.base!==base||
+    intent.ciRunId!==ciRunId||intent.packDigest!==packDigest||
+    intent.packetSha256!==sha256||
+    intent.state!=='issuer_dispatched_or_unknown'||
+    intent.safeToReplay!==false)deny();
+ verifySignedAppAcceptance({
+  raw,reviewSignatureBase64,signatureBase64,
+  pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,
+  head,base,ciRunId,packDigest,nowMs
+ });
+ return Object.freeze({
+  phase:'bootstrap',safeToReplay:false,authorizationIssued:false,
+  packetSha256:sha256
+ });
+}
