@@ -48,6 +48,8 @@ export async function publishFixedTrustedAppApproval(){
  const raw=trustedFile(TRUST+'/app-acceptance.json',0o400,12000);
  const pin=trustedFile(TRUST+'/app-acceptance.sha256',0o400,128).trim();
  const signature=trustedFile(TRUST+'/app-acceptance.sig',0o400,256).trim();
+ const reviewSignature=trustedFile(
+  TRUST+'/app-acceptance.review.sig',0o400,256).trim();
  if(!/^[a-f0-9]{64}$/.test(pin)||digest(raw)!==pin)deny();
  let claim;
  try{claim=JSON.parse(raw);}catch{deny();}
@@ -55,6 +57,8 @@ export async function publishFixedTrustedAppApproval(){
  const trust=readRootProtectedUpdateTrust();
  const accepted=()=>verifySignedAppAcceptance({
   raw,signatureBase64:signature,
+  reviewSignatureBase64:reviewSignature,
+  pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
   pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
   head:pack.head,base:claim?.base,ciRunId:claim?.ciRunId,
   packDigest,nowMs:Date.now()
