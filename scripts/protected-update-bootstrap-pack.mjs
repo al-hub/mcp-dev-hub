@@ -35,6 +35,7 @@ const SOURCE=Object.freeze([
   'scripts/protected-update-root-reconcile.mjs',
   'src/jobs/github-app-review-publisher.mjs',
   'src/jobs/github-app-publication-fence.mjs',
+  'src/ops/protected-update-app-acceptance.mjs',
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-bootstrap-migration.mjs',
   'src/ops/protected-update-github-evidence.mjs',
