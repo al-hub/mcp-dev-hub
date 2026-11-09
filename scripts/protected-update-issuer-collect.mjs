@@ -40,6 +40,8 @@ import {buildRoutineApprovalClaim}
 import {verifyAppAcceptanceReviewer,verifySignedAppAcceptance,
   reconcileFixedAppAcceptanceArchive}
   from '../src/ops/protected-update-app-acceptance.mjs';
+import {verifyExternalAppGateReceipts,EXTERNAL_APP_GATES}
+  from '../src/ops/protected-update-app-gate-provenance.mjs';
 import {validateReviewEvidence,validateProtectionEvidence}
   from '../src/jobs/github-app-review-publisher.mjs';
 
@@ -133,14 +135,16 @@ function parseSignedOutput(raw,keys){
 function runRole(name,role,operationId=null){
   const uid=ownerNumber(role+'-uid'),gid=ownerNumber(role+'-gid');
   const path=CODE+'/scripts/'+name;
+  const limit=name==='protected-update-app-acceptance-review-issuer.mjs'
+    ?24000:5000;
   const r=spawnSync('/usr/bin/node',[path],{
     uid,gid,cwd:'/',shell:false,encoding:'utf8',timeout:60000,
-    maxBuffer:5000,stdio:['ignore','pipe','pipe'],
+    maxBuffer:limit,stdio:['ignore','pipe','pipe'],
     env:{PATH:'/usr/bin:/bin',LANG:'C.UTF-8',HOME:'/',
       ...(operationId===null?{}:{MCP_PROTECTED_OPERATION_ID:operationId})}
   });
   if(r.error||r.signal||r.status!==0||
-     typeof r.stdout!=='string'||r.stdout.length>5000)deny();
+     typeof r.stdout!=='string'||Buffer.byteLength(r.stdout,'utf8')>limit)deny();
   return r.stdout;
 }
 function verifyRootContext(context,pack){
@@ -374,6 +378,10 @@ function fixedRootCollectorMode(){
   catch(e){if(e.code==='ENOENT')return null;throw e;}
  }
  const stage=optional(BASE+'/app-acceptance.json',0o444,12000);
+ const gateReceipts=optional(BASE+'/app-gate-receipts.json',0o444,12000);
+ const reviewIntent=optional(
+  TRUST+'/app-review-dispatch.intent.json',0o400,2048
+ );
  const intentRaw=optional(
   TRUST+'/app-acceptance-dispatch.intent.json',0o400,2048
  );
@@ -390,11 +398,16 @@ function fixedRootCollectorMode(){
  // Partial intent can be identified without reading or granting access to
  // any signer key. It will cause a safe denial, not a second dispatch.
  if([intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256]
-    .filter(x=>x!==null).length!==5)
+    .filter(x=>x!==null).length!==5){
+  // Once the reviewer dispatch has been recorded, ANY incomplete archive
+  // is UNKNOWN. Never mint a fresh reviewer or approval signature on retry.
+  if(reviewIntent!==null||stage!==null)deny();
   return chooseFixedAppCollectionPhase({
-   reviewerStagePresent:stage!==null,
+   reviewerStagePresent:gateReceipts!==null,
    intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256
   });
+ }
+ if(reviewIntent===null||gateReceipts===null||stage===null)deny();
  const context=parsePinnedBootstrapIssuerContext(readOwned(
   BASE+'/approved-bootstrap-context.json',0,0o444,2048
  ));
@@ -402,6 +415,32 @@ function fixedRootCollectorMode(){
  const packDigest=rootString('approved-pack-digest',128);
  if(packDigest!==context.packDigest||
     packDigest!==trust.approvedPackDigest)deny();
+ // Verify the immutable external evidence itself, not just two final signer
+ // signatures. These external trust anchors require separate owner approval.
+ const pinnedDevice=rootString('app-device-public.pem');
+ const pinnedRoot=rootString('app-root-public.pem');
+ const observed=verifyExternalAppGateReceipts({
+  raw:gateReceipts,devicePublicKeyPem:pinnedDevice,
+  rootPublicKeyPem:pinnedRoot,
+  reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+  approvalPublicKeyPem:trust.approvalPublicKeyPem,
+  codexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+  head:context.head,base:context.base,ciRunId:context.ciRunId,
+  packDigest,nowMs:Date.now()
+ });
+ let attempt;try{attempt=JSON.parse(reviewIntent);}catch{deny();}
+ const fields=['version','head','base','ciRunId','packDigest',
+  'externalBundleSha256','state','safeToReplay'];
+ if(!attempt||Array.isArray(attempt)||
+    Object.keys(attempt).length!==fields.length||
+    !fields.every(k=>Object.hasOwn(attempt,k))||
+    JSON.stringify(attempt)!==reviewIntent||
+    attempt.version!==1||attempt.head!==context.head||
+    attempt.base!==context.base||attempt.ciRunId!==context.ciRunId||
+    attempt.packDigest!==packDigest||
+    attempt.externalBundleSha256!==observed.evidenceBundleSha256||
+    attempt.state!=='review_dispatched_or_unknown'||
+    attempt.safeToReplay!==false)deny();
  return chooseFixedAppCollectionPhase({
   reviewerStagePresent:stage!==null,
   intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256,
