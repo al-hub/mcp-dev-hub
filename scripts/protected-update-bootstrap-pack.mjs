@@ -54,6 +54,8 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-request.mjs',
   'src/ops/protected-update-routine-issuer.mjs',
   'src/ops/protected-update-routine-collection.mjs',
+  'src/ops/protected-update-routine-intent.mjs',
+  'src/ops/protected-update-routine-stage.mjs',
   'src/ops/protected-update-root-evidence.mjs',
   'src/ops/protected-update-root-layout.mjs',
   'src/ops/protected-update-root-preflight.mjs',
