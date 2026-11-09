@@ -2,7 +2,9 @@
 // An owner-approved immutable package and separately authenticated acceptance
 // packet are prerequisites; this command does not invent gate evidence.
 import {fileURLToPath} from 'node:url';
-import {createHash} from 'node:crypto';
+import {createHash,createPublicKey} from 'node:crypto';
+import {readRootProtectedUpdateTrust}
+ from '../src/ops/protected-update-root-evidence.mjs';
 import {trustedDirectory,trustedFile,parseTrustedAppConfiguration,
  getInstallation} from './reviewer-app-trusted-preflight.mjs';
 import {verifyProtectedBootstrapPack} from './protected-update-bootstrap-pack.mjs';
@@ -52,6 +54,11 @@ export async function publishFixedTrustedAppApproval(){
     !/^[a-f0-9]{40}$/.test(packet.base||'')||
     !Number.isSafeInteger(packet.ciRunId)||packet.ciRunId<=0)deny();
  const receipt=readFixedIndependentCodexReceipt();
+ const trust=readRootProtectedUpdateTrust();
+ const pub=p=>createPublicKey(p).export({type:'spki',format:'der'});
+ if(trust.approvedPackDigest!==packDigest||
+    !pub(receipt.codexReviewerPublicKeyPem).equals(pub(trust.codexReviewerPublicKeyPem))||
+    !pub(receipt.issuerReviewerPublicKeyPem).equals(pub(trust.reviewerPublicKeyPem)))deny();
  const args={
   prNumber:39,headSha:packet.head,baseSha:packet.base,packDigest,
   evidence:packet.evidence,verifyEvidence:e=>e===packet.evidence,
@@ -66,7 +73,7 @@ export async function publishFixedTrustedAppApproval(){
  validateProtectionEvidence(args);
  // Independently refetch CI/protection using the existing separately scoped
  // read token, BEFORE accessing the App key or exchanging a write token.
- const token=trustedFile(TRUST+'/github-readonly-token',0o400,4096).trim();
+ const token=trust.githubToken;
  await fetchAndVerifyGitHubBootstrapEvidence({
   prNumber:39,head:packet.head,base:packet.base,
   ciRunId:packet.ciRunId,githubToken:token
