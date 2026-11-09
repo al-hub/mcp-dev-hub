@@ -12,7 +12,9 @@ const SHA=/^[a-f0-9]{40}$/;
 const REPO='al-hub/mcp-dev-hub';
 const GATES=['ci','security','private_sse','pc','galaxy'];
 // #35 keeps all existing gates and requires additional privileged checks.
-const PROTECTED_BOOTSTRAP_GATES=['root_security','original_restore'];
+// Only independent pre-install root security is required for first App
+// endorsement. Original restoration remains mandatory post-install.
+const PROTECTED_BOOTSTRAP_GATES=['root_security'];
 const PR_ALLOWLIST=Object.freeze([17,39]);
 const fail=(message)=>{throw Error(message);};
 export function validateReviewEvidence({

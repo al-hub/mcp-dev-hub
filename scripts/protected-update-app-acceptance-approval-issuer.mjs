@@ -27,7 +27,7 @@ const ENTRY=ROOT+'/protected-issuer/code/scripts/'+
  'protected-update-app-acceptance-approval-issuer.mjs';
 const NAMES=['ai-github-canary-policy.mjs','ai-github-canary.mjs'];
 const GATES=['ci','security','private_sse','pc','galaxy',
- 'root_security','original_restore'];
+ 'root_security'];
 const deny=()=>{throw Error('protected_app_acceptance_issuer_denied');};
 const hash=b=>createHash('sha256').update(b).digest('hex');
 function physicalOriginal(){

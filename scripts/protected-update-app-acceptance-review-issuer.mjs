@@ -52,7 +52,7 @@ export function assembleAppAcceptanceReviewerPacket({
  );
  if(shortValid<=nowMs||!external.gates)return deny();
  const externalNames=['private_sse','pc','galaxy',
-  'root_security','original_restore'];
+  'root_security'];
  if(Object.keys(external.gates).length!==externalNames.length||
     !externalNames.every(n=>Object.hasOwn(external.gates,n)))deny();
  const ci={headSha:context.head,verdict:'passed',

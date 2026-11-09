@@ -26,7 +26,7 @@ const codex={reviewDigest:'d'.repeat(64),expiresAtMs:NOW+120000};
 const external=()=>({
  validUntilMs:NOW+100000,
  gates:Object.fromEntries(['private_sse','pc','galaxy',
-  'root_security','original_restore'].map(g=>[
+  'root_security'].map(g=>[
   g,{headSha:head,verdict:'passed',evidenceId:'verified-'+g.replaceAll('_','-')+'-proof'}
  ]))
 });

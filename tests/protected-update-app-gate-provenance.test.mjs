@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign,createHash} from 'node:crypto';
 import {DEVICE_GATE_DOMAIN,ROOT_GATE_DOMAIN,EXTERNAL_APP_GATES,
- verifyExternalAppGateReceipts}
+ verifyExternalAppGateReceipts,verifyPostInstallOriginalRestoreReceipt}
  from '../src/ops/protected-update-app-gate-provenance.mjs';
 const nowMs=1900000000000;
 const head='a'.repeat(40),base='b'.repeat(40),packDigest='c'.repeat(64);
@@ -41,7 +41,7 @@ function args(packet=bundle()){
 }
 const denied=(a)=>assert.throws(()=>verifyExternalAppGateReceipts(a),
  /independent_external_app_gate_denied/);
-test('five distinct independent source gate claims bind exact HEAD, CI and pack',()=>{
+test('four pre-install independent source gate claims bind exact HEAD, CI and pack',()=>{
  const verified=verifyExternalAppGateReceipts(args());
  assert.deepEqual(Object.keys(verified.gates),FIXED);
  for(const gate of FIXED)
@@ -113,4 +113,28 @@ test('per-gate unique proof digests and 30-minute max lifetime required',()=>{
   root,ROOT_GATE_DOMAIN);
  denied(args(p));
  assert.ok(rootClaims.gate==='root_security');
+});
+
+test('post-install original restoration needs a distinct authentic root signature',()=>{
+ const pre=bundle();
+ const previousProofDigest=JSON.parse(pre.receipts[3].claimJson).proofDigest;
+ const row=receipt('original_restore',4);
+ const ctx={row,rootPublicKeyPem:pem(root),head,base,ciRunId:12345,
+  packDigest,previousProofDigest,installedAtMs:nowMs-2000,nowMs};
+ const verified=verifyPostInstallOriginalRestoreReceipt(ctx);
+ assert.equal(verified.gate,'original_restore');
+ assert.equal(verified.safeToMerge,false);
+ assert.equal(verified.safeToCloseIssue,false);
+ assert.equal(verified.physicalEvidenceAudited,false);
+ for(const changed of [
+  {row:null},
+  {rootPublicKeyPem:pem(outsider)},
+  {previousProofDigest:JSON.parse(row.claimJson).proofDigest},
+  {head:'d'.repeat(40)},
+  {nowMs:nowMs+120001},
+  {installedAtMs:nowMs-500},
+  {installedAtMs:nowMs+1},
+  {row:{...row,signatureBase64:pre.receipts[3].signatureBase64}}
+ ])assert.throws(()=>verifyPostInstallOriginalRestoreReceipt({...ctx,...changed}),
+  /independent_external_app_gate_denied/);
 });

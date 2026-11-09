@@ -97,7 +97,7 @@ test('#35 exact PR39 verified Codex/root-security/recovery can route bot approva
 test('PR39 rejects missing privileged security gate and non-Codex evidence BEFORE API',async()=>{
   for(const mutate of [
     e=>{delete e.gates.root_security;},
-    e=>{e.gates.original_restore.verdict='blocked';},
+    e=>{e.gates.root_security.verdict='blocked';},
     e=>{e.scope='general';},
     e=>{e.prNumber=17;},
     e=>{e.reviewIsolated=false;},
@@ -107,6 +107,13 @@ test('PR39 rejects missing privileged security gate and non-Codex evidence BEFOR
     await assert.rejects(publishIndependentApproval(args(f.api,e)));
     assert.equal(f.calls.length,0);assert.equal(f.posted,0);
   }
+});
+test('pre-install App approval requires root security, not future original restoration',async()=>{
+ const f=fixture(),e=evidence();
+ delete e.gates.original_restore;
+ const r=await publishIndependentApproval(args(f.api,e));
+ assert.equal(r.state,'approved');
+ assert.equal(f.posted,1);
 });
 test('PR39 requires non-Draft, exact main repo and stable exact HEAD',async()=>{
   for(const variation of [

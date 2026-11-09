@@ -1,5 +1,14 @@
 # #35–#37 — one-time privileged bootstrap scope and preflight
 
+> **2026-11-09 SOURCE-ONLY PHASE SPLIT:** Initial independently signed App
+> preflight retains root_security, exact code/CI/Codex and existing
+> device evidence; actual original_restore is separate POST-install
+> physical acceptance with a distinct signed proof issued after installation.
+> Neither the new verifier nor this note authorizes sudo, deployment, merge
+> or Issue Close. Real root trust/issuer provisioning, formal App approval,
+> two physical protected revisions, rollback and fresh exact-HEAD review
+> remain mandatory. Never promote source-only CI into operating approval.
+
 > Status (2026-11-06 KST): **NOT READY TO INSTALL**. This document is the
 > public, nonsecret **scope freeze and evidence checklist**, not administrator
 > authorization, an installer or a claim that unattended updating works.

@@ -1,3 +1,9 @@
+## 2026-11-09 phase split: original restore post-install acceptance (SOURCE ONLY)
+
+- Issue #35 / PR #39: remove post-install original_restore from initial App endorsement; maintain separately signed root_security, PC/Galaxy/private-SSE receipts, exact HEAD/BASE, CI, independent Codex and existing GitHub review gates.
+- A standalone read-only helper checks a separately signed original_restore receipt issued strictly after the observed real install timestamp and with a distinct proof digest. It returns no install/merge/close permission and does not itself prove the physical test occurred.
+- Fixed two-file root updater, no-replay journal, root trust and least-privilege sudo remain unchanged. This is not deployed; no live keys, signed receipts, root setup, formal App approval, physical revisions or rollback were created. After any commit this needs new exact-HEAD CI and independent security audit. #35 remains OPEN.
+
 ## 2026-11-09 #35 independently observed P2: replayed routine operation poisons global fence (fixed source; NO-GO)
 
 - A **real new** separate WSL Linux Codex 0.166.0 read-only independent audit ran from a clean GitHub checkout at exact prior PR #39 HEAD `888b975c6c4c33ad143a0c72cf744782204451ae`, BASE `175ba1a481d9a55c0567402a2c905f457c7601e5`. The CLI exited **0**, and a separate persisted terminal JSON was read back and gave **FAIL / P2 one actionable defect**, **NOT PASS**, not a signed operating receipt. It found that the root routine issuer staged a global dispatch lock before attempting `mkdir` on a completed operation ID, causing an `EEXIST` rejected replay to strand a durable global fence and block unrelated future operations.

@@ -8,7 +8,9 @@ import {createHash,createPublicKey,verify} from 'node:crypto';
 export const DEVICE_GATE_DOMAIN='mcp-dev-hub/independent-device-gate/v1\n';
 export const ROOT_GATE_DOMAIN='mcp-dev-hub/independent-root-gate/v1\n';
 const DEVICE=['private_sse','pc','galaxy'];
-const ROOT=['root_security','original_restore'];
+// Restore of the *installed* updater is a post-install acceptance gate.
+// It must not be a prerequisite for the first root bootstrap.
+const ROOT=['root_security'];
 export const EXTERNAL_APP_GATES=Object.freeze([...DEVICE,...ROOT]);
 const CLAIM_FIELDS=['version','repository','scope','source','gate','head',
  'base','ciRunId','packDigest','verdict','evidenceId','proofDigest',
@@ -34,7 +36,7 @@ function canonical(raw,fields,max){
  if(!exact(o,fields)||JSON.stringify(o)!==raw)deny();
  return o;
 }
-/** The packet contains exactly five *externally* signed receipt references.
+/** The pre-install packet contains four *externally* signed receipt references.
  * CI and security still come from a separately verified live GitHub run.
  * Distinct external device/root keys cannot be the in-process Codex/reviewer
  * or approval signer, preventing a role from self-attesting its own gates.
@@ -101,5 +103,53 @@ export function verifyExternalAppGateReceipts({
   validUntilMs:Math.min(...packet.receipts.map(
    r=>JSON.parse(r.claimJson).expiresAtMs)),
   independentProducerInstalled:false,physicalEvidenceAudited:false
+ });
+}
+
+/** Post-install acceptance only. This validates a separately signed,
+ * distinct physical original-restore proof. It NEVER grants bootstrap,
+ * privileged execution, GitHub approval, merge or Issue Close. The caller
+ * must authenticate that the external operator actually ran the test.
+ */
+export function verifyPostInstallOriginalRestoreReceipt({
+ row,rootPublicKeyPem,head,base,ciRunId,packDigest,
+ previousProofDigest,installedAtMs,nowMs
+}={}){
+ if(!SHA.test(head||"")||!SHA.test(base||"")||head===base||
+    !HASH.test(packDigest||"")||!HASH.test(previousProofDigest||"")||
+    !Number.isSafeInteger(ciRunId)||ciRunId<=0||
+    !Number.isSafeInteger(nowMs)||nowMs<=0||
+    !Number.isSafeInteger(installedAtMs)||installedAtMs<=0||
+    installedAtMs>=nowMs||
+    !exact(row,KEYS)||row.gate!=="original_restore"||
+    typeof row.signatureBase64!=="string"||
+    !B64.test(row.signatureBase64))deny();
+ const claim=canonical(row.claimJson,CLAIM_FIELDS,1800);
+ if(claim.version!==1||
+    claim.repository!=="al-hub/mcp-dev-hub"||
+    claim.scope!=="protected-bootstrap-app-gate"||
+    claim.source!=="independent-root"||
+    claim.gate!=="original_restore"||
+    claim.head!==head||claim.base!==base||
+    claim.ciRunId!==ciRunId||claim.packDigest!==packDigest||
+    claim.verdict!=="passed"||
+    !EVIDENCE.test(claim.evidenceId||"")||
+    !HASH.test(claim.proofDigest||"")||
+    claim.proofDigest===previousProofDigest||
+    !Number.isSafeInteger(claim.issuedAtMs)||
+    !Number.isSafeInteger(claim.expiresAtMs)||
+    claim.issuedAtMs<=installedAtMs||claim.issuedAtMs>nowMs||
+    claim.expiresAtMs<=nowMs||
+    claim.expiresAtMs-claim.issuedAtMs>1800000)deny();
+ const signature=Buffer.from(row.signatureBase64,"base64");
+ if(signature.length!==64||
+    signature.toString("base64")!==row.signatureBase64||
+    !verify(null,Buffer.from(ROOT_GATE_DOMAIN+row.claimJson),
+      key(rootPublicKeyPem),signature))deny();
+ return Object.freeze({
+  gate:"original_restore",headSha:head,verdict:"passed",
+  evidenceId:claim.evidenceId,authorizationIssued:false,
+  physicalEvidenceAudited:false,safeToMerge:false,
+  safeToCloseIssue:false
  });
 }
