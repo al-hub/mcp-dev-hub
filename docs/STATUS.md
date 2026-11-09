@@ -1,3 +1,11 @@
+## 2026-11-09 #35 full independent final-HEAD Codex P1/P2 corrections (SOURCE ONLY)
+
+- Fresh real WSL Linux Codex 0.166.0 full-PR read-only review of prior exact source HEAD 9d738d4656b3b99054d3d98713eb23d99fdd21fe returned P1 and P2 findings despite CLI exit 0. This was NOT a PASS or an operating signed receipt.
+- P1: the App review publication intent originally lived inside the not-yet-created update journal; first App POST could block root activation and later journal enumeration. Moved immutable fixed publication state into a separate root-owned 0700 directory under the existing signer base, created only by the one-shot root-only signer provisioner. Root journal stays separate and unmodified.
+- P2: a routine intent for the already-active HEAD could launch signers and strand a global dispatch fence. Added read-only rejection before signer dispatch and a second exact installed-HEAD check after exclusive fence acquisition. Only a confirmed pre-dispatch no-op releases its freshly created lock; an uncertain pointer or any signer/staging side effect still preserves UNKNOWN and forbids replay.
+- Nonroot tests exercise strict sibling ledger separation, authenticated root-only creation source, fast duplicate rejection, race after lock acquisition and unknown preservation. No sudo, GitHub App POST, root trust/keys/accounts, running protected files/services/data or branch rules were changed.
+- A new final code commit, exact-HEAD CI and another actual independent Codex review are mandatory before any operating trust setup. #35 PR remains OPEN, physical protected updates 0/2.
+
 ## 2026-11-09 phase split: original restore post-install acceptance (SOURCE ONLY)
 
 - Issue #35 / PR #39: remove post-install original_restore from initial App endorsement; maintain separately signed root_security, PC/Galaxy/private-SSE receipts, exact HEAD/BASE, CI, independent Codex and existing GitHub review gates.

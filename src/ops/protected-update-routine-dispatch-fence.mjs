@@ -5,6 +5,7 @@ import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,
 const OPS='/var/lib/mcp-dev-hub-signers/routine-operations';
 const LOCK=OPS+'/.active-routine';
 const ID=/^[a-f0-9]{32}$/;
+const SHA=/^[a-f0-9]{40}$/;
 const deny=()=>{throw Error('routine_dispatch_unknown_or_denied');};
 function root(){
  if(process.getuid?.()!==0||process.geteuid?.()!==0)deny();
@@ -71,11 +72,18 @@ function slotAbsent(operationId){
  catch(e){if(e.code==='ENOENT')return true;throw e;}
  return false;
 }
-export function acquireRoutineDispatchFence(operationId){
+/** Only a real immutable installed pointer and a parsed requested HEAD
+ * establish a confirmed no-op. UNKNOWN pointer state must throw.
+ */
+export function probeDifferentInstalledHead({installedCommit,requestedHead}={}){
+ if(!SHA.test(installedCommit||'')||!SHA.test(requestedHead||''))deny();
+ return installedCommit!==requestedHead;
+}
+export function acquireRoutineDispatchFence(operationId,{validateCandidate}={}){
  root();
- if(!ID.test(operationId||''))deny();
- // Fast rejection with no filesystem mutations for ordinary replay.
- if(!slotAbsent(operationId))deny();
+ if(!ID.test(operationId||'')||typeof validateCandidate!=='function')deny();
+ // Fast rejection with no filesystem mutations for ordinary replay/no-op.
+ if(!slotAbsent(operationId)||validateCandidate()!==true)deny();
  const b=Buffer.from(JSON.stringify({
   version:1,operationId,state:'dispatched_or_unknown'
  }));
@@ -99,6 +107,17 @@ export function acquireRoutineDispatchFence(operationId){
   unlinkSync(LOCK);directorySync();
   deny();
  }
+ // Between the pre-lock snapshot and O_EXCL acquisition another approved
+ // update can finish. A confirmed already-installed HEAD is not UNKNOWN:
+ // release ONLY this newly acquired pre-dispatch lock; no slot or signer
+ // side effect has happened. Errors/indeterminate reads retain the fence.
+ const fresh=validateCandidate();
+ if(fresh===false){
+  if(readFence().operationId!==operationId)deny();
+  unlinkSync(LOCK);directorySync();
+  deny();
+ }
+ if(fresh!==true)deny();
  return Object.freeze({operationId,safeToReplay:false});
 }
 export function requireNoRoutineDispatchFence(){

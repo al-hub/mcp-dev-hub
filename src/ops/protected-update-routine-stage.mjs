@@ -18,8 +18,10 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from './protected-update-github-evidence.mjs';
 import {verifyProtectedBootstrapPack}
   from '../../scripts/protected-update-bootstrap-pack.mjs';
-import {acquireRoutineDispatchFence}
+import {acquireRoutineDispatchFence,probeDifferentInstalledHead}
   from './protected-update-routine-dispatch-fence.mjs';
+import {inspectProtectedCurrentSnapshot}
+  from './protected-update-release-pointer.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const BASE='/var/lib/mcp-dev-hub-signers';
@@ -140,7 +142,12 @@ export async function stageFixedRoutineOperation({
  }
  // A single crash-durable slot fence serializes all routine signers,
  // including distinct update IDs, before any signer begins.
- acquireRoutineDispatchFence(c.operationId);
+ acquireRoutineDispatchFence(c.operationId,{validateCandidate:()=>
+  probeDifferentInstalledHead({
+   installedCommit:inspectProtectedCurrentSnapshot(ROOT).commit,
+   requestedHead:c.head
+  })
+ });
  const slot=OPS+'/'+c.operationId;
  // An earlier attempt, including a partial directory, is UNKNOWN.
  // Never delete, overwrite or start the signers again for this ID.

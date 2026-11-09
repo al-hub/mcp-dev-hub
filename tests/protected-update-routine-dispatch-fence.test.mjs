@@ -6,7 +6,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {parseRoutineDispatchFence,acquireRoutineDispatchFence,
- releaseTerminalRoutineDispatchFence,requireNoRoutineDispatchFence}
+ releaseTerminalRoutineDispatchFence,requireNoRoutineDispatchFence,
+ probeDifferentInstalledHead}
  from '../src/ops/protected-update-routine-dispatch-fence.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
  from '../scripts/protected-update-bootstrap-pack.mjs';
@@ -77,10 +78,10 @@ test('replayed completed routine slot is rejected without poisoning global fence
   mkdirSync(ops,{mode:0o755});
   const f=await simulatedFence(ops);
   mkdirSync(join(ops,ID),{mode:0o700});
-  assert.throws(()=>f.acquireRoutineDispatchFence(ID),
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID,{validateCandidate:()=>true}),
    /routine_dispatch_unknown_or_denied/);
   assert.equal(existsSync(join(ops,'.active-routine')),false);
-  assert.equal(f.acquireRoutineDispatchFence(next).operationId,next);
+  assert.equal(f.acquireRoutineDispatchFence(next,{validateCandidate:()=>true}).operationId,next);
   assert.equal(existsSync(join(ops,'.active-routine')),true);
   f.releaseTerminalRoutineDispatchFence(next,'verified');
   assert.equal(existsSync(join(ops,'.active-routine')),false);
@@ -93,8 +94,60 @@ test('old routine slot appearing between precheck and acquisition releases only 
   mkdirSync(ops,{mode:0o755});
   mkdirSync(join(ops,ID),{mode:0o700});
   const f=await simulatedFence(ops,{raceAfterAcquire:true});
-  assert.throws(()=>f.acquireRoutineDispatchFence(ID),
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID,{validateCandidate:()=>true}),
    /routine_dispatch_unknown_or_denied/);
   assert.equal(existsSync(join(ops,'.active-routine')),false);
  }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+
+test('installed target identity checks deny unknown and preinstalled SHA',()=>{
+ const old='a'.repeat(40),target='b'.repeat(40);
+ assert.equal(probeDifferentInstalledHead({installedCommit:old,requestedHead:target}),true);
+ assert.equal(probeDifferentInstalledHead({installedCommit:target,requestedHead:target}),false);
+ for(const invalid of [{},{installedCommit:'bad',requestedHead:target},
+  {installedCommit:old,requestedHead:'wrong'}])
+  assert.throws(()=>probeDifferentInstalledHead(invalid),
+   /routine_dispatch_unknown_or_denied/);
+});
+test('no-op appearing after lock acquisition releases only this new pre-dispatch lock',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-noop-'));
+ const ops=join(tmp,'routine-operations');
+ try{
+  mkdirSync(ops,{mode:0o755});
+  const f=await simulatedFence(ops);
+  let calls=0;
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID,{
+   validateCandidate:()=>++calls===1
+  }),/routine_dispatch_unknown_or_denied/);
+  assert.equal(calls,2);
+  assert.equal(existsSync(join(ops,'.active-routine')),false);
+  assert.equal(existsSync(join(ops,ID)),false);
+  const next='e'.repeat(32);
+  assert.equal(f.acquireRoutineDispatchFence(next,{validateCandidate:()=>true}).operationId,next);
+  f.releaseTerminalRoutineDispatchFence(next,'verified');
+ }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+test('unknown installed snapshot after lock acquisition retains global fence',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-unknown-'));
+ const ops=join(tmp,'routine-operations');
+ try{
+  mkdirSync(ops,{mode:0o755});
+  const f=await simulatedFence(ops);
+  let calls=0;
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID,{
+   validateCandidate:()=>{if(++calls===2)throw Error('unknown_current_pointer');return true;}
+  }),/unknown_current_pointer/);
+  assert.equal(existsSync(join(ops,'.active-routine')),true);
+  assert.equal(existsSync(join(ops,ID)),false);
+  assert.throws(()=>f.requireNoRoutineDispatchFence(),
+   /routine_dispatch_unknown_or_denied/);
+ }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+test('fixed stage and root apply independently check installed head before signer dispatch',()=>{
+ const stage=readFileSync(new URL('../src/ops/protected-update-routine-stage.mjs',import.meta.url),'utf8');
+ const apply=readFileSync(new URL('../scripts/protected-update-root-apply.mjs',import.meta.url),'utf8');
+ assert.ok(stage.includes('acquireRoutineDispatchFence(c.operationId,{validateCandidate:()=>'));
+ assert.ok(stage.includes('installedCommit:inspectProtectedCurrentSnapshot(ROOT).commit'));
+ assert.ok(apply.indexOf('if(!probeDifferentInstalledHead({')<
+  apply.indexOf('const collected=await collectFixedRoutineIssuerAttestations({intent})'));
 });

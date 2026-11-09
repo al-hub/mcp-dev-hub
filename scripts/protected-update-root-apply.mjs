@@ -18,7 +18,8 @@ import {parseProtectedRoutineIntent}
   from '../src/ops/protected-update-routine-intent.mjs';
 import {collectFixedRoutineIssuerAttestations}
   from './protected-update-issuer-collect.mjs';
-import {requireNoRoutineDispatchFence,releaseTerminalRoutineDispatchFence}
+import {requireNoRoutineDispatchFence,releaseTerminalRoutineDispatchFence,
+  probeDifferentInstalledHead}
   from '../src/ops/protected-update-routine-dispatch-fence.mjs';
 import {assertFixedRootProtectedUpdateLayout}
   from '../src/ops/protected-update-root-layout.mjs';
@@ -156,6 +157,13 @@ export async function applyOneProtectedUpdateFixedRoot(){
   let req,routineId=null;
   if(candidate?.version===2){
     const intent=parseProtectedRoutineIntent(raw);
+    // A known no-op must be rejected before allocating a global signer
+    // fence. The fence itself independently rechecks under its exclusive
+    // lock to close the concurrent-update race.
+    if(!probeDifferentInstalledHead({
+      installedCommit:inspectProtectedCurrentSnapshot(ROOT).commit,
+      requestedHead:intent.head
+    }))deny();
     routineId=intent.operationId;
     const collected=await collectFixedRoutineIssuerAttestations({intent});
     req=parseProtectedUpdateRequest(collected.requestJson);

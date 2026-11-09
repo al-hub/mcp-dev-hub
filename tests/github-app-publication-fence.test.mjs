@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,chmodSync,readdirSync,readFileSync,rmSync,symlinkSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,chmodSync,readdirSync,readFileSync,rmSync,symlinkSync} from 'node:fs';
+import {readStoredProtectedUpdateHistory}
+ from '../src/ops/protected-update-journal-store.mjs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fenceApprovalPost} from '../src/jobs/github-app-publication-fence.mjs';
@@ -104,4 +106,32 @@ test('asynchronous precheck cannot cross the non-replayable fence',async()=>{
   assert.equal(readdirSync(f.directory).length,0);
   assert.equal(posts,0);
  }finally{f.clean();}
+});
+
+test('pre-bootstrap App POST fence cannot poison the separately activated update journal',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-two-ledgers-'));
+ const publisher=join(tmp,'app-publication');
+ const journal=join(tmp,'protected-update');
+ try{
+  mkdirSync(publisher,{mode:0o700});
+  let posts=0;
+  const api=fenceApprovalPost({
+   api:async()=>{posts++;return {id:51}},
+   directory:publisher,head,base,evidenceId,owner:process.getuid()
+  });
+  assert.equal((await api('POST',path,body)).id,51);
+  assert.equal(posts,1);
+  mkdirSync(journal,{mode:0o700});
+  assert.deepEqual(readStoredProtectedUpdateHistory(journal),[]);
+  assert.equal(readdirSync(publisher).length,2);
+  const published=readFileSync(new URL('../scripts/reviewer-app-trusted-publish.mjs',import.meta.url),'utf8');
+  const provision=readFileSync(new URL('../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+  const activated=readFileSync(new URL('../scripts/protected-update-os-activate.mjs',import.meta.url),'utf8');
+  assert.ok(published.includes("const STATE='/var/lib/mcp-dev-hub-signers/app-publication';"));
+  assert.ok(provision.includes('mkdirSync(APP_PUBLICATION,{mode:0o700})'));
+  // publisher must not require later-created journal parent for App POST
+  const ancestors=published.slice(published.indexOf('for(const p of ['),published.indexOf('trustedDirectory(STATE,true)'));
+  assert.ok(!ancestors.includes("'/var/lib/mcp-dev-hub'"));
+  assert.ok(activated.includes("const STATE='/var/lib/mcp-dev-hub/protected-update';"));
+ }finally{rmSync(tmp,{recursive:true,force:true});}
 });

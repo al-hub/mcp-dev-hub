@@ -26,6 +26,7 @@ const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
 const ENTRY=PACK+'/code/scripts/protected-update-issuer-provision.mjs';
 const BASE='/var/lib/mcp-dev-hub-signers';
+const APP_PUBLICATION=BASE+'/app-publication';
 const TRUST='/etc/mcp-dev-hub/protected-update';
 const ROLES=Object.freeze([
   {role:'reviewer',user:'mcp35_reviewer'},
@@ -318,6 +319,13 @@ export function provisionIndependentProtectedIssuersOnce(){
   }
   mkdirSync(BASE,{mode:0o755});chmodSync(BASE,0o755);
   dir(BASE,0o755);
+  // Durable approval POST intent must exist BEFORE bootstrap approval,
+  // but never inside the yet-uncreated protected-update journal.
+  // Refuse existing/symlink paths; partial setup remains UNKNOWN.
+  mkdirSync(APP_PUBLICATION,{mode:0o700});
+  chmodSync(APP_PUBLICATION,0o700);
+  dir(APP_PUBLICATION,0o700);
+  syncDir(APP_PUBLICATION);syncDir(BASE);
   const pinnedContext={
     version:1,repository:'al-hub/mcp-dev-hub',
     scope:'protected-bootstrap',head:checked.head,

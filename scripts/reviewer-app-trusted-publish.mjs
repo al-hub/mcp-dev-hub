@@ -22,7 +22,9 @@ import {verifySignedAppAcceptance}
 const PACK='/usr/local/lib/mcp-dev-hub/protected-updater';
 const ENTRY=PACK+'/code/scripts/reviewer-app-trusted-publish.mjs';
 const TRUST='/etc/mcp-dev-hub/protected-update';
-const STATE='/var/lib/mcp-dev-hub/protected-update/app-publication';
+// Approval POST intents are independent of the root update journal.
+// The issuer provisioner creates this root-only 0700 folder before App POST.
+const STATE='/var/lib/mcp-dev-hub-signers/app-publication';
 const deny=()=>{throw Error('trusted_app_publication_denied_or_unknown');};
 const digest=s=>createHash('sha256').update(s).digest('hex');
 export async function publishFixedTrustedAppApproval(){
@@ -30,8 +32,7 @@ export async function publishFixedTrustedAppApproval(){
     process.argv.length!==2||fileURLToPath(import.meta.url)!==ENTRY)deny();
  for(const p of ['/','/usr','/usr/local','/usr/local/lib',
   '/usr/local/lib/mcp-dev-hub',PACK,'/etc','/etc/mcp-dev-hub',TRUST,
-  '/var','/var/lib','/var/lib/mcp-dev-hub',
-  '/var/lib/mcp-dev-hub/protected-update'])trustedDirectory(p);
+  '/var','/var/lib','/var/lib/mcp-dev-hub-signers'])trustedDirectory(p);
  trustedDirectory(STATE,true);
  const packDigest=trustedFile(TRUST+'/approved-pack-digest',0o400,128).trim();
  if(!/^[a-f0-9]{64}$/.test(packDigest))deny();
