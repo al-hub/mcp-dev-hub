@@ -379,6 +379,9 @@ function fixedRootCollectorMode(){
  }
  const stage=optional(BASE+'/app-acceptance.json',0o444,12000);
  const gateReceipts=optional(BASE+'/app-gate-receipts.json',0o444,12000);
+ const ownerPinnedGateReceipts=optional(
+  TRUST+'/app-gate-receipts.json',0o400,12000
+ );
  const reviewIntent=optional(
   TRUST+'/app-review-dispatch.intent.json',0o400,2048
  );
@@ -401,13 +404,15 @@ function fixedRootCollectorMode(){
     .filter(x=>x!==null).length!==5){
   // Once the reviewer dispatch has been recorded, ANY incomplete archive
   // is UNKNOWN. Never mint a fresh reviewer or approval signature on retry.
-  if(reviewIntent!==null||stage!==null)deny();
+  if(reviewIntent!==null||stage!==null||gateReceipts!==null)deny();
   return chooseFixedAppCollectionPhase({
-   reviewerStagePresent:gateReceipts!==null,
+   reviewerStagePresent:ownerPinnedGateReceipts!==null,
    intentRaw,raw,reviewSignatureBase64,signatureBase64,sha256
   });
  }
- if(reviewIntent===null||gateReceipts===null||stage===null)deny();
+ if(reviewIntent===null||gateReceipts===null||stage===null||
+    ownerPinnedGateReceipts===null||
+    ownerPinnedGateReceipts!==gateReceipts)deny();
  const context=parsePinnedBootstrapIssuerContext(readOwned(
   BASE+'/approved-bootstrap-context.json',0,0o444,2048
  ));
@@ -493,8 +498,8 @@ export async function collectFixedAppAcceptanceAttestations(){
  verifyRootContext(context,pack);
  const trust=readRootProtectedUpdateTrust();
  const codexReceipt=readFixedIndependentCodexReceipt();
- const externalRaw=readOwned(BASE+'/app-gate-receipts.json',
-  0,0o444,12000);
+ const externalRaw=readOwned(TRUST+'/app-gate-receipts.json',
+  0,0o400,12000);
  // The device/root gate producer public keys are owner-pinned separately.
  // Do not accept staged same-owner key substitution. Missing anchors deny.
  const devicePin=rootString('app-device-public.pem',4096);
@@ -535,8 +540,14 @@ export async function collectFixedAppAcceptanceAttestations(){
   'app-acceptance.review.sig','app-acceptance.sig',
   'app-acceptance.sha256'
  ])absent(TRUST+'/'+name);
- for(const name of ['app-acceptance.json','app-acceptance.review.sig'])
-  absent(BASE+'/'+name);
+ for(const name of [
+  'app-gate-receipts.json',
+  'app-acceptance.json','app-acceptance.review.sig'
+ ])absent(BASE+'/'+name);
+ // Stage only independently verified, owner-pinned gate receipt bytes for
+ // the nonroot reviewer. A crash after this single-write stage is UNKNOWN
+ // until trusted read-only reconciliation; never auto-overwrite or replay.
+ writeRoot(BASE+'/app-gate-receipts.json',externalRaw,0o444);
  // The first signer dispatch is non-replayable even if review output is
  // lost. Owner must reconcile UNKNOWN, not generate another signature.
  writeRoot(TRUST+'/app-review-dispatch.intent.json',JSON.stringify({
