@@ -23,7 +23,7 @@ import {parsePinnedBootstrapIssuerContext,
   buildBootstrapApprovalClaim}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
-  fetchAndVerifyOfficialReviewerApproval}
+  fetchAndVerifyOfficialReviewerApproval,verifyIndependentSignedReview}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
@@ -474,6 +474,31 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
 }
 
 
+/** Verify live-independent Codex Ed25519 PASS and EXACT pinned public identities
+ * before creating any reviewer dispatch/staging intent. Pure, no authority.
+ */
+export function preflightFixedAppCodexReceipt({context,receipt,trust,nowMs}={}){
+ try{
+  if(!context||!receipt||!trust||
+     !Number.isSafeInteger(nowMs)||nowMs<=0||
+     context.prNumber!==39)deny();
+  const der=k=>createPublicKey(k).export({type:'spki',format:'der'});
+  if(!der(receipt.codexReviewerPublicKeyPem)
+      .equals(der(trust.codexReviewerPublicKeyPem))||
+     !der(receipt.issuerReviewerPublicKeyPem)
+      .equals(der(trust.reviewerPublicKeyPem)))deny();
+  const reviewed=verifyIndependentSignedReview({
+   reviewJson:receipt.reviewJson,
+   signatureBase64:receipt.reviewSignatureBase64,
+   pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
+   pinnedApprovalPublicKeyPem:trust.reviewerPublicKeyPem,
+   head:context.head,base:context.base,prNumber:39,nowMs
+  });
+  return Object.freeze({reviewDigest:reviewed.reviewDigest,
+   reviewRunId:reviewed.reviewRunId,safeToInstall:false});
+ }catch{deny();}
+}
+
 // Source-only fixed root collection of a **previously authenticated**
 // independent reviewer handoff. This cannot create reviewer evidence,
 // produce missing acceptance gates, install an issuer, or post GitHub reviews.
@@ -503,6 +528,9 @@ export async function collectFixedAppAcceptanceAttestations(){
  verifyRootContext(context,pack);
  const trust=readRootProtectedUpdateTrust();
  const codexReceipt=readFixedIndependentCodexReceipt();
+ preflightFixedAppCodexReceipt({
+  context,receipt:codexReceipt,trust,nowMs:Date.now()
+ });
  const externalRaw=readOwned(TRUST+'/app-gate-receipts.json',
   0,0o400,12000);
  // The device/root gate producer public keys are owner-pinned separately.
@@ -549,14 +577,14 @@ export async function collectFixedAppAcceptanceAttestations(){
   'app-gate-receipts.json',
   'app-acceptance.json','app-acceptance.review.sig'
  ])absent(BASE+'/'+name);
+ // Both App signer roles require a strict, supplementary-group-free
+ // child. A missing group-drop function must fail *before* staging anything.
+ if(typeof process.setgroups!=='function')deny();
+ process.setgroups([]);
  // Stage only independently verified, owner-pinned gate receipt bytes for
  // the nonroot reviewer. A crash after this single-write stage is UNKNOWN
  // until trusted read-only reconciliation; never auto-overwrite or replay.
  writeRoot(BASE+'/app-gate-receipts.json',externalRaw,0o444);
- // Both App signer roles require a strict, supplementary-group-free
- // child. Do not rely on uid/gid alone to drop inherited root groups.
- if(typeof process.setgroups!=='function')deny();
- process.setgroups([]);
  // The first signer dispatch is non-replayable even if review output is
  // lost. Owner must reconcile UNKNOWN, not generate another signature.
  writeRoot(TRUST+'/app-review-dispatch.intent.json',JSON.stringify({
@@ -584,12 +612,12 @@ export async function collectFixedAppAcceptanceAttestations(){
  const raw=reviewerReply.raw;
  const reviewerSignature=reviewerReply.reviewSignatureBase64;
  if(digest(raw)!==reviewerReply.packetSha256)deny();
- const der=k=>createPublicKey(k).export({type:'spki',format:'der'});
- if(trust.approvedPackDigest!==pinned||
-    !der(codexReceipt.codexReviewerPublicKeyPem)
-      .equals(der(trust.codexReviewerPublicKeyPem))||
-    !der(codexReceipt.issuerReviewerPublicKeyPem)
-      .equals(der(trust.reviewerPublicKeyPem)))deny();
+ if(trust.approvedPackDigest!==pinned)deny();
+ // A valid earlier receipt can expire while the independent reviewer and
+ // network checks run. Recheck without lowering the signed-Codex gate.
+ preflightFixedAppCodexReceipt({
+  context,receipt:codexReceipt,trust,nowMs:Date.now()
+ });
  const handoff={
   raw,reviewSignatureBase64:reviewerSignature,
   pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem,
