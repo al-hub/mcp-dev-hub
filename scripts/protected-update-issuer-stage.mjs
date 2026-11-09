@@ -28,13 +28,15 @@ const SELECTED=Object.freeze([
   'scripts/protected-update-approval-issuer.mjs',
   'scripts/protected-update-routine-review-issuer.mjs',
   'scripts/protected-update-routine-approval-issuer.mjs',
+  'scripts/protected-update-app-acceptance-approval-issuer.mjs',
   'src/ops/protected-update-bootstrap-issuer.mjs',
   'src/ops/protected-update-routine-issuer.mjs',
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-manifest.mjs',
   'src/ops/protected-update-install-attestation.mjs',
   'src/ops/protected-update-issuer-runtime.mjs',
-  'src/ops/protected-update-github-evidence.mjs'
+  'src/ops/protected-update-github-evidence.mjs',
+  'src/ops/protected-update-app-acceptance.mjs'
 ]);
 const HASH=/^[a-f0-9]{64}$/;
 const deny=()=>{throw Error('protected_issuer_staging_denied_or_unknown');};
