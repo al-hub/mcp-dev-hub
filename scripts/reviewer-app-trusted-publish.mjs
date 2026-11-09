@@ -16,6 +16,8 @@ import {createScopedAppClient,publishIndependentApproval,
  validateReviewEvidence,validateProtectionEvidence}
  from '../src/jobs/github-app-review-publisher.mjs';
 import {fenceApprovalPost} from '../src/jobs/github-app-publication-fence.mjs';
+import {verifySignedAppAcceptance}
+ from '../src/ops/protected-update-app-acceptance.mjs';
 
 const PACK='/usr/local/lib/mcp-dev-hub/protected-updater';
 const ENTRY=PACK+'/code/scripts/reviewer-app-trusted-publish.mjs';
@@ -39,22 +41,25 @@ export async function publishFixedTrustedAppApproval(){
  const config=parseTrustedAppConfiguration(
   trustedFile('/etc/mcp-dev-hub/reviewer-app-preflight.json',0o400,2048));
  if(config.expectedHead!==pack.head)deny();
- // The acceptance packet hash must be approved through an independent
- // owner/trusted-verifier channel. Root ownership alone is not provenance.
- // This command never writes the packet, hash, gates or a PASS verdict.
+ // A root-owned JSON file plus a root-owned digest is NOT independent
+ // authorization. The existing separately pinned approval principal must
+ // sign the complete, short-lived acceptance packet in a distinct domain.
+ // This publisher neither creates signatures nor changes trust anchors.
  const raw=trustedFile(TRUST+'/app-acceptance.json',0o400,12000);
  const pin=trustedFile(TRUST+'/app-acceptance.sha256',0o400,128).trim();
+ const signature=trustedFile(TRUST+'/app-acceptance.sig',0o400,256).trim();
  if(!/^[a-f0-9]{64}$/.test(pin)||digest(raw)!==pin)deny();
- let packet;
- try{packet=JSON.parse(raw);}catch{deny();}
- if(!packet||JSON.stringify(packet)!==raw||
-    Object.keys(packet).sort().join(',')!==
-     'base,ciRunId,evidence,head,protectionEvidence,version'||
-    packet.version!==1||packet.head!==pack.head||
-    !/^[a-f0-9]{40}$/.test(packet.base||'')||
-    !Number.isSafeInteger(packet.ciRunId)||packet.ciRunId<=0)deny();
+ let claim;
+ try{claim=JSON.parse(raw);}catch{deny();}
  const receipt=readFixedIndependentCodexReceipt();
  const trust=readRootProtectedUpdateTrust();
+ const accepted=()=>verifySignedAppAcceptance({
+  raw,signatureBase64:signature,
+  pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+  head:pack.head,base:claim?.base,ciRunId:claim?.ciRunId,
+  packDigest,nowMs:Date.now()
+ });
+ const packet=accepted().packet;
  const pub=p=>createPublicKey(p).export({type:'spki',format:'der'});
  if(trust.approvedPackDigest!==packDigest||
     !pub(receipt.codexReviewerPublicKeyPem).equals(pub(trust.codexReviewerPublicKeyPem))||
@@ -88,10 +93,17 @@ export async function publishFixedTrustedAppApproval(){
  });
  if(client.actor!=='mcp-dev-hub-ai-reviewer[bot]')deny();
  const api=fenceApprovalPost({
-  api:client.api,directory:STATE,owner:0,
+  api:async(method,path,body)=>{
+   // Re-check independent approval at the irreversible POST boundary:
+   // a packet valid at preflight may expire during live GitHub queries.
+   if(method==='POST'&&
+      path==='/repos/al-hub/mcp-dev-hub/pulls/39/reviews')accepted();
+   return client.api(method,path,body);
+  },directory:STATE,owner:0,
   head:packet.head,base:packet.base,evidenceId:packet.evidence.evidenceId
  });
  const result=await publishIndependentApproval({...args,api,actor:client.actor});
+ accepted();
  return Object.freeze({state:result.state,headSha:result.headSha,
   reviewId:result.reviewId,actor:result.actor,safeToReplay:false});
 }
