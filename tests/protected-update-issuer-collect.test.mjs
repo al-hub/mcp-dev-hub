@@ -4,7 +4,8 @@ import {generateKeyPairSync,sign,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {verifyCollectedBootstrapSignatures,
-  collectFixedBootstrapIssuerAttestations}
+  collectFixedBootstrapIssuerAttestations,collectFixedAppAcceptanceAttestations,
+  chooseFixedAppCollectionPhase}
   from '../scripts/protected-update-issuer-collect.mjs';
 import {
   buildBootstrapReviewerClaim,buildBootstrapApprovalClaim,
@@ -115,4 +116,23 @@ test('direct checkout invocation exits nonzero and emits no private evidence',()
   assert.equal(r.status,1);
   assert.equal(r.stdout,'');
   assert.match(r.stderr,/protected_issuer_collect_denied_or_unknown/);
+});
+
+test('signed acceptance phase is one-shot; complete archive returns to bootstrap',()=>{
+ const phase=chooseFixedAppCollectionPhase;
+ assert.equal(phase({completeArchive:false,reviewerStage:false}),
+   'bootstrap');
+ assert.equal(phase({completeArchive:false,reviewerStage:true}),
+   'app-acceptance');
+ assert.equal(phase({completeArchive:true,reviewerStage:true}),
+   'bootstrap');
+ assert.equal(phase({completeArchive:true,reviewerStage:false}),
+   'bootstrap');
+ for(const fields of [{}, {completeArchive:'yes',reviewerStage:true},
+  {completeArchive:false,reviewerStage:null}])
+  assert.throws(()=>phase(fields),/protected_issuer_collect_denied_or_unknown/);
+});
+test('App acceptance collector cannot run from mutable checkout',async()=>{
+ await assert.rejects(collectFixedAppAcceptanceAttestations(),
+   /protected_issuer_collect_denied_or_unknown/);
 });
