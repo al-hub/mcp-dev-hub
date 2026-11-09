@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {verifyCollectedBootstrapSignatures,
   collectFixedBootstrapIssuerAttestations,collectFixedAppAcceptanceAttestations,
@@ -180,4 +181,29 @@ test('only complete independent signed archive can choose bootstrap',()=>{
 test('App acceptance collector cannot run from mutable checkout',async()=>{
  await assert.rejects(collectFixedAppAcceptanceAttestations(),
    /protected_issuer_collect_denied_or_unknown/);
+});
+
+test('routine and App root collectors drop supplementary groups before role dispatch',()=>{
+ const source=readFileSync(new URL(
+  '../scripts/protected-update-issuer-collect.mjs',import.meta.url),'utf8');
+ const routine=source.slice(
+  source.indexOf('export async function collectFixedRoutineIssuerAttestations('),
+  source.indexOf('// A purely informational phase choice')>=0?
+   source.indexOf('// A purely informational phase choice'):
+   source.indexOf('export function chooseFixedAppCollectionPhase(')
+ );
+ const app=source.slice(
+  source.indexOf('export async function collectFixedAppAcceptanceAttestations(')
+ );
+ for(const [body,signer] of [
+  [routine,'protected-update-routine-review-issuer.mjs'],
+  [app,'protected-update-app-acceptance-review-issuer.mjs']
+ ]){
+  const cleanup=body.indexOf('process.setgroups([])');
+  const run=body.indexOf(signer);
+  assert.ok(cleanup>=0 && run>cleanup,
+   'group drop must precede '+signer);
+  assert.ok(body.slice(0,run).includes(
+   "typeof process.setgroups!=='function'"));
+ }
 });
