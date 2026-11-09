@@ -352,21 +352,31 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
     safeToReplay:false
   });
 }
-// An optional root-pinned, single-purpose dispatch mode reuses the SAME
-// fixed collector entrypoint. No caller flags, environment modes, or added
-// privileged command. Absent mode retains the existing bootstrap behavior.
+// The existing fixed root entrypoint uses ONLY root-staged, permission-
+// verified receipt state to choose its one-shot action. No extra trusted
+// mode file, caller flag, environment switch, or new privileged command.
+// A partial collection or UNKNOWN attempt stays fenced by the exact existing
+// intent; it must NEVER cause a second signer dispatch.
 function fixedRootCollectorMode(){
  if(process.getuid?.()!==0||process.geteuid?.()!==0||
     fileURLToPath(import.meta.url)!==ENTRY||
     process.argv.length!==2||resolve(process.argv[1])!==ENTRY)deny();
- for(const path of ['/','/etc','/etc/mcp-dev-hub',TRUST])dir(path,0);
- const file=TRUST+'/app-acceptance-collector-mode';
- try{lstatSync(file);}catch(e){
-  if(e.code==='ENOENT')return 'bootstrap';
-  throw e;
+ for(const path of [
+  '/','/etc','/etc/mcp-dev-hub',TRUST,
+  '/var','/var/lib',BASE
+ ])dir(path,0);
+ function present(path,mode,size){
+  try{readOwned(path,0,mode,size);return true;}
+  catch(e){if(e.code==='ENOENT')return false;throw e;}
  }
- if(readOwned(file,0,0o400,48).trim()!=='app-acceptance')deny();
- return 'app-acceptance';
+ // The checksum is the LAST fsynced artifact written after both signatures
+ // were independently verified. Its existence allows bootstrap to proceed
+ // to its OWN live Bot/Codex/signature checks, not to bypass any gate.
+ if(present(TRUST+'/app-acceptance.sha256',0o400,128))
+  return 'bootstrap';
+ if(present(BASE+'/app-acceptance.json',0o444,12000))
+  return 'app-acceptance';
+ return 'bootstrap';
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{
