@@ -77,3 +77,31 @@ test('failed or malformed POST response remains permanently fenced',async()=>{
   assert.equal(posts,1);
  }finally{f.clean();}
 });
+
+test('expired signature precheck rejects before consuming any POST fence',async()=>{
+ let posts=0;const f=fixture(async()=>{posts++;return {id:42};});
+ try{
+  let valid=false;
+  const rejected=fenceApprovalPost({...f.args,
+   validateBeforePost:()=>{if(!valid)throw Error('signed packet expired');}
+  });
+  await assert.rejects(rejected('POST',path,body),/expired/);
+  assert.deepEqual(readdirSync(f.directory),[]);
+  valid=true;
+  const sent=await rejected('POST',path,body);
+  assert.equal(sent.id,42);assert.equal(posts,1);
+  assert.equal(readdirSync(f.directory).length,2);
+  await assert.rejects(rejected('POST',path,body));
+  assert.equal(posts,1);
+ }finally{f.clean();}
+});
+test('asynchronous precheck cannot cross the non-replayable fence',async()=>{
+ let posts=0;const f=fixture(async()=>{posts++;return {id:43};});
+ try{
+  const api=fenceApprovalPost({...f.args,
+    validateBeforePost:()=>Promise.resolve(true)});
+  await assert.rejects(api('POST',path,body));
+  assert.equal(readdirSync(f.directory).length,0);
+  assert.equal(posts,0);
+ }finally{f.clean();}
+});
