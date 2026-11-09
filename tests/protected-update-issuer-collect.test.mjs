@@ -17,6 +17,8 @@ import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
 import {INDEPENDENT_REVIEW_DOMAIN}
   from '../src/ops/protected-update-github-evidence.mjs';
+import {APP_ACCEPTANCE_DOMAIN,APP_ACCEPTANCE_REVIEW_DOMAIN}
+  from '../src/ops/protected-update-app-acceptance.mjs';
 
 const NOW=1794028500000;
 const key=()=>generateKeyPairSync('ed25519');
@@ -118,19 +120,62 @@ test('direct checkout invocation exits nonzero and emits no private evidence',()
   assert.match(r.stderr,/protected_issuer_collect_denied_or_unknown/);
 });
 
-test('signed acceptance phase is one-shot; complete archive returns to bootstrap',()=>{
+test('collector can start only from empty state or reviewer handoff',()=>{
  const phase=chooseFixedAppCollectionPhase;
- assert.equal(phase({completeArchive:false,reviewerStage:false}),
-   'bootstrap');
- assert.equal(phase({completeArchive:false,reviewerStage:true}),
-   'app-acceptance');
- assert.equal(phase({completeArchive:true,reviewerStage:true}),
-   'bootstrap');
- assert.equal(phase({completeArchive:true,reviewerStage:false}),
-   'bootstrap');
- for(const fields of [{}, {completeArchive:'yes',reviewerStage:true},
-  {completeArchive:false,reviewerStage:null}])
-  assert.throws(()=>phase(fields),/protected_issuer_collect_denied_or_unknown/);
+ const empty={intentRaw:null,raw:null,reviewSignatureBase64:null,
+  signatureBase64:null,sha256:null};
+ assert.equal(phase({...empty,reviewerStagePresent:false}),'bootstrap');
+ assert.equal(phase({...empty,reviewerStagePresent:true}),
+  'app-acceptance');
+ for(const partial of [
+  {...empty,intentRaw:'{}'},
+  {...empty,sha256:'a'.repeat(64)},
+  {...empty,raw:'{}'},
+  {...empty,intentRaw:'{}',reviewSignatureBase64:'fake'},
+  {...empty,raw:'{}',signatureBase64:'fake'}
+ ]){
+  assert.throws(()=>phase({...partial,reviewerStagePresent:true}),
+   /protected_issuer_collect_denied_or_unknown/);
+ }
+});
+test('only complete independent signed archive can choose bootstrap',()=>{
+ const reviewer=key(),approver=key(),head='a'.repeat(40),
+  base='b'.repeat(40),packDigest='c'.repeat(64),ciRunId=1242;
+ const nowMs=NOW;
+ const raw=JSON.stringify({
+  version:2,repository:'al-hub/mcp-dev-hub',
+  scope:'protected-bootstrap-app-approval',
+  attestor:'independent-protected-approval',prNumber:39,
+  head,base,ciRunId,packDigest,
+  evidence:{},protectionEvidence:{},
+  issuedAtMs:nowMs-1000,expiresAtMs:nowMs+60000
+ });
+ const sha256=createHash('sha256').update(raw).digest('hex');
+ const intentRaw=JSON.stringify({
+  version:1,head,base,ciRunId,packDigest,packetSha256:sha256,
+  state:'issuer_dispatched_or_unknown',safeToReplay:false
+ });
+ const f={reviewerStagePresent:true,intentRaw,raw,
+  reviewSignatureBase64:signed(reviewer,APP_ACCEPTANCE_REVIEW_DOMAIN,raw),
+  signatureBase64:signed(approver,APP_ACCEPTANCE_DOMAIN,raw),
+  sha256,pinnedReviewerPublicKeyPem:pem(reviewer),
+  pinnedApprovalPublicKeyPem:pem(approver),
+  head,base,ciRunId,packDigest,nowMs};
+ const phase=chooseFixedAppCollectionPhase;
+ assert.equal(phase(f),'bootstrap');
+ for(const changed of [
+  {...f,signatureBase64:'a'.repeat(88)},
+  {...f,raw:raw+' '},
+  {...f,sha256:'f'.repeat(64)},
+  {...f,intentRaw:JSON.stringify({...JSON.parse(intentRaw),
+    safeToReplay:true})},
+  {...f,head:'d'.repeat(40)},
+  {...f,base:'e'.repeat(40)},
+  {...f,packDigest:'f'.repeat(64)},
+  {...f,nowMs:nowMs+60000},
+  {...f,pinnedApprovalPublicKeyPem:pem(reviewer)},
+  {...f,reviewSignatureBase64:null}
+ ])assert.throws(()=>phase(changed));
 });
 test('App acceptance collector cannot run from mutable checkout',async()=>{
  await assert.rejects(collectFixedAppAcceptanceAttestations(),
