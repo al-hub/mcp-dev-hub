@@ -63,9 +63,19 @@ export function inspectRoutineDispatchFence(operationId){
   safeToReplay:false
  });
 }
+// A durable slot is an irrevocable attempt, even after its global fence
+// was legitimately released. Never let a duplicate completed/partial slot
+// strand a fresh global fence during a rejected replay.
+function slotAbsent(operationId){
+ try{lstatSync(OPS+'/'+operationId);}
+ catch(e){if(e.code==='ENOENT')return true;throw e;}
+ return false;
+}
 export function acquireRoutineDispatchFence(operationId){
  root();
  if(!ID.test(operationId||''))deny();
+ // Fast rejection with no filesystem mutations for ordinary replay.
+ if(!slotAbsent(operationId))deny();
  const b=Buffer.from(JSON.stringify({
   version:1,operationId,state:'dispatched_or_unknown'
  }));
@@ -79,6 +89,16 @@ export function acquireRoutineDispatchFence(operationId){
    s.size!==b.length||(s.mode&0o777)!==0o600)deny();
  }finally{closeSync(fd);}
  directorySync();
+ // Race defense: a prior successful operation can finish and release its
+ // fence after our first slot check but before our O_EXCL acquisition.
+ // This process has not staged files or dispatched signers yet, so ONLY
+ // this confirmed pre-dispatch slot collision may release its own fence.
+ // Any other I/O or signer uncertainty must retain the UNKNOWN fence.
+ if(!slotAbsent(operationId)){
+  if(readFence().operationId!==operationId)deny();
+  unlinkSync(LOCK);directorySync();
+  deny();
+ }
  return Object.freeze({operationId,safeToReplay:false});
 }
 export function requireNoRoutineDispatchFence(){
