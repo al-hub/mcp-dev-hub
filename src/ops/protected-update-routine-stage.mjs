@@ -18,7 +18,7 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from './protected-update-github-evidence.mjs';
 import {verifyProtectedBootstrapPack}
   from '../../scripts/protected-update-bootstrap-pack.mjs';
-import {acquireRoutineDispatchFence,probeDifferentInstalledHead}
+import {acquireRoutineDispatchFence,probeDifferentInstalledPair}
   from './protected-update-routine-dispatch-fence.mjs';
 import {inspectProtectedCurrentSnapshot}
   from './protected-update-release-pointer.mjs';
@@ -142,12 +142,13 @@ export async function stageFixedRoutineOperation({
  }
  // A single crash-durable slot fence serializes all routine signers,
  // including distinct update IDs, before any signer begins.
- acquireRoutineDispatchFence(c.operationId,{validateCandidate:()=>
-  probeDifferentInstalledHead({
-   installedCommit:inspectProtectedCurrentSnapshot(ROOT).commit,
-   requestedHead:c.head
-  })
- });
+ acquireRoutineDispatchFence(c.operationId,{validateCandidate:()=>{
+  const installed=inspectProtectedCurrentSnapshot(ROOT);
+  return probeDifferentInstalledPair({
+   installedCommit:installed.commit,requestedHead:c.head,
+   installedFiles:installed.files,requestedFiles:manifest.files
+  });
+ }});
  const slot=OPS+'/'+c.operationId;
  // An earlier attempt, including a partial directory, is UNKNOWN.
  // Never delete, overwrite or start the signers again for this ID.

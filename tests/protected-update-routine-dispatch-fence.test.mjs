@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {parseRoutineDispatchFence,acquireRoutineDispatchFence,
  releaseTerminalRoutineDispatchFence,requireNoRoutineDispatchFence,
- probeDifferentInstalledHead}
+ probeDifferentInstalledHead,probeDifferentInstalledPair}
  from '../src/ops/protected-update-routine-dispatch-fence.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
  from '../scripts/protected-update-bootstrap-pack.mjs';
@@ -147,7 +147,56 @@ test('fixed stage and root apply independently check installed head before signe
  const stage=readFileSync(new URL('../src/ops/protected-update-routine-stage.mjs',import.meta.url),'utf8');
  const apply=readFileSync(new URL('../scripts/protected-update-root-apply.mjs',import.meta.url),'utf8');
  assert.ok(stage.includes('acquireRoutineDispatchFence(c.operationId,{validateCandidate:()=>'));
- assert.ok(stage.includes('installedCommit:inspectProtectedCurrentSnapshot(ROOT).commit'));
+ assert.ok(stage.includes('const installed=inspectProtectedCurrentSnapshot(ROOT);'));
+ assert.ok(stage.includes('return probeDifferentInstalledPair({'));
+ assert.ok(stage.includes('installedFiles:installed.files,requestedFiles:manifest.files'));
  assert.ok(apply.indexOf('if(!probeDifferentInstalledHead({')<
   apply.indexOf('const collected=await collectFixedRoutineIssuerAttestations({intent})'));
+});
+
+test('distinct-commit same-byte routine is rejected before signer dispatch',()=>{
+ const old=[
+  {name:'ai-github-canary-policy.mjs',bytes:10,sha256:'a'.repeat(64)},
+  {name:'ai-github-canary.mjs',bytes:12,sha256:'b'.repeat(64)}
+ ];
+ const args={installedCommit:'1'.repeat(40),requestedHead:'2'.repeat(40),
+  installedFiles:old,requestedFiles:old.map(row=>({...row}))};
+ assert.equal(probeDifferentInstalledPair(args),false);
+ assert.equal(probeDifferentInstalledPair({...args,requestedHead:args.installedCommit}),false);
+ const different=old.map(row=>({...row}));
+ different[1].sha256='c'.repeat(64);
+ assert.equal(probeDifferentInstalledPair({...args,requestedFiles:different}),true);
+ for(const invalid of [
+  {...args,requestedFiles:[old[0],old[0]]},
+  {...args,installedFiles:[old[0]]},
+  {...args,requestedFiles:old.map(row=>({...row,sha256:'INVALID'}))},
+  {...args,installedCommit:'invalid'}
+ ])assert.throws(()=>probeDifferentInstalledPair(invalid),
+  /routine_dispatch_unknown_or_denied/);
+});
+
+test('same-byte HEAD race after lock acquisition never strands routine fence',async()=>{
+ const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-samebytes-'));
+ const ops=join(tmp,'routine-operations');
+ try{
+  mkdirSync(ops,{mode:0o755});
+  const f=await simulatedFence(ops);
+  const installed=[
+   {name:'ai-github-canary-policy.mjs',bytes:10,sha256:'a'.repeat(64)},
+   {name:'ai-github-canary.mjs',bytes:12,sha256:'b'.repeat(64)}
+  ];
+  const different=installed.map(row=>({...row}));
+  different[1].sha256='c'.repeat(64);
+  let readings=0;
+  assert.throws(()=>f.acquireRoutineDispatchFence(ID,{validateCandidate:()=>
+   f.probeDifferentInstalledPair({
+    installedCommit:'1'.repeat(40),requestedHead:'2'.repeat(40),
+    installedFiles:installed,
+    requestedFiles:++readings===1?different:installed
+   })
+  }),/routine_dispatch_unknown_or_denied/);
+  assert.equal(readings,2);
+  assert.equal(existsSync(join(ops,'.active-routine')),false);
+  assert.equal(existsSync(join(ops,ID)),false);
+ }finally{rmSync(tmp,{recursive:true,force:true});}
 });

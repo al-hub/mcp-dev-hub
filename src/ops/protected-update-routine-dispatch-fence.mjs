@@ -79,6 +79,33 @@ export function probeDifferentInstalledHead({installedCommit,requestedHead}={}){
  if(!SHA.test(installedCommit||'')||!SHA.test(requestedHead||''))deny();
  return installedCommit!==requestedHead;
 }
+const PAIR_FILES=Object.freeze([
+ 'ai-github-canary-policy.mjs','ai-github-canary.mjs'
+]);
+const HASH=/^[a-f0-9]{64}$/;
+function exactPair(files){
+ if(!Array.isArray(files)||files.length!==PAIR_FILES.length)deny();
+ return PAIR_FILES.map(name=>{
+  const row=files.find(f=>f?.name===name);
+  if(!row||Object.keys(row).sort().join(',')!=='bytes,name,sha256'||
+     !Number.isSafeInteger(row.bytes)||row.bytes<1||row.bytes>256*1024||
+     !HASH.test(row.sha256||''))deny();
+  return row;
+ });
+}
+/** Identity and actual authenticated release bytes must both differ.
+ * No-op comparisons occur before signer dispatch AND after taking the
+ * exclusive fence; UNKNOWN physical snapshot or metadata fails closed.
+ */
+export function probeDifferentInstalledPair({
+ installedCommit,requestedHead,installedFiles,requestedFiles
+}={}){
+ const changedHead=probeDifferentInstalledHead({installedCommit,requestedHead});
+ const installed=exactPair(installedFiles);
+ const proposed=exactPair(requestedFiles);
+ return changedHead&&installed.some((f,i)=>
+  f.bytes!==proposed[i].bytes||f.sha256!==proposed[i].sha256);
+}
 export function acquireRoutineDispatchFence(operationId,{validateCandidate}={}){
  root();
  if(!ID.test(operationId||'')||typeof validateCandidate!=='function')deny();
