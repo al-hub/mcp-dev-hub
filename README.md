@@ -34,3 +34,6 @@ npm run check
 
 AI CLI는 먼저 [AGENTS.md](AGENTS.md)를 읽습니다. Claude와 Gemini용 진입 문서도 같은 지침을 가리킵니다.
 개인정보 관리 기준은 [SECURITY.md](SECURITY.md)에 있습니다.
+WSL 보호 파일 무인 업데이트의 프로젝트 기본 설계와 **미적용 상태**
+구분은 [보호 업데이트 정책](docs/ops/protected-update-baseline.md) 및
+[상위 제약](docs/ops/current-constraints.md)을 따릅니다.

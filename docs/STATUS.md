@@ -30,3 +30,11 @@ Keep all real configuration outside the repository. Read AGENTS.md first.
 ## Validation
 
 Local Node.js 24 validation: 7 tests passed; privacy candidate check passed for all staged source files. Remote CI results must be checked separately after push. No real device or client acceptance is claimed.
+
+## 2026-11-10 — project-wide Option C security baseline (documentation only)
+
+- An owner-approved design choice for #35 and future protected/root-owned updates is now recorded as a shared project default rather than only on a blocked feature PR: WSL-local three-principal independent Ed25519 trust boundary, one owner-local bounded bootstrap, no per-update sudo and no requirement for additional mobile/PC external signing apps.
+- All future changes MUST keep real independent exact-HEAD Codex execution, strict CI/branch protection, two protected OS issuer identities and an immutable root-owned two-file updater, with authenticated signatures and atomic CAS/UNKNOWN/rollback semantics. Real PC/Galaxy/private-SSE and service/data acceptance remains required after install.
+- This is a **design policy**, not a retroactive removal of the current #35 runtime's external device/GitHub App gates. Until an independently audited complete runtime replacement is installed, existing checks remain fail-closed and #35 is operating NO-GO.
+- Scoped only to `AGENTS.md`, `README.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/ops/current-constraints.md`, this history entry and `docs/ops/protected-update-baseline.md`. No source code, root trust, signer key, service, GitHub approval or branch-protection modification.
+- Real main-baseline tests: `node --test` **161/161 PASS** and `node scripts/check-privacy.mjs` **110 files PASS** with staged changes; `git diff --cached --check` PASS. Status remains document-only pending PR CI and normal merge.
