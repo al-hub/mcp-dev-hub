@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {issueFixedIndependentAppAcceptanceApproval,
  verifyUnchangedPhysicalOriginal}
@@ -95,7 +96,7 @@ test('exact unchanged original identities required after network round-trip',()=
   /protected_app_acceptance_issuer_denied/);
 });
 test('approval issuer inspects originals again AFTER live evidence before signing',()=>{
- const source=(await import('node:fs')).readFileSync(new URL(
+ const source=readFileSync(new URL(
   '../scripts/protected-update-app-acceptance-approval-issuer.mjs',
   import.meta.url),'utf8');
  const second=source.indexOf(
