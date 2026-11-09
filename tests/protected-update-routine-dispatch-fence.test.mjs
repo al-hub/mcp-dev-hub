@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fileURLToPath} from 'node:url';
-import {mkdtempSync,mkdirSync,existsSync,readFileSync,rmSync} from 'node:fs';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {mkdtempSync,mkdirSync,existsSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -53,6 +53,9 @@ async function simulatedFence(ops,{raceAfterAcquire=false}={}){
  const guard=/function root\(\)\{[\s\S]*?\n\}\nfunction directorySync\(\)/;
  assert.match(src,guard);
  src=src.replace(guard,'function root() {}\nfunction directorySync()');
+ // In this test-only remap, the unprivileged caller owns the temporary
+ // lock file; production root-file UID validation is NOT changed.
+ src=src.replaceAll('s.uid!==0','s.uid!==process.getuid()');
  if(raceAfterAcquire){
   const start='function slotAbsent(operationId){';
   assert.equal(src.split(start).length,2);
@@ -62,8 +65,10 @@ async function simulatedFence(ops,{raceAfterAcquire=false}={}){
 function slotAbsent(operationId){
  if(firstSlotCheck){firstSlotCheck=false;return true;}`);
  }
- const encoded=Buffer.from(src).toString('base64');
- return await import('data:text/javascript;base64,'+encoded);
+ const fixtureFile=join(ops,'..','fixture-fence-'+
+  (raceAfterAcquire?'race':'replay')+'.mjs');
+ writeFileSync(fixtureFile,src,{mode:0o600});
+ return await import(pathToFileURL(fixtureFile).href);
 }
 test('replayed completed routine slot is rejected without poisoning global fence',async()=>{
  const tmp=mkdtempSync(join(tmpdir(),'mcp35-routine-lock-'));
