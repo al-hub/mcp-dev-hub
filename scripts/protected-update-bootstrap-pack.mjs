@@ -53,6 +53,7 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-release-pointer.mjs',
   'src/ops/protected-update-request.mjs',
   'src/ops/protected-update-routine-issuer.mjs',
+  'src/ops/protected-update-routine-collection.mjs',
   'src/ops/protected-update-root-evidence.mjs',
   'src/ops/protected-update-root-layout.mjs',
   'src/ops/protected-update-root-preflight.mjs',
