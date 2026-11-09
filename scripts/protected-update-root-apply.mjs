@@ -18,6 +18,8 @@ import {parseProtectedRoutineIntent}
   from '../src/ops/protected-update-routine-intent.mjs';
 import {collectFixedRoutineIssuerAttestations}
   from './protected-update-issuer-collect.mjs';
+import {requireNoRoutineDispatchFence,releaseTerminalRoutineDispatchFence}
+  from '../src/ops/protected-update-routine-dispatch-fence.mjs';
 import {assertFixedRootProtectedUpdateLayout}
   from '../src/ops/protected-update-root-layout.mjs';
 import {preflightAuthenticatedProtectedUpdate,readRootProtectedUpdateTrust}
@@ -151,13 +153,15 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const trust=readRootProtectedUpdateTrust();
   let candidate;
   try{candidate=JSON.parse(raw);}catch{deny();}
-  let req;
+  let req,routineId=null;
   if(candidate?.version===2){
     const intent=parseProtectedRoutineIntent(raw);
+    routineId=intent.operationId;
     const collected=await collectFixedRoutineIssuerAttestations({intent});
     req=parseProtectedUpdateRequest(collected.requestJson);
   }else{
     req=parseProtectedUpdateRequest(raw);
+    requireNoRoutineDispatchFence();
   }
   // Authenticate the complete signed request BEFORE taking the durable
   // root mutation lock. Invalid or stale proofs may not alter controller.
@@ -210,7 +214,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const previousHashes=hashes(prior.files);
   const futureHashes=hashes(verified.approved.manifest.files);
   let finalNowMs;
-  return await withProtectedOperationGuard(ROOT,async()=>{
+  const terminal=await withProtectedOperationGuard(ROOT,async()=>{
     // From this point, crashes and UNKNOWN outcomes preserve the lock;
     // no automatic replay or stale-lock removal is permitted.
     const outcome=await applyProtectedUpdateCandidate({
@@ -276,6 +280,10 @@ export async function applyOneProtectedUpdateFixedRoot(){
     if(admission.state!=='read_only_transaction_admitted')deny();
     return true;
   }});
+  // An interrupted or uncertain operation retains the dispatch fence.
+  if(routineId!==null)
+    releaseTerminalRoutineDispatchFence(routineId,terminal.state);
+  return terminal;
 }
 // Importing from nonroot unit tests is inert; direct source-checkout
 // invocation MUST fail without touching the running protected controller.

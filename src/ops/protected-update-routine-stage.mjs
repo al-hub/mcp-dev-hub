@@ -18,6 +18,8 @@ import {fetchAndVerifyGitHubBootstrapEvidence,
   from './protected-update-github-evidence.mjs';
 import {verifyProtectedBootstrapPack}
   from '../../scripts/protected-update-bootstrap-pack.mjs';
+import {acquireRoutineDispatchFence}
+  from './protected-update-routine-dispatch-fence.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const BASE='/var/lib/mcp-dev-hub-signers';
@@ -136,6 +138,9 @@ export async function stageFixedRoutineOperation({
   mkdirSync(OPS,{mode:0o755});
   safeDirectory(OPS,0o755);fsyncDirectory(BASE);
  }
+ // A single crash-durable slot fence serializes all routine signers,
+ // including distinct update IDs, before any signer begins.
+ acquireRoutineDispatchFence(c.operationId);
  const slot=OPS+'/'+c.operationId;
  // An earlier attempt, including a partial directory, is UNKNOWN.
  // Never delete, overwrite or start the signers again for this ID.
