@@ -112,3 +112,11 @@
 - Negative regressions reproduce the prior defects; source-only tests do not establish actual operating signer provenance, real installation, rollback, or physical acceptance.
 - Existing original root files, services, data, secrets, AI_WRITE=0, AI_PUSH=0, GitHub protections and sudo policy remain unchanged. New exact-head CI and independent final-code audit are still required before one narrowly owner-approved bootstrap, 2 distinct real updates, post-install acceptance, merge or issue close.
 - Operating status remains NO-GO; Issue #35 OPEN.
+
+## 2026-11-10 — project-wide Option C security baseline (documentation only)
+
+- An owner-approved design choice for #35 and future protected/root-owned updates is now recorded as a shared project default rather than only on a blocked feature PR: WSL-local three-principal independent Ed25519 trust boundary, one owner-local bounded bootstrap, no per-update sudo and no requirement for additional mobile/PC external signing apps.
+- All future changes MUST keep real independent exact-HEAD Codex execution, strict CI/branch protection, two protected OS issuer identities and an immutable root-owned two-file updater, with authenticated signatures and atomic CAS/UNKNOWN/rollback semantics. Real PC/Galaxy/private-SSE and service/data acceptance remains required after install.
+- This is a **design policy**, not a retroactive removal of the current #35 runtime's external device/GitHub App gates. Until an independently audited complete runtime replacement is installed, existing checks remain fail-closed and #35 is operating NO-GO.
+- Scoped only to `AGENTS.md`, `README.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/ops/current-constraints.md`, this history entry and `docs/ops/protected-update-baseline.md`. No source code, root trust, signer key, service, GitHub approval or branch-protection modification.
+- Real main-baseline tests: `node --test` **161/161 PASS** and `node scripts/check-privacy.mjs` **110 files PASS** with staged changes; `git diff --cached --check` PASS. Status remains document-only pending PR CI and normal merge.
