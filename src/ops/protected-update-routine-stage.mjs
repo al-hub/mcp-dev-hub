@@ -3,7 +3,7 @@
 // No unattended replay on interrupted staging or missing role signatures.
 import {createHash,createPublicKey} from 'node:crypto';
 import {constants,closeSync,fchmodSync,fstatSync,fsyncSync,lstatSync,
-  mkdirSync,openSync,writeSync,chmodSync} from 'node:fs';
+  mkdirSync,openSync,writeSync,chmodSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parsePinnedRoutineIssuerContext,buildRoutineReviewerClaim}
   from './protected-update-routine-issuer.mjs';
@@ -25,6 +25,7 @@ import {inspectProtectedCurrentSnapshot}
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const BASE='/var/lib/mcp-dev-hub-signers';
+const TRUST='/etc/mcp-dev-hub/protected-update';
 const OPS=BASE+'/routine-operations';
 const ENTRY=ROOT+'/protected-updater/code/scripts/protected-update-root-apply.mjs';
 const ROOT_COLLECT=ROOT+'/protected-updater/code/scripts/protected-update-issuer-collect.mjs';
@@ -34,6 +35,18 @@ function pub(pem){
  let k;try{k=createPublicKey(pem);}catch{deny();}
  if(k.asymmetricKeyType!=='ed25519')deny();
  return k.export({type:'spki',format:'der'});
+}
+function pinnedSignerMode(){
+ const fd=openSync(TRUST+'/signer-mode',
+   constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+ try{
+  const s=fstatSync(fd);
+  if(!s.isFile()||s.uid!==0||s.nlink!==1||
+     (s.mode&0o777)!==0o400||s.size<1||s.size>64)deny();
+  const mode=readFileSync(fd,'utf8').trim();
+  if(!['external-v1','wsl-local-v1'].includes(mode))deny();
+  return mode;
+ }finally{closeSync(fd);}
 }
 function safeDirectory(path,mode=null){
  const s=lstatSync(path);
@@ -105,7 +118,9 @@ export async function stageFixedRoutineOperation({
  assertFixedOperationalIssuerIsolation();
  const trust=readRootProtectedUpdateTrust();
  const c=parsePinnedRoutineIssuerContext(JSON.stringify(context));
- if(c.packDigest!==trust.approvedPackDigest)deny();
+ if(c.packDigest!==trust.approvedPackDigest||
+    (c.signerMode==='wsl-local-v1')!==
+      (pinnedSignerMode()==='wsl-local-v1'))deny();
  const pack=verifyProtectedBootstrapPack({
   outputPath:ROOT+'/protected-updater',
   expectedManifestSha256:trust.approvedPackDigest
@@ -119,11 +134,12 @@ export async function stageFixedRoutineOperation({
    prNumber:c.prNumber,head:c.head,base:c.base,ciRunId:c.ciRunId,
    githubToken:trust.githubToken
   }),
-  fetchAndVerifyOfficialReviewerApproval({
-   prNumber:c.prNumber,head:c.head,
-   reviewerBotId:c.reviewerBotId,githubToken:trust.githubToken,
-   nowMs:Date.now()
-  }),
+  c.signerMode==='wsl-local-v1'?Promise.resolve(null):
+    fetchAndVerifyOfficialReviewerApproval({
+      prNumber:c.prNumber,head:c.head,
+      reviewerBotId:c.reviewerBotId,githubToken:trust.githubToken,
+      nowMs:Date.now()
+    }),
   fetchAndVerifyGitHubControllerPair({
    head:c.head,manifestFiles:manifest.files,
    githubToken:trust.githubToken

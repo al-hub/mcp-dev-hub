@@ -17,6 +17,8 @@ import {readRootProtectedUpdateTrust}
   from '../src/ops/protected-update-root-evidence.mjs';
 import {verifyProtectedBootstrapAttestations}
   from '../src/ops/protected-update-install-attestation.mjs';
+import {verifyLocalProtectedBootstrapContract}
+  from '../src/ops/protected-update-local-trust-contract.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval}
   from '../src/ops/protected-update-github-evidence.mjs';
@@ -98,6 +100,9 @@ export async function bootstrapOneShotFixedRoot(){
   const expectedLegacyFiles=parseBaseFiles(rootFile(BASE_FILES,4096));
   if(!HASH.test(pinned)||!SHA.test(baselineCommit))fail();
   const trust=readRootProtectedUpdateTrust();
+  const signerMode=rootFile(TRUST+'/signer-mode',64).trim();
+  if(signerMode!=='wsl-local-v1'&&signerMode!=='external-v1')fail();
+  const localMode=signerMode==='wsl-local-v1';
   assertFixedOperationalIssuerIsolation();
   const verified=verifyProtectedBootstrapPack({
     outputPath:PACK,expectedManifestSha256:pinned
@@ -141,6 +146,7 @@ export async function bootstrapOneShotFixedRoot(){
   if(gh.head!==bound.head||gh.base!==bound.base||
      gh.ciRunId!==bound.ciRunId||gh.strictProtection!==true||
      gh.ciPassed!==true)fail();
+  if(!localMode){
   const reviewerBotIdRaw=rootFile(TRUST+'/reviewer-bot-id',48).trim();
   if(!/^[1-9][0-9]{0,14}$/.test(reviewerBotIdRaw))fail();
   const review=await fetchAndVerifyOfficialReviewerApproval({
@@ -160,6 +166,39 @@ export async function bootstrapOneShotFixedRoot(){
   if(review.reviewEvidenceId!==deriveSignedCodexEvidenceId({
     reviewDigest:codex.reviewDigest,packDigest:pinned
   }))fail();
+  }else{
+    // Root-verified WSL-local path: the two protected issuer signatures
+    // and a third independently pinned Codex Ed25519 receipt are required.
+    let intent;
+    const intentJson=rootFile(TRUST+'/local-bootstrap-dispatch.intent.json',2048);
+    try{intent=JSON.parse(intentJson);}catch{fail();}
+    const fields=['version','head','base','ciRunId','packDigest',
+      'phase','safeToReplay'];
+    if(!intent||Array.isArray(intent)||
+       Object.keys(intent).length!==fields.length||
+       !fields.every(k=>Object.hasOwn(intent,k))||
+       JSON.stringify(intent)!==intentJson||
+       intent.version!==1||intent.head!==verified.head||
+       intent.base!==base||intent.ciRunId!==ciRunId||
+       intent.packDigest!==pinned||
+       intent.phase!=='reviewer_dispatched_or_unknown'||
+       intent.safeToReplay!==false)fail();
+    const codexReceipt=readFixedIndependentCodexReceipt();
+    const result=verifyLocalProtectedBootstrapContract({
+      reviewJson,reviewSignatureBase64,approvalJson,
+      approvalSignatureBase64,
+      reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+      approvalPublicKeyPem:trust.approvalPublicKeyPem,
+      codexReviewJson:codexReceipt.reviewJson,
+      codexSignatureBase64:codexReceipt.reviewSignatureBase64,
+      codexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+      head:verified.head,base,packDigest:pinned,
+      baselineCommit,baselineDigest,prNumber,ciRunId,
+      nowMs:Date.now(),githubEvidence:gh
+    });
+    if(result.status!=='local_three_principal_signatures_verified_source_only'||
+       result.safeToInstall!==false||result.safeToMerge!==false)fail();
+  }
   // No owner approval is implied by the signatures; OS installation remains
   // a separately explicit administrator action. This candidate cannot grant
   // itself sudo access or perform the initial immutable file installation.
@@ -189,6 +228,28 @@ export async function bootstrapOneShotFixedRoot(){
     head:verified.head,base,packDigest:pinned,
     baselineCommit,baselineDigest,prNumber,ciRunId,nowMs:Date.now()
   });
+  if(localMode){
+    // Re-fetch live PR/CI/protection after all asynchronous checks; previous
+    // read-only observations and signed receipt windows may become stale.
+    const ghFinal=await fetchAndVerifyGitHubBootstrapEvidence({
+      prNumber,head:verified.head,base,ciRunId,
+      githubToken:trust.githubToken
+    });
+    const codexReceipt=readFixedIndependentCodexReceipt();
+    const fresh=verifyLocalProtectedBootstrapContract({
+      reviewJson,reviewSignatureBase64,approvalJson,
+      approvalSignatureBase64,
+      reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+      approvalPublicKeyPem:trust.approvalPublicKeyPem,
+      codexReviewJson:codexReceipt.reviewJson,
+      codexSignatureBase64:codexReceipt.reviewSignatureBase64,
+      codexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+      head:verified.head,base,packDigest:pinned,
+      baselineCommit,baselineDigest,prNumber,ciRunId,
+      nowMs:Date.now(),githubEvidence:ghFinal
+    });
+    if(fresh.safeToInstall!==false)fail();
+  }
   return migrateProtectedOriginalPairCandidate({
     root:ROOT,baselineCommit,expectedLegacyFiles,
     wrapperBytes,wrapperSha256:wrapperRow.sha256

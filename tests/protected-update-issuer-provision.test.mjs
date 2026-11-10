@@ -10,7 +10,7 @@ import {Script} from 'node:vm';
 import {
   verifyRootSignerProvisionPlan,provisionIndependentProtectedIssuersOnce,
   requirePinnedCodexPublicKey,decodeRootTrustBytes,
-  verifyOwnerPinnedExternalGateKeys,
+  verifyOwnerPinnedExternalGateKeys,validatePinnedProtectedSignerMode,
   PROTECTED_ISSUER_KEYGEN_PROGRAM
 } from '../scripts/protected-update-issuer-provision.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
@@ -156,7 +156,7 @@ test('external proof key anchors are owner supplied, canonical, independently di
 test('root provisioner must authenticate external keys before account creation',()=>{
  const source=readFileSync(new URL(
   '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
- const preflight=source.indexOf('const external=verifyOwnerPinnedExternalGateKeys(');
+ const preflight=source.indexOf('const external=localMode?null:verifyOwnerPinnedExternalGateKeys(');
  const accounts=source.indexOf("spawnSync('/usr/sbin/useradd'");
  assert.ok(preflight>0&&accounts>preflight);
  assert.ok(source.includes(
@@ -165,4 +165,19 @@ test('root provisioner must authenticate external keys before account creation',
   "writePublicIssuerFile('app-root-public.pem',external.rootPublicPem)"));
  assert.ok(source.includes(
   "writePublicIssuerFile('approval-public.pem',created.stdout)"));
+});
+
+test('owner-pinned signer mode is explicit and unknown modes refuse provision',()=>{
+ assert.equal(validatePinnedProtectedSignerMode('wsl-local-v1'),'wsl-local-v1');
+ assert.equal(validatePinnedProtectedSignerMode('external-v1'),'external-v1');
+ for(const bad of ['',null,undefined,'legacy','Wsl-local-v1',
+  'wsl-local-v1\n','external-v1\n',true])
+  denied(()=>validatePinnedProtectedSignerMode(bad));
+ const raw=readFileSync(new URL(
+  '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+ assert.ok(raw.indexOf("trust('signer-mode',64)")>0);
+ assert.ok(raw.indexOf("trust('signer-mode',64)")<
+  raw.indexOf("spawnSync('/usr/sbin/useradd'"));
+ assert.ok(raw.includes("if(!localMode){\n    writePublicIssuerFile('app-device-public.pem'"));
+ assert.ok(raw.includes("writePublicIssuerFile('approved-local-bootstrap-context.json'"));
 });

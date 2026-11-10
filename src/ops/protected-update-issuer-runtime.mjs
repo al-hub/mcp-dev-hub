@@ -10,6 +10,8 @@ import {createPrivateKey,sign} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {parsePinnedBootstrapIssuerContext}
   from './protected-update-bootstrap-issuer.mjs';
+import {parsePinnedLocalBootstrapContext}
+  from './protected-update-local-issuer-claims.mjs';
 import {parsePinnedRoutineIssuerContext,ROUTINE_REVIEW_DOMAIN,
   ROUTINE_APPROVAL_DOMAIN}
   from './protected-update-routine-issuer.mjs';
@@ -41,11 +43,13 @@ const deny=()=>{throw Error('protected_signer_runtime_denied');};
 const ROLE=Object.freeze({
   reviewer:Object.freeze([
     'protected-update-review-issuer.mjs',
+    'protected-update-local-review-issuer.mjs',
     'protected-update-routine-review-issuer.mjs',
     'protected-update-app-acceptance-review-issuer.mjs'
   ]),
   approval:Object.freeze([
     'protected-update-approval-issuer.mjs',
+    'protected-update-local-approval-issuer.mjs',
     'protected-update-routine-approval-issuer.mjs',
     'protected-update-app-acceptance-approval-issuer.mjs'
   ])
@@ -102,6 +106,35 @@ export function readFixedRoutineIssuerContext(){
     {owner:0,mode:0o444,maxBytes:6500}
   ));
 }
+/** Local Option C root-staged public context, not caller-supplied. */
+export function readFixedLocalIssuerContext(){
+ checkedDir(BASE,0);
+ return parsePinnedLocalBootstrapContext(readExact(
+  BASE+'/approved-local-bootstrap-context.json',
+  {owner:0,mode:0o444,maxBytes:2048}
+ ));
+}
+/** Root-staged PUBLIC keys. Owner-pinned trust and OS isolation must be
+ * established by the immutable root authority, never by this reader.
+ */
+export function readFixedLocalIssuerPinnedKeys(){
+ checkedDir(BASE,0);
+ return Object.freeze({
+  codexPublicKeyPem:readExact(BASE+'/codex-reviewer-public.pem',
+   {owner:0,mode:0o444,maxBytes:4096}),
+  reviewerPublicKeyPem:readExact(BASE+'/reviewer-public.pem',
+   {owner:0,mode:0o444,maxBytes:4096}),
+  approvalPublicKeyPem:readExact(BASE+'/approval-public.pem',
+   {owner:0,mode:0o444,maxBytes:4096})
+ });
+}
+export async function fetchFixedLocalIssuerEvidence(context,token){
+ const c=parsePinnedLocalBootstrapContext(JSON.stringify(context));
+ return fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber:c.prNumber,head:c.head,base:c.base,ciRunId:c.ciRunId,
+  githubToken:token
+ });
+}
 export function readFixedIssuerContext(){
   checkedDir(BASE,0);
   return parsePinnedBootstrapIssuerContext(readExact(
@@ -129,8 +162,15 @@ function readPrivateIssuerMaterial(role){
 }
 export async function fetchFixedIssuerEvidence(context,token){
   // Genuine TLS/GitHub evidence: PR must be NON-DRAFT, exact HEAD/BASE,
-  // strict required CI and branch protection. Bot approval must be the
-  // latest same-HEAD review from the fixed trusted reviewer identity.
+  // strict required CI and branch protection. Legacy external-v1 also
+  // requires the latest same-HEAD trusted GitHub Bot review.
+  if(context.signerMode==='wsl-local-v1'){
+    const githubEvidence=await fetchAndVerifyGitHubBootstrapEvidence({
+      prNumber:context.prNumber,head:context.head,base:context.base,
+      ciRunId:context.ciRunId,githubToken:token
+    });
+    return {githubEvidence,officialApproval:null};
+  }
   const [githubEvidence,officialApproval]=await Promise.all([
     fetchAndVerifyGitHubBootstrapEvidence({
       prNumber:context.prNumber,head:context.head,base:context.base,

@@ -73,6 +73,18 @@ function privateDecimal(name){
     return value;
   }finally{closeSync(fd);}
 }
+function rootPinnedSignerMode(){
+  const fd=openSync(TRUST+'/signer-mode',
+    constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const st=fstatSync(fd);
+    if(!st.isFile()||st.uid!==0||st.nlink!==1||
+       (st.mode&0o777)!==0o400||st.size<1||st.size>64)deny();
+    const mode=readFileSync(fd,'utf8').trim();
+    if(!['wsl-local-v1','external-v1'].includes(mode))deny();
+    return mode;
+  }finally{closeSync(fd);}
+}
 function pinnedLauncherDigest(){
   const fd=openSync(TRUST+'/approved-pack-digest',
     constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
@@ -148,10 +160,12 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const raw=await readRequest();
   assertFixedRootProtectedUpdateLayout();
   // Confirm trusted launcher and root pins BEFORE any routine staging write.
-  // A version-2 intent still requires real external Codex/Bot/CI evidence,
-  // and it cannot itself sign any approval.
+  // A version-2 intent requires pinned independent Codex/role signatures
+  // and real CI. Only external-v1 additionally requires the legacy Bot;
+  // an intent can never sign its own approval.
   const launcherHash=pinnedLauncherDigest();
   const trust=readRootProtectedUpdateTrust();
+  const localMode=rootPinnedSignerMode()==='wsl-local-v1';
   let candidate;
   try{candidate=JSON.parse(raw);}catch{deny();}
   let req,routineId=null;
@@ -181,24 +195,24 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const verified=await preflightAuthenticatedProtectedUpdate({
     ...req,nowMs:Date.now()
   });
-  const reviewerBotId=privateDecimal('reviewer-bot-id');
-  if(reviewerBotId<=0)deny();
-  const official=await fetchAndVerifyOfficialReviewerApproval({
+  const reviewerBotId=localMode?null:privateDecimal('reviewer-bot-id');
+  const official=localMode?null:await fetchAndVerifyOfficialReviewerApproval({
     prNumber:req.prNumber,head:req.head,reviewerBotId,
     githubToken:trust.githubToken,nowMs:Date.now()
   });
-  if(official.state!=='official_github_bot_review_confirmed'||
+  if(!localMode&&(official.state!=='official_github_bot_review_confirmed'||
      official.reviewEvidenceId!==deriveSignedCodexEvidenceId({
        reviewDigest:verified.proof.reviewDigest,
        packDigest:trust.approvedPackDigest
-     }))deny();
+     })))deny();
   // The routine reviewer signature is a distinct operational trust boundary,
   // NEVER interchangeable with the independent Codex signed receipt.
   const routineContext=Object.freeze({
     version:1,repository:'al-hub/mcp-dev-hub',scope:'controller-pair',
     head:req.head,base:req.base,prNumber:req.prNumber,
-    ciRunId:req.ciRunId,reviewerBotId,
-    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]',
+    ciRunId:req.ciRunId,
+    ...(localMode?{signerMode:'wsl-local-v1'}:{
+      reviewerBotId,reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]'}),
     operationId:req.operationId,manifestJson:req.manifestJson,
     packDigest:trust.approvedPackDigest
   });

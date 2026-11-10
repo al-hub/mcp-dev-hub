@@ -22,6 +22,11 @@ import {readRootProtectedUpdateTrust}
 import {parsePinnedBootstrapIssuerContext,
   buildBootstrapApprovalClaim}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
+import {parsePinnedLocalBootstrapContext,
+  buildLocalBootstrapReviewerClaim,buildLocalBootstrapApprovalClaim}
+  from '../src/ops/protected-update-local-issuer-claims.mjs';
+import {verifyLocalProtectedBootstrapContract}
+  from '../src/ops/protected-update-local-trust-contract.mjs';
 import {fetchAndVerifyGitHubBootstrapEvidence,
   fetchAndVerifyOfficialReviewerApproval,verifyIndependentSignedReview}
   from '../src/ops/protected-update-github-evidence.mjs';
@@ -262,6 +267,116 @@ export async function collectFixedBootstrapIssuerAttestations(){
     reviewRunId:verified.reviewRunId,
     realProtectedUpdates:0,safeToRetry:false});
 }
+/** Root-fixed local WSL collector: issue real OS-isolated reviewer/approver
+ * evidence only after independently authenticating the current Codex receipt,
+ * the root-pinned public identities, the exact immutable package and live CI.
+ * This is NOT the owner-local bootstrap or permission to install.
+ */
+export async function collectFixedLocalBootstrapAttestations(){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0||
+   process.argv.length!==2||fileURLToPath(import.meta.url)!==ENTRY)deny();
+ for(const path of ['/','/usr','/usr/local','/usr/local/lib',ROOT,
+  PACK,PACK+'/code','/etc','/etc/mcp-dev-hub',TRUST,
+  '/var','/var/lib',BASE])dir(path,0);
+ if(rootString('signer-mode',64)!=='wsl-local-v1')deny();
+ dir(BASE+'/issuer-reviewer',ownerNumber('reviewer-uid'),0o700);
+ dir(BASE+'/issuer-approval',ownerNumber('approval-uid'),0o700);
+ assertFixedOperationalIssuerIsolation();
+ const pinned=rootString('approved-pack-digest',128);
+ if(!HASH.test(pinned))deny();
+ const pack=verifyProtectedBootstrapPack({
+  outputPath:PACK,expectedManifestSha256:pinned
+ });
+ if(pack.status!=='source_only_unprivileged_no_go')deny();
+ assertInstalledRuntime(selectFixedIssuerSourceRows(pack.files));
+ const context=parsePinnedLocalBootstrapContext(readOwned(
+  BASE+'/approved-local-bootstrap-context.json',0,0o444,2048));
+ const trust=readRootProtectedUpdateTrust();
+ if(context.head!==pack.head||context.packDigest!==pinned||
+   context.base!==rootString('approved-base-commit',128)||
+   context.baselineCommit!==rootString('baseline-commit',128)||
+   context.baselineDigest!==digest(Buffer.from(
+    rootString('baseline-files.json'),'utf8'))||
+   context.prNumber!==Number(rootString('approved-pr-number',48))||
+   context.ciRunId!==Number(rootString('approved-ci-run-id',48))||
+   trust.approvedPackDigest!==pinned)deny();
+ const same=(a,b)=>createPublicKey(a).export({type:'spki',format:'der'})
+   .equals(createPublicKey(b).export({type:'spki',format:'der'}));
+ const keys={
+  codexPublicKeyPem:trust.codexReviewerPublicKeyPem,
+  reviewerPublicKeyPem:trust.reviewerPublicKeyPem,
+  approvalPublicKeyPem:trust.approvalPublicKeyPem
+ };
+ for(const [file,pem] of [
+  ['codex-reviewer-public.pem',keys.codexPublicKeyPem],
+  ['reviewer-public.pem',keys.reviewerPublicKeyPem],
+  ['approval-public.pem',keys.approvalPublicKeyPem]
+ ])if(!same(pem,readOwned(BASE+'/'+file,0,0o444,4096)))deny();
+ const raw=readFixedIndependentCodexReceipt();
+ if(!same(raw.codexReviewerPublicKeyPem,keys.codexPublicKeyPem)||
+   !same(raw.issuerReviewerPublicKeyPem,keys.reviewerPublicKeyPem))
+  deny();
+ const codexReceipt={reviewJson:raw.reviewJson,
+  reviewSignatureBase64:raw.reviewSignatureBase64};
+ for(const path of [
+  BASE+'/review-handoff.json',
+  TRUST+'/local-bootstrap-dispatch.intent.json',
+  TRUST+'/bootstrap-review.json',TRUST+'/bootstrap-review.sig',
+  TRUST+'/bootstrap-approval.json',TRUST+'/bootstrap-approval.sig'
+ ])absent(path);
+ const current=()=>fetchAndVerifyGitHubBootstrapEvidence({
+  prNumber:context.prNumber,head:context.head,base:context.base,
+  ciRunId:context.ciRunId,githubToken:trust.githubToken
+ });
+ const gh=await current();
+ buildLocalBootstrapReviewerClaim({context,githubEvidence:gh,
+  codexReceipt,keys,nowMs:Date.now()});
+ // The intent is durable BEFORE any separate signer dispatch. All partial
+ // outcomes are UNKNOWN; the dispatcher must never auto-replay this ID.
+ if(typeof process.setgroups!=='function')deny();
+ process.setgroups([]);
+ writeRoot(TRUST+'/local-bootstrap-dispatch.intent.json',
+  JSON.stringify({version:1,head:context.head,base:context.base,
+    ciRunId:context.ciRunId,packDigest:pinned,
+    phase:'reviewer_dispatched_or_unknown',safeToReplay:false}),0o400);
+ const review=parseSignedOutput(runRole(
+  'protected-update-local-review-issuer.mjs','reviewer'
+ ),['reviewJson','reviewSignatureBase64']);
+ buildLocalBootstrapApprovalClaim({context,githubEvidence:gh,
+  codexReceipt,keys,...review,nowMs:Date.now()});
+ writeRoot(BASE+'/review-handoff.json',JSON.stringify(review),0o444);
+ const approval=parseSignedOutput(runRole(
+  'protected-update-local-approval-issuer.mjs','approval'
+ ),['approvalJson','approvalSignatureBase64']);
+ // Both OS-private keys must independently attest, and root re-fetches
+ // live HTTPS evidence after the second signer. The Worker cannot supply it.
+ const verified=verifyLocalProtectedBootstrapContract({
+  ...review,...approval,
+  codexReviewJson:codexReceipt.reviewJson,
+  codexSignatureBase64:codexReceipt.reviewSignatureBase64,
+  codexPublicKeyPem:keys.codexPublicKeyPem,
+  reviewerPublicKeyPem:keys.reviewerPublicKeyPem,
+  approvalPublicKeyPem:keys.approvalPublicKeyPem,
+  head:context.head,base:context.base,packDigest:pinned,
+  baselineCommit:context.baselineCommit,
+  baselineDigest:context.baselineDigest,
+  prNumber:context.prNumber,ciRunId:context.ciRunId,
+  nowMs:Date.now(),githubEvidence:await current()
+ });
+ if(verified.safeToInstall!==false||
+    verified.independentOsIdentityProven!==false)deny();
+ writeRoot(TRUST+'/bootstrap-review.json',review.reviewJson,0o400);
+ writeRoot(TRUST+'/bootstrap-review.sig',review.reviewSignatureBase64,0o400);
+ writeRoot(TRUST+'/bootstrap-approval.json',approval.approvalJson,0o400);
+ writeRoot(TRUST+'/bootstrap-approval.sig',
+  approval.approvalSignatureBase64,0o400);
+ return Object.freeze({
+  state:'local_signatures_pinned_pending_owner_activation',
+  reviewRunId:verified.reviewRunId,realProtectedUpdates:0,
+  safeToInstall:false,safeToRetry:false
+ });
+}
+
 /** Bound routine signer orchestration inside the existing fixed root-apply
  * executable. Caller can only supply a canonical untrusted DATA intent.
  * Root independently pins keys, GitHub CI/Bot, source pack and controller
@@ -288,11 +403,15 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
   });
   if(pack.status!=='source_only_unprivileged_no_go')deny();
   assertInstalledRuntime(selectFixedIssuerSourceRows(pack.files));
+  const signerMode=rootString('signer-mode',64);
+  if(!['wsl-local-v1','external-v1'].includes(signerMode))deny();
+  const localMode=signerMode==='wsl-local-v1';
   const context={
     version:1,repository:'al-hub/mcp-dev-hub',scope:'controller-pair',
     head:x.head,base:x.base,prNumber:x.prNumber,ciRunId:x.ciRunId,
-    reviewerBotId:ownerNumber('reviewer-bot-id'),
-    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]',
+    ...(localMode?{signerMode:'wsl-local-v1'}:{
+      reviewerBotId:ownerNumber('reviewer-bot-id'),
+      reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]'}),
     operationId:x.operationId,manifestJson:x.manifestJson,
     packDigest:pinned
   };
@@ -332,17 +451,16 @@ export async function collectFixedRoutineIssuerAttestations({intent}={}){
   ),['approvalJson','approvalSignatureBase64']);
   // A second root-side live cross-check prevents a stale earlier evidence
   // snapshot from being silently promoted by a later signing result.
-  const [gh,official]=await Promise.all([
-    fetchAndVerifyGitHubBootstrapEvidence({
-      prNumber:context.prNumber,head:context.head,base:context.base,
-      ciRunId:context.ciRunId,githubToken:trust.githubToken
-    }),
-    fetchAndVerifyOfficialReviewerApproval({
+  const gh=await fetchAndVerifyGitHubBootstrapEvidence({
+    prNumber:context.prNumber,head:context.head,base:context.base,
+    ciRunId:context.ciRunId,githubToken:trust.githubToken
+  });
+  const official=localMode?null:
+    await fetchAndVerifyOfficialReviewerApproval({
       prNumber:context.prNumber,head:context.head,
       reviewerBotId:context.reviewerBotId,
       githubToken:trust.githubToken,nowMs:Date.now()
-    })
-  ]);
+    });
   const result=assembleCollectedRoutineAuthorization({
     context,githubEvidence:gh,officialApproval:official,codexReceipt,
     review,approval,rootTrust:trust,nowMs:Date.now()
@@ -378,6 +496,9 @@ function fixedRootCollectorMode(){
   '/','/etc','/etc/mcp-dev-hub',TRUST,
   '/var','/var/lib',BASE
  ])dir(path,0);
+ const signerMode=rootString('signer-mode',64);
+ if(signerMode==='wsl-local-v1')return 'local-bootstrap';
+ if(signerMode!=='external-v1')deny();
  function optional(path,mode,maxBytes){
   try{return readOwned(path,0,mode,maxBytes);}
   catch(e){if(e.code==='ENOENT')return null;throw e;}
@@ -465,7 +586,9 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const mode=fixedRootCollectorMode();
   const result=mode==='app-acceptance'
     ?await collectFixedAppAcceptanceAttestations()
-    :await collectFixedBootstrapIssuerAttestations();
+    :mode==='local-bootstrap'
+      ?await collectFixedLocalBootstrapAttestations()
+      :await collectFixedBootstrapIssuerAttestations();
   process.stdout.write(JSON.stringify(result)+'\n');
  }catch{
   process.stderr.write('protected_issuer_collect_denied_or_unknown\n');

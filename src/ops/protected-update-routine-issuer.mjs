@@ -22,6 +22,8 @@ const CONTEXT_KEYS=[
   'reviewerBotId','reviewerBotActor','operationId','manifestJson',
   'packDigest'
 ];
+const LOCAL_CONTEXT_KEYS=[...CONTEXT_KEYS.filter(k=>
+  !['reviewerBotId','reviewerBotActor'].includes(k)),'signerMode'];
 const REVIEW_KEYS=[
   'version','repository','scope','head','base','prNumber','ciRunId',
   'operationId','manifestSha256','reviewDigest','reviewRunId',
@@ -41,13 +43,16 @@ export function parsePinnedRoutineIssuerContext(raw){
   if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>6500)deny();
   let c;
   try{c=JSON.parse(raw);}catch{deny();}
-  if(!exact(c,CONTEXT_KEYS)||JSON.stringify(c)!==raw||
+  const local=c?.signerMode==='wsl-local-v1';
+  if(!exact(c,local?LOCAL_CONTEXT_KEYS:CONTEXT_KEYS)||
+     JSON.stringify(c)!==raw||
      c.version!==1||c.repository!==REPO||c.scope!=='controller-pair'||
      c.prNumber!==39||!SHA.test(c.head||'')||
      !SHA.test(c.base||'')||c.head===c.base||
      !Number.isSafeInteger(c.ciRunId)||c.ciRunId<=0||
-     !Number.isSafeInteger(c.reviewerBotId)||c.reviewerBotId<=0||
-     c.reviewerBotActor!=='mcp-dev-hub-ai-reviewer[bot]'||
+     (!local&&(!Number.isSafeInteger(c.reviewerBotId)||
+       c.reviewerBotId<=0||
+       c.reviewerBotActor!=='mcp-dev-hub-ai-reviewer[bot]'))||
      !ID.test(c.operationId||'')||!HASH.test(c.packDigest||'')||
      typeof c.manifestJson!=='string')deny();
   let manifest;
@@ -66,13 +71,14 @@ function bound(context,githubEvidence,officialApproval,codexReceipt,nowMs){
      githubEvidence.ciRunId!==c.ciRunId||
      githubEvidence.ciPassed!==true||
      githubEvidence.strictProtection!==true||
+     (c.signerMode==='wsl-local-v1' ? officialApproval!==null :
      officialApproval?.state!=='official_github_bot_review_confirmed'||
      officialApproval.head!==c.head||
      officialApproval.prNumber!==39||
      officialApproval.reviewerBotId!==c.reviewerBotId||
      officialApproval.reviewActor!==c.reviewerBotActor||
      !Number.isSafeInteger(officialApproval.reviewId)||
-     officialApproval.reviewId<=0)deny();
+     officialApproval.reviewId<=0))deny();
   let codex;
   try{
     codex=verifyIndependentSignedReview({
@@ -83,9 +89,10 @@ function bound(context,githubEvidence,officialApproval,codexReceipt,nowMs){
       head:c.head,base:c.base,prNumber:39,nowMs
     });
   }catch{deny();}
-  if(officialApproval.reviewEvidenceId!==deriveSignedCodexEvidenceId({
-    reviewDigest:codex.reviewDigest,packDigest:c.packDigest
-  }))deny();
+  if(c.signerMode!=='wsl-local-v1'&&
+     officialApproval.reviewEvidenceId!==deriveSignedCodexEvidenceId({
+       reviewDigest:codex.reviewDigest,packDigest:c.packDigest
+     }))deny();
   return {context:c,codex};
 }
 

@@ -73,11 +73,16 @@ Every successful return explicitly declares `safeToInstall:false`,
 `rootInstallerAuthorized:false`, `independentOsIdentityProven:false`
 and `safeToMerge:false`.
 
-The current live root bootstrap/issuer/collector/root apply/routine stage
-STILL enforce the old independent device and official Bot receipts. This
-new module is **not wired into those production paths**, so no privilege
-change, CI-approved installation or actual independent operating signer
-has occurred.
+The **source candidate** now contains a root-pinned `wsl-local-v1`
+initial issuer/provisioner/collector, one-shot bootstrap, routine operation
+issuer and root-apply source paths. `external-v1` retains the original
+Bot/device controls and existing App approval publisher. Local routine
+signing authenticates the exact Codex receipt and two OS-separated signed
+claims, with root-owned mode, exact CI/protection, immutable two-file update,
+replay fences and rollback checks. These candidates are **NOT installed**;
+root-owned independent Codex runtime, genuine key isolation and operating
+endorsement are not yet verified. Source tests alone do not authorize
+privileged installation, source merge or Issue Close.
 
 ## Remaining implementation gates — do not claim DONE
 
@@ -85,10 +90,12 @@ has occurred.
   and two principal role runners, with owner-authenticated key placement
   and live HTTPS read-only evidence; root must independently authenticate
   their provenance, not trust Worker-supplied JSON.
-- Replace the **entire** official Bot/device dependency chain consistently:
-  first issuer/provisioning, App-acceptance publisher, initial root bootstrap,
-  routine signer, root apply and reconciliation. Do not disable a production
-  check without equivalent authenticated and independently audited control.
+- Verify the **complete** Bot/device replacement path at the final SHA:
+  initial issuer/provisioning and bootstrap, local routine issuer, root apply,
+  installed signer source, trust/key provisioning and UNKNOWN reconciliation.
+  The legacy App-acceptance publisher must remain isolated to `external-v1`;
+  actual GitHub-required approval remains mandatory even for C-mode. Do not
+  disable a production check without equivalent authenticated, audited proof.
 - Add end-to-end RED→GREEN tests for live trust separation, no-op/replay,
   reset/restart/UNKNOWN, distinct real revisions and original rollback.
   Audit all changed privileged imports and fixed-package inclusion at the

@@ -25,12 +25,15 @@ const WRITE=constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|
   constants.O_NOFOLLOW;
 const SELECTED=Object.freeze([
   'scripts/protected-update-review-issuer.mjs',
+  'scripts/protected-update-local-review-issuer.mjs',
   'scripts/protected-update-approval-issuer.mjs',
+  'scripts/protected-update-local-approval-issuer.mjs',
   'scripts/protected-update-routine-review-issuer.mjs',
   'scripts/protected-update-routine-approval-issuer.mjs',
   'scripts/protected-update-app-acceptance-review-issuer.mjs',
   'scripts/protected-update-app-acceptance-approval-issuer.mjs',
   'src/ops/protected-update-bootstrap-issuer.mjs',
+  'src/ops/protected-update-local-issuer-claims.mjs',
   'src/ops/protected-update-routine-issuer.mjs',
   'src/ops/protected-update-approval.mjs',
   'src/ops/protected-update-manifest.mjs',

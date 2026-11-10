@@ -19,7 +19,7 @@ const pem=x=>x.publicKey.export({type:'spki',format:'pem'});
 const signIt=(x,d,j)=>sign(null,Buffer.from(d+j),x.privateKey)
   .toString('base64');
 const hash=x=>createHash('sha256').update(x).digest('hex');
-function example(){
+function example(localMode=false){
  const reviewer=k(),approver=k(),codex=k(),impostor=k();
  const head='a'.repeat(40),base='b'.repeat(40);
  const manifestJson=JSON.stringify({version:1,
@@ -30,6 +30,11 @@ function example(){
   scope:'controller-pair',head,base,prNumber:39,ciRunId:4001,
   reviewerBotId:100,reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]',
   operationId:'c'.repeat(32),manifestJson,packDigest:'3'.repeat(64)};
+ if(localMode){
+  delete context.reviewerBotId;
+  delete context.reviewerBotActor;
+  context.signerMode='wsl-local-v1';
+ }
  const reviewJson=JSON.stringify({version:1,
   repository:'al-hub/mcp-dev-hub',prNumber:39,head,base,
   reviewer:'independent-codex',reviewRunId:'4'.repeat(32),
@@ -41,11 +46,12 @@ function example(){
   issuerReviewerPublicKeyPem:pem(reviewer)};
  const githubEvidence={head,base,ciRunId:4001,
   ciPassed:true,strictProtection:true};
- const officialApproval={state:'official_github_bot_review_confirmed',
+ let officialApproval={state:'official_github_bot_review_confirmed',
   head,prNumber:39,reviewerBotId:100,
   reviewActor:'mcp-dev-hub-ai-reviewer[bot]',reviewId:123,
   reviewEvidenceId:deriveSignedCodexEvidenceId({
     reviewDigest:hash(reviewJson),packDigest:context.packDigest})};
+ if(localMode)officialApproval=null;
  const f={context,githubEvidence,officialApproval,codexReceipt};
  const rc=buildRoutineReviewerClaim({...f,nowMs:NOW});
  const review={reviewJson:rc.reviewJson,
@@ -87,4 +93,22 @@ test('wrong key, swapped signer, stale receipt and operation replay denied',()=>
 test('the reviewed static package contains collector and never enables install',()=>{
  assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(
   'src/ops/protected-update-routine-collection.mjs'));
+});
+
+test('Option C routine collection verifies 3 distinct role signatures without Bot',()=>{
+ const f=example(true);
+ const result=assembleCollectedRoutineAuthorization(f);
+ assert.equal(result.status,'collected_routine_request_source_only');
+ assert.equal(result.safeToReplay,false);
+ assert.equal(parseProtectedUpdateRequest(result.requestJson).operationId,
+  f.context.operationId);
+ for(const p of [
+  {githubEvidence:{...f.githubEvidence,ciPassed:false}},
+  {review:{...f.review,reviewSignatureBase64:signIt(f.impostor,
+   ROUTINE_REVIEW_DOMAIN,f.review.reviewJson)}},
+  {approval:{...f.approval,approvalSignatureBase64:signIt(f.impostor,
+   ROUTINE_APPROVAL_DOMAIN,f.approval.approvalJson)}},
+  {context:{...f.context,head:'f'.repeat(40)}},
+  {nowMs:NOW+300001}
+ ])assert.throws(()=>assembleCollectedRoutineAuthorization({...f,...p}));
 });

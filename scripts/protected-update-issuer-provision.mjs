@@ -21,6 +21,8 @@ import {assertFixedOperationalIssuerIsolation}
   from '../src/ops/protected-update-issuer-boundary.mjs';
 import {parsePinnedBootstrapIssuerContext}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
+import {parsePinnedLocalBootstrapContext}
+  from '../src/ops/protected-update-local-issuer-claims.mjs';
 
 const ROOT='/usr/local/lib/mcp-dev-hub';
 const PACK=ROOT+'/protected-updater';
@@ -203,6 +205,11 @@ export function requirePinnedCodexPublicKey(pem){
   if(canonical!==pem)deny();
   return canonical;
 }
+export function validatePinnedProtectedSignerMode(raw){
+ if(raw==='wsl-local-v1')return 'wsl-local-v1';
+ if(raw==='external-v1')return 'external-v1';
+ deny();
+}
 /** Owner-pinned external gate attestor identities. These must be installed
  * from genuine independent device/root producers BEFORE any account creation,
  * not manufactured by the root provisioner or the AI coding Worker.
@@ -254,6 +261,8 @@ export function provisionIndependentProtectedIssuersOnce(){
     outputPath:PACK,expectedManifestSha256:digest
   });
   if(checked.status!=='source_only_unprivileged_no_go')deny();
+  const signerMode=validatePinnedProtectedSignerMode(trust('signer-mode',64));
+  const localMode=signerMode==='wsl-local-v1';
   const workerUid=number(trust('worker-uid',16));
   const workerGid=number(trust('worker-gid',16));
   verifyRootSignerProvisionPlan({
@@ -273,7 +282,8 @@ export function provisionIndependentProtectedIssuersOnce(){
      !/^[0-9a-f]{40}$/.test(trust('approved-base-commit',128))||
      !/^[1-9][0-9]{0,14}$/.test(trust('approved-pr-number',48))||
      !/^[1-9][0-9]{0,14}$/.test(trust('approved-ci-run-id',48))||
-     !/^[1-9][0-9]{0,14}$/.test(trust('reviewer-bot-id',48))||
+     (!localMode&&
+      !/^[1-9][0-9]{0,14}$/.test(trust('reviewer-bot-id',48)))||
      trust('github-token').length<8||
      trust('reviewer-github-readonly-token').length<8||
      trust('approval-github-readonly-token').length<8)deny();
@@ -289,13 +299,16 @@ export function provisionIndependentProtectedIssuersOnce(){
   // Two new external PUBLIC trust anchors must already be approved by the
   // owner. No key generation, account creation or other side effect occurs
   // until their identities are separately pinned and pairwise distinct.
-  const external=verifyOwnerPinnedExternalGateKeys({
+  // Legacy device-root signing remains available only in external-v1.
+  // WSL-local still requires owner-pinned independent Codex public trust.
+  const external=localMode?null:verifyOwnerPinnedExternalGateKeys({
    devicePublicPem:trust('app-device-public.pem',4096,true),
    rootPublicPem:trust('app-root-public.pem',4096,true),
    codexPublicPem
   });
-  const externalDers=[external.devicePublicPem,external.rootPublicPem]
-    .map(p=>createPublicKey(p).export({type:'spki',format:'der'}));
+  const externalDers=external===null?[]:
+    [external.devicePublicPem,external.rootPublicPem]
+      .map(p=>createPublicKey(p).export({type:'spki',format:'der'}));
   const identities=[];
   // NO root-owned private keys are generated: each issuer child receives a
   // fixed literal keygen program and drops to its own OS account identity.
@@ -326,7 +339,7 @@ export function provisionIndependentProtectedIssuersOnce(){
   chmodSync(APP_PUBLICATION,0o700);
   dir(APP_PUBLICATION,0o700);
   syncDir(APP_PUBLICATION);syncDir(BASE);
-  const pinnedContext={
+  const commonContext={
     version:1,repository:'al-hub/mcp-dev-hub',
     scope:'protected-bootstrap',head:checked.head,
     base:trust('approved-base-commit',128),packDigest:digest,
@@ -334,19 +347,29 @@ export function provisionIndependentProtectedIssuersOnce(){
     baselineDigest:createHash('sha256').update(
       trust('baseline-files.json'),'utf8').digest('hex'),
     prNumber:Number(trust('approved-pr-number',48)),
-    ciRunId:Number(trust('approved-ci-run-id',48)),
-    reviewerBotId:Number(trust('reviewer-bot-id',48)),
-    reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]'
+    ciRunId:Number(trust('approved-ci-run-id',48))
   };
-  parsePinnedBootstrapIssuerContext(JSON.stringify(pinnedContext));
-  writePublicIssuerFile('approved-bootstrap-context.json',
-    JSON.stringify(pinnedContext));
+  if(localMode){
+    parsePinnedLocalBootstrapContext(JSON.stringify(commonContext));
+    writePublicIssuerFile('approved-local-bootstrap-context.json',
+      JSON.stringify(commonContext));
+  }else{
+    const pinnedContext={...commonContext,
+      reviewerBotId:Number(trust('reviewer-bot-id',48)),
+      reviewerBotActor:'mcp-dev-hub-ai-reviewer[bot]'
+    };
+    parsePinnedBootstrapIssuerContext(JSON.stringify(pinnedContext));
+    writePublicIssuerFile('approved-bootstrap-context.json',
+      JSON.stringify(pinnedContext));
+  }
   writePublicIssuerFile('codex-reviewer-public.pem',codexPublicPem);
   // Stage only owner-approved PUBLIC key copies for the nonroot reviewer.
   // Actual signed gate receipts must be separately generated/authenticated;
   // this provisioner neither invents nor signs any device/root gate PASS.
-  writePublicIssuerFile('app-device-public.pem',external.devicePublicPem);
-  writePublicIssuerFile('app-root-public.pem',external.rootPublicPem);
+  if(!localMode){
+    writePublicIssuerFile('app-device-public.pem',external.devicePublicPem);
+    writePublicIssuerFile('app-root-public.pem',external.rootPublicPem);
+  }
   for(const {role,uid,gid} of identities){
     const dirPath=BASE+'/issuer-'+role;
     mkdirSync(dirPath,{mode:0o700});

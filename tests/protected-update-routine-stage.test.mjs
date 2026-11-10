@@ -89,3 +89,18 @@ test('both stage and intent modules are included in exact source package',()=>{
   'src/ops/protected-update-routine-intent.mjs'])
   assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(n));
 });
+
+test('Option C staging accepts only OS-pinned three-principal trust without Bot',()=>{
+ const f=fixture();
+ const context={...f.context,signerMode:'wsl-local-v1'};
+ delete context.reviewerBotId;
+ delete context.reviewerBotActor;
+ const result=verifyRoutineStageInputs({...f,context,officialApproval:null});
+ assert.equal(result.installerAuthorized,false);
+ assert.throws(()=>verifyRoutineStageInputs({...f,context,
+  officialApproval:null,rootTrust:{...f.rootTrust,
+   reviewerPublicKeyPem:f.rootTrust.codexReviewerPublicKeyPem}}));
+ assert.throws(()=>verifyRoutineStageInputs({...f,context,
+  officialApproval:null,githubEvidence:{...f.githubEvidence,
+   strictProtection:false}}));
+});

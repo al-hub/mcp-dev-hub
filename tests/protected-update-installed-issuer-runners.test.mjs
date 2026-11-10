@@ -8,6 +8,10 @@ import {issueFixedIndependentBootstrapApproval}
   from '../scripts/protected-update-approval-issuer.mjs';
 import {assertRoleRuntimeInstalled}
   from '../src/ops/protected-update-issuer-runtime.mjs';
+import {issueFixedLocalBootstrapReview}
+  from '../scripts/protected-update-local-review-issuer.mjs';
+import {issueFixedLocalBootstrapApproval}
+  from '../scripts/protected-update-local-approval-issuer.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
 
@@ -17,7 +21,11 @@ test('issuer executables and shared trusted network/role code are in exact packa
     'scripts/protected-update-review-issuer.mjs',
     'scripts/protected-update-approval-issuer.mjs',
     'src/ops/protected-update-issuer-runtime.mjs',
-    'src/ops/protected-update-bootstrap-issuer.mjs'
+    'src/ops/protected-update-bootstrap-issuer.mjs',
+    'src/ops/protected-update-local-issuer-claims.mjs',
+    'src/ops/protected-update-local-trust-contract.mjs',
+    'scripts/protected-update-local-review-issuer.mjs',
+    'scripts/protected-update-local-approval-issuer.mjs'
   ])assert.ok(PROTECTED_BOOTSTRAP_FILES.includes(name));
 });
 test('review signer imported from checkout rejects role impersonation',async()=>{
@@ -56,4 +64,23 @@ test('Worker-supplied reviewer verdict JSON cannot enter either signer CLI',()=>
     timeout:5000,maxBuffer:1024});
   assert.equal(r.status,1);
   assert.equal(r.stdout,'');
+});
+
+test('two fixed Option C issuer scripts cannot sign from mutable checkout',async()=>{
+ await assert.rejects(issueFixedLocalBootstrapReview(),bad);
+ await assert.rejects(issueFixedLocalBootstrapApproval(),bad);
+ for(const [name,error] of [
+  ['protected-update-local-review-issuer.mjs',
+   /protected_local_reviewer_denied_or_unknown/],
+  ['protected-update-local-approval-issuer.mjs',
+   /protected_local_approver_denied_or_unknown/]
+ ]){
+  const script=fileURLToPath(new URL('../scripts/'+name,import.meta.url));
+  const r=spawnSync(process.execPath,[script],{
+   encoding:'utf8',input:'{"verdict":"PASS"}',timeout:5000,maxBuffer:1024
+  });
+  assert.equal(r.status,1);
+  assert.equal(r.stdout,'');
+  assert.match(r.stderr,error);
+ }
 });

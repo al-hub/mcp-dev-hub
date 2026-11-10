@@ -130,3 +130,34 @@ test('approval issuer rejects reviewer-signature substitution and operation repl
   {nowMs:now+120001}
  ])assert.throws(()=>buildRoutineApprovalClaim({...f,...r,...p}),denied);
 });
+
+test('Option C routine claim requires genuine independent signatures and live CI without Bot',()=>{
+ const f=fixture();
+ const localContext={...f.context,signerMode:'wsl-local-v1'};
+ delete localContext.reviewerBotId;
+ delete localContext.reviewerBotActor;
+ const local={...f,context:localContext,officialApproval:null};
+ assert.equal(parsePinnedRoutineIssuerContext(
+  JSON.stringify(localContext)).signerMode,'wsl-local-v1');
+ const reviewerProof=reviewPair(local);
+ const claim=buildRoutineApprovalClaim({...local,...reviewerProof});
+ const sig=signClaim(ROUTINE_APPROVAL_DOMAIN,claim.approvalJson,approval);
+ assert.equal(verifySignedProtectedUpdateApproval({
+  manifestJson:localContext.manifestJson,
+  approvalJson:claim.approvalJson,signatureBase64:sig,
+  trustPublicKeyPem:pem(approval),trustedHead:H,trustedBase:B,
+  trustedOperationId:OID,nowMs:now
+ }).operationId,OID);
+ for(const p of [
+  {githubEvidence:{...local.githubEvidence,ciPassed:false}},
+  {codexReceipt:{...local.codexReceipt,
+   reviewSignatureBase64:signClaim(INDEPENDENT_REVIEW_DOMAIN,
+    local.codexReceipt.reviewJson,other)}},
+  {context:{...localContext,reviewerBotId:12345}},
+  {context:{...localContext,head:'f'.repeat(40)}},
+  {nowMs:now+300001}
+ ])assert.throws(()=>buildRoutineReviewerClaim({...local,...p}),denied);
+ assert.throws(()=>buildRoutineApprovalClaim({...local,
+  ...reviewerProof,reviewSignatureBase64:signClaim(
+   ROUTINE_REVIEW_DOMAIN,reviewerProof.reviewJson,other)}),denied);
+});
