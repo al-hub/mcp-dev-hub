@@ -36,20 +36,96 @@ export function validatePersistedCodexPass({
   });
 }
 
+
+const REVIEW_INPUT_LIMIT=2*1024*1024;
+const HASH=/^[a-f0-9]{64}$/;
+const own=(v,keys)=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&
+  Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
+const hash=s=>createHash('sha256').update(s,'utf8').digest('hex');
+
+/** Canonical complete source artifact tied to the OWNER-PINNED immutable
+ * package manifest. A Worker can construct a synthetic packet for tests,
+ * but only the pinned manifest digest plus fixed installed Codex signer
+ * authenticates this review. Never trust an arbitrary text hash.
+ */
+export function validatePinnedCodexSourceReviewInput({
+  raw,head,packDigest
+}={}){
+ if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')<100||
+    Buffer.byteLength(raw,'utf8')>REVIEW_INPUT_LIMIT||
+    !SHA.test(head||'')||!HASH.test(packDigest||''))deny();
+ let doc,manifest;
+ try{doc=JSON.parse(raw);manifest=JSON.parse(doc.manifestJson);}catch{deny();}
+ if(!own(doc,['version','manifestJson','files'])||doc.version!==2||
+    JSON.stringify(doc)!==raw||
+    typeof doc.manifestJson!=='string'||
+    Buffer.byteLength(doc.manifestJson,'utf8')>8192||
+    !own(manifest,['version','repository','head','installAuthorized',
+      'requiredIndependentIssuers','files'])||
+    manifest.version!==1||manifest.repository!=='al-hub/mcp-dev-hub'||
+    manifest.head!==head||manifest.installAuthorized!==false||
+    JSON.stringify(manifest)!==doc.manifestJson||
+    hash(doc.manifestJson)!==packDigest||
+    JSON.stringify(manifest.requiredIndependentIssuers)!==
+      JSON.stringify(['independent-codex','protected-approval'])||
+    !Array.isArray(manifest.files)||manifest.files.length<50||
+    manifest.files.length>128||!Array.isArray(doc.files)||
+    doc.files.length!==manifest.files.length)deny();
+ let total=0;
+ const rendered=[];
+ const names=new Set();
+ for(let i=0;i<manifest.files.length;i++){
+  const m=manifest.files[i],f=doc.files[i];
+  if(!own(m,['path','bytes','sha256'])||!own(f,['path','content'])||
+     typeof m.path!=='string'||!
+       /^(?:scripts|src\/(?:ops|jobs))\/[a-z0-9.-]+\.mjs$/.test(m.path)||
+     names.has(m.path)||f.path!==m.path||
+     !Number.isSafeInteger(m.bytes)||m.bytes<1||m.bytes>262144||
+     !HASH.test(m.sha256||'')||typeof f.content!=='string')deny();
+  const bytes=Buffer.from(f.content,'utf8');
+  if(bytes.length!==m.bytes||hash(f.content)!==m.sha256)deny();
+  total+=bytes.length;
+  if(total>REVIEW_INPUT_LIMIT)deny();
+  names.add(m.path);
+  rendered.push('### '+m.path+' ('+m.sha256+')\n'+f.content+'\n');
+ }
+ return Object.freeze({
+  head,packDigest,fileCount:doc.files.length,sha256:hash(raw),
+  readable:'Immutable complete source HEAD '+head+
+    '\nOwner-pinned package digest '+packDigest+'\n'+rendered.join('\n')
+ });
+}
+/** Non-authoritative convenience builder; validation is mandatory even
+ * for source assembled by the fixed independently reviewed root stage.
+ */
+export function makePinnedCodexReviewInput({manifestJson,files}={}){
+ const raw=JSON.stringify({version:2,manifestJson,files});
+ let m;try{m=JSON.parse(manifestJson);}catch{deny();}
+ validatePinnedCodexSourceReviewInput({
+  raw,head:m.head,packDigest:hash(manifestJson)
+ });
+ return raw;
+}
+
 /** A non-authoritative claim constructor. Only an audited runner holding
  * a separately protected operating signer key may sign this JSON.
  */
 export function makeCodexReceiptClaim({
-  terminal,head,base,reviewRunId,nowMs
+  terminal,head,base,reviewRunId,nowMs,packDigest,reviewInputSha256
 }={}){
   if(terminal?.verdict!=='PASS'||terminal.head!==head||
      terminal.base!==base||!SHA.test(head||'')||!SHA.test(base||'')||
      !RUN.test(reviewRunId||'')||!Number.isSafeInteger(nowMs)||
      nowMs<1||!/^([0-9a-f]{64})$/.test(terminal.terminalSha256||''))deny();
+  const v2=packDigest!==undefined||reviewInputSha256!==undefined;
+  if(v2&&(!HASH.test(packDigest||'')||
+     !HASH.test(reviewInputSha256||'')))deny();
   return JSON.stringify({
-    version:1,repository:'al-hub/mcp-dev-hub',prNumber:39,
+    version:v2?2:1,repository:'al-hub/mcp-dev-hub',prNumber:39,
     head,base,reviewer:'independent-codex',reviewRunId,
     reviewVerdict:'PASS',findings:[],
+    ...(v2?{packDigest,reviewInputSha256,
+      terminalSha256:terminal.terminalSha256}:{}),
     issuedAtMs:nowMs,expiresAtMs:nowMs+120000
   });
 }

@@ -6,7 +6,7 @@ import {assembleCollectedRoutineAuthorization}
 import {buildRoutineReviewerClaim,buildRoutineApprovalClaim,
   ROUTINE_REVIEW_DOMAIN,ROUTINE_APPROVAL_DOMAIN}
   from '../src/ops/protected-update-routine-issuer.mjs';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN,INDEPENDENT_REVIEW_DOMAIN_V2}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {deriveSignedCodexEvidenceId}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
@@ -35,13 +35,17 @@ function example(localMode=false){
   delete context.reviewerBotActor;
   context.signerMode='wsl-local-v1';
  }
- const reviewJson=JSON.stringify({version:1,
+ const reviewJson=JSON.stringify({version:localMode?2:1,
   repository:'al-hub/mcp-dev-hub',prNumber:39,head,base,
   reviewer:'independent-codex',reviewRunId:'4'.repeat(32),
   reviewVerdict:'PASS',findings:[],
+  ...(localMode?{packDigest:context.packDigest,
+   reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)}:{}),
   issuedAtMs:NOW-1000,expiresAtMs:NOW+300000});
  const codexReceipt={reviewJson,
-  reviewSignatureBase64:signIt(codex,INDEPENDENT_REVIEW_DOMAIN,reviewJson),
+  reviewSignatureBase64:signIt(codex,
+   localMode?INDEPENDENT_REVIEW_DOMAIN_V2:INDEPENDENT_REVIEW_DOMAIN,
+   reviewJson),
   codexReviewerPublicKeyPem:pem(codex),
   issuerReviewerPublicKeyPem:pem(reviewer)};
  const githubEvidence={head,base,ciRunId:4001,

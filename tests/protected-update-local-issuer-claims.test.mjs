@@ -8,7 +8,7 @@ import {verifyLocalProtectedBootstrapContract}
  from '../src/ops/protected-update-local-trust-contract.mjs';
 import {BOOTSTRAP_REVIEW_DOMAIN,BOOTSTRAP_APPROVAL_DOMAIN}
  from '../src/ops/protected-update-install-attestation.mjs';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN_V2}
  from '../src/ops/protected-update-github-evidence.mjs';
 
 const NOW=1794400000000, H='a'.repeat(40),B='b'.repeat(40);
@@ -27,13 +27,15 @@ function fixture(){
   baselineDigest:ORIGINAL_D,prNumber:39,ciRunId:CI};
  const keys={codexPublicKeyPem:pem(codex),
   reviewerPublicKeyPem:pem(reviewer),approvalPublicKeyPem:pem(approver)};
- const codexJson=JSON.stringify({version:1,repository:REPO,
+ const codexJson=JSON.stringify({version:2,repository:REPO,
   prNumber:39,head:H,base:B,reviewer:'independent-codex',
   reviewRunId:RUN,reviewVerdict:'PASS',findings:[],
+  packDigest:D,reviewInputSha256:'1'.repeat(64),
+  terminalSha256:'2'.repeat(64),
   issuedAtMs:NOW-1000,expiresAtMs:NOW+120000});
  const codexReceipt={reviewJson:codexJson,
-  reviewSignatureBase64:signature(codex,INDEPENDENT_REVIEW_DOMAIN,codexJson)};
- const githubEvidence={head:H,base:B,ciRunId:CI,
+  reviewSignatureBase64:signature(codex,INDEPENDENT_REVIEW_DOMAIN_V2,codexJson)};
+ const githubEvidence={head:H,base:B,ciRunId:CI,ciHead:H,
    ciPassed:true,strictProtection:true};
  const input={context,githubEvidence,codexReceipt,keys,nowMs:NOW};
  return {input,codex,reviewer,approver};
@@ -133,5 +135,16 @@ test('the second signer does not widen expiry or accept expired local review',()
    ...f.input,reviewJson:p.review.reviewJson,
    reviewSignatureBase64:p.reviewSignatureBase64,
    nowMs:r.expiresAtMs+1
+ }));
+});
+
+test('real six-field GitHub evidence including ciHead must pass; mismatched ciHead must fail',()=>{
+ const f=fixture();
+ const six={...f.input.githubEvidence,ciHead:H};
+ assert.ok(buildLocalBootstrapReviewerClaim({
+   ...f.input,githubEvidence:six
+ }).reviewJson);
+ denied(()=>buildLocalBootstrapReviewerClaim({
+   ...f.input,githubEvidence:{...six,ciHead:B}
  }));
 });

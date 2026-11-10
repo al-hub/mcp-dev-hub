@@ -15,6 +15,9 @@ const REVIEW_FIELDS=Object.freeze([
   'reviewRunId','reviewVerdict','findings','issuedAtMs','expiresAtMs'
 ]);
 const DOMAIN='mcp-dev-hub/independent-codex-review/v1\n';
+const DOMAIN_V2='mcp-dev-hub/independent-codex-review/v2\n';
+const REVIEW_FIELDS_V2=Object.freeze([...REVIEW_FIELDS,
+  'packDigest','reviewInputSha256','terminalSha256']);
 const fail=()=>{throw Error('protected_evidence_denied');};
 const exact=(o,k)=>o!==null&&typeof o==='object'&&
   !Array.isArray(o)&&Object.keys(o).length===k.length&&
@@ -23,7 +26,8 @@ const sha256=s=>createHash('sha256').update(s,'utf8').digest('hex');
 
 export function verifyIndependentSignedReview({
   reviewJson,signatureBase64,pinnedReviewerPublicKeyPem,
-  pinnedApprovalPublicKeyPem,head,base,prNumber,nowMs
+  pinnedApprovalPublicKeyPem,head,base,prNumber,nowMs,
+  requiredPackDigest
 }={}){
   if(typeof reviewJson!=='string'||Buffer.byteLength(reviewJson,'utf8')>2048||
      typeof signatureBase64!=='string'||!B64.test(signatureBase64)||
@@ -33,8 +37,17 @@ export function verifyIndependentSignedReview({
      !Number.isSafeInteger(nowMs)||nowMs<1)fail();
   let r;
   try{r=JSON.parse(reviewJson);}catch{fail();}
-  if(!exact(r,REVIEW_FIELDS)||JSON.stringify(r)!==reviewJson||
-     r.version!==1||r.repository!==REPO||r.prNumber!==prNumber||
+  const v2=r?.version===2;
+  if(!exact(r,v2?REVIEW_FIELDS_V2:REVIEW_FIELDS)||
+     JSON.stringify(r)!==reviewJson||
+     ![1,2].includes(r.version)||r.repository!==REPO||
+     r.prNumber!==prNumber||
+     (v2&&(!HASH.test(r.packDigest||'')||
+       !HASH.test(r.reviewInputSha256||'')||
+       !HASH.test(r.terminalSha256||'')))||
+     (requiredPackDigest!==undefined&&
+       (!HASH.test(requiredPackDigest)||!v2||
+        r.packDigest!==requiredPackDigest))||
      r.head!==head||r.base!==base||
      r.reviewer!=='independent-codex'||
      typeof r.reviewRunId!=='string'||!UUID.test(r.reviewRunId)||
@@ -57,13 +70,18 @@ export function verifyIndependentSignedReview({
        approval.export({type:'spki',format:'der'})))fail();
   const sig=Buffer.from(signatureBase64,'base64');
   if(sig.length!==64||sig.toString('base64')!==signatureBase64||
-     !verify(null,Buffer.from(DOMAIN+reviewJson,'utf8'),reviewer,sig))fail();
+     !verify(null,Buffer.from((v2?DOMAIN_V2:DOMAIN)+reviewJson,'utf8'),
+       reviewer,sig))fail();
   return Object.freeze({
     head:r.head,base:r.base,prNumber:r.prNumber,
-    reviewDigest:sha256(reviewJson),reviewRunId:r.reviewRunId
+    reviewDigest:sha256(reviewJson),reviewRunId:r.reviewRunId,
+    ...(v2?{packDigest:r.packDigest,
+      reviewInputSha256:r.reviewInputSha256,
+      terminalSha256:r.terminalSha256}:{}),
   });
 }
 export const INDEPENDENT_REVIEW_DOMAIN=DOMAIN;
+export const INDEPENDENT_REVIEW_DOMAIN_V2=DOMAIN_V2;
 
 // Only call with objects obtained by the immutable root HTTPS client below.
 // This *pure* shape check by itself authenticates NOTHING and is never a
@@ -111,10 +129,10 @@ export function validateGitHubEvidenceShape({
   const checks=protection?.required_status_checks;
   if(checks?.strict!==true||
      !Array.isArray(checks.contexts)||
-     !checks.contexts.includes('bootstrap')||
-     !Array.isArray(checks.checks)||
-     !checks.checks.some(c=>c?.context==='bootstrap'&&
-       c.app_id===15368)||
+     checks.contexts.length!==1||checks.contexts[0]!=='bootstrap'||
+     !Array.isArray(checks.checks)||checks.checks.length!==1||
+     checks.checks[0]?.context!=='bootstrap'||
+     checks.checks[0]?.app_id!==15368||
      protection?.enforce_admins?.enabled!==true||
      protection?.allow_force_pushes?.enabled!==false||
      protection?.allow_deletions?.enabled!==false||
@@ -236,7 +254,8 @@ async function githubGet(path,token,maxBytes=262144) {
 export async function fetchAndVerifyGitHubUpdateEvidence({
   prNumber,head,base,ciRunId,githubToken,
   reviewJson,reviewSignatureBase64,
-  pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,nowMs
+  pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,nowMs,
+  requiredPackDigest
 }={}){
   // Reject untrusted identifiers BEFORE any token-backed network access.
   if(!Number.isSafeInteger(prNumber)||prNumber<1||
@@ -246,7 +265,7 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   const review=verifyIndependentSignedReview({
     reviewJson,signatureBase64:reviewSignatureBase64,
     pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,
-    head,base,prNumber,nowMs
+    head,base,prNumber,nowMs,requiredPackDigest
   });
   const stem='/repos/al-hub/mcp-dev-hub';
   // No redirects, query URL or hostname is supplied by any Issue/Worker.

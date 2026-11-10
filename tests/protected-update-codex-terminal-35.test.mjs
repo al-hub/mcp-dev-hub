@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {
-  validatePersistedCodexPass,makeCodexReceiptClaim
+  validatePersistedCodexPass,makeCodexReceiptClaim,
+  makePinnedCodexReviewInput,validatePinnedCodexSourceReviewInput
 } from '../src/ops/protected-update-codex-terminal.mjs';
-import {INDEPENDENT_REVIEW_DOMAIN,verifyIndependentSignedReview}
+import {INDEPENDENT_REVIEW_DOMAIN,INDEPENDENT_REVIEW_DOMAIN_V2,
+  verifyIndependentSignedReview}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {PROTECTED_BOOTSTRAP_FILES}
   from '../scripts/protected-update-bootstrap-pack.mjs';
@@ -130,4 +133,79 @@ test('bounded pinned runtime accepts the actually installed CLI and companion si
   for(const bytes of [0,-1,384*1024*1024+1,Number.MAX_SAFE_INTEGER,
    Infinity,1.5,'319346888'])
     assert.equal(supportedProtectedExecutableSize(bytes),false);
+});
+
+test('Codex review input authenticates every immutable pack source, not a hash-only text',()=>{
+ const files=PROTECTED_BOOTSTRAP_FILES.map((path,i)=>({
+  path,content:'// synthetic source '+i+'\n'
+ }));
+ const rows=files.map(({path,content})=>({
+  path,bytes:Buffer.byteLength(content,'utf8'),
+  sha256:createHash('sha256').update(content).digest('hex')
+ }));
+ const manifestJson=JSON.stringify({version:1,
+  repository:'al-hub/mcp-dev-hub',head:HEAD,installAuthorized:false,
+  requiredIndependentIssuers:['independent-codex','protected-approval'],
+  files:rows});
+ const digest=createHash('sha256').update(manifestJson).digest('hex');
+ const raw=makePinnedCodexReviewInput({manifestJson,files});
+ const input=validatePinnedCodexSourceReviewInput({
+  raw,head:HEAD,packDigest:digest});
+ assert.equal(input.fileCount,PROTECTED_BOOTSTRAP_FILES.length);
+ assert.equal(input.sha256,createHash('sha256').update(raw).digest('hex'));
+ assert.ok(input.readable.includes('// synthetic source 0'));
+ for(const wrong of [
+  {raw:JSON.stringify({...JSON.parse(raw),
+    files:files.slice(0,-1)})},
+  {raw:JSON.stringify({...JSON.parse(raw),
+    files:[...files.slice(0,-1),
+      {...files.at(-1),content:'// changed'}]})},
+  {head:BASE},{packDigest:'f'.repeat(64)}
+ ])denied(()=>validatePinnedCodexSourceReviewInput({
+  raw,head:HEAD,packDigest:digest,...wrong
+ }));
+});
+test('v2 receipt binds immutable pack, complete input and terminal hashes',()=>{
+ const k=generateKeyPairSync('ed25519');
+ const approver=generateKeyPairSync('ed25519');
+ const packDigest='d'.repeat(64),reviewInputSha256='e'.repeat(64);
+ const claim=makeCodexReceiptClaim({
+  terminal:pass(),head:HEAD,base:BASE,reviewRunId:RUN,nowMs:NOW,
+  packDigest,reviewInputSha256
+ });
+ assert.equal(JSON.parse(claim).version,2);
+ const signatureBase64=sign(null,Buffer.from(
+  INDEPENDENT_REVIEW_DOMAIN_V2+claim),k.privateKey).toString('base64');
+ const a={reviewJson:claim,signatureBase64,
+  pinnedReviewerPublicKeyPem:k.publicKey.export({type:'spki',format:'pem'}),
+  pinnedApprovalPublicKeyPem:approver.publicKey.export({type:'spki',format:'pem'}),
+  head:HEAD,base:BASE,prNumber:39,nowMs:NOW+1,
+  requiredPackDigest:packDigest};
+ assert.equal(verifyIndependentSignedReview(a).reviewRunId,RUN);
+ assert.throws(()=>verifyIndependentSignedReview({
+  ...a,requiredPackDigest:'f'.repeat(64)
+ }));
+ assert.throws(()=>verifyIndependentSignedReview({
+  ...a,signatureBase64:sign(null,Buffer.from(
+   INDEPENDENT_REVIEW_DOMAIN+claim),k.privateKey).toString('base64')
+ }));
+ const legacy=makeCodexReceiptClaim({terminal:pass(),head:HEAD,base:BASE,
+  reviewRunId:RUN,nowMs:NOW});
+ assert.throws(()=>verifyIndependentSignedReview({
+  ...a,reviewJson:legacy,
+  signatureBase64:sign(null,Buffer.from(
+   INDEPENDENT_REVIEW_DOMAIN+legacy),k.privateKey).toString('base64')
+ }));
+});
+
+test('fixed signer validates complete source against root-pinned manifest before Codex signs v2',()=>{
+ const body=readFileSync(new URL(
+  '../scripts/protected-update-codex-receipt.mjs',import.meta.url),'utf8');
+ const i=body.indexOf('validatePinnedCodexSourceReviewInput({');
+ const dispatched=body.indexOf('writeOnce(PRIVATE+',i);
+ const final=body.indexOf('runRealCodex(packet,checked.readable)',dispatched);
+ assert.ok(i>0&&dispatched>i&&final>dispatched);
+ assert.ok(body.includes('max:2*1024*1024'));
+ assert.ok(body.includes('INDEPENDENT_REVIEW_DOMAIN_V2+reviewJson'));
+ assert.ok(body.includes('packDigest:packet.packDigest'));
 });

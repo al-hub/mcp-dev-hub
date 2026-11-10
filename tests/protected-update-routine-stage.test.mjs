@@ -5,7 +5,7 @@ import {parseProtectedRoutineIntent}
   from '../src/ops/protected-update-routine-intent.mjs';
 import {verifyRoutineStageInputs,stageFixedRoutineOperation}
   from '../src/ops/protected-update-routine-stage.mjs';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN,INDEPENDENT_REVIEW_DOMAIN_V2}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {deriveSignedCodexEvidenceId}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
@@ -47,7 +47,7 @@ function fixture(){
   reviewEvidenceId:deriveSignedCodexEvidenceId({
    reviewDigest:hash(reviewJson),packDigest:context.packDigest})};
  return {context,codexReceipt,rootTrust,githubEvidence,
-  officialApproval,nowMs:NOW,other};
+  officialApproval,nowMs:NOW,other,signer};
 }
 test('routine intent is canonical, exact scope and nonexecutable',()=>{
  const f=fixture(),context=f.context;
@@ -95,7 +95,14 @@ test('Option C staging accepts only OS-pinned three-principal trust without Bot'
  const context={...f.context,signerMode:'wsl-local-v1'};
  delete context.reviewerBotId;
  delete context.reviewerBotActor;
- const result=verifyRoutineStageInputs({...f,context,officialApproval:null});
+ const json=JSON.stringify({...JSON.parse(f.codexReceipt.reviewJson),
+  version:2,packDigest:context.packDigest,
+  reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)});
+ const codexReceipt={...f.codexReceipt,reviewJson:json,
+  reviewSignatureBase64:sign(null,Buffer.from(
+   INDEPENDENT_REVIEW_DOMAIN_V2+json),f.signer.privateKey).toString('base64')};
+ const result=verifyRoutineStageInputs({...f,context,codexReceipt,
+  officialApproval:null});
  assert.equal(result.installerAuthorized,false);
  assert.throws(()=>verifyRoutineStageInputs({...f,context,
   officialApproval:null,rootTrust:{...f.rootTrust,

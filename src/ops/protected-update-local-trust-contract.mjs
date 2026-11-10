@@ -47,9 +47,9 @@ export function verifyLocalProtectedBootstrapContract(input={}){
  const c=input,gh=c.githubEvidence;
  if(gh===null||typeof gh!=='object'||Array.isArray(gh)||
     Object.keys(gh).sort().join(',')!==
-      'base,ciPassed,ciRunId,head,strictProtection'||
+      'base,ciHead,ciPassed,ciRunId,head,strictProtection'||
     gh.head!==c.head||gh.base!==c.base||
-    gh.ciRunId!==c.ciRunId||
+    gh.ciRunId!==c.ciRunId||gh.ciHead!==c.head||
     gh.ciPassed!==true||gh.strictProtection!==true)deny();
  const keys=[
   publicDer(c.codexPublicKeyPem),
@@ -66,7 +66,8 @@ export function verifyLocalProtectedBootstrapContract(input={}){
    signatureBase64:c.codexSignatureBase64,
    pinnedReviewerPublicKeyPem:c.codexPublicKeyPem,
    pinnedApprovalPublicKeyPem:c.approvalPublicKeyPem,
-   head:c.head,base:c.base,prNumber:c.prNumber,nowMs:c.nowMs
+   head:c.head,base:c.base,prNumber:c.prNumber,nowMs:c.nowMs,
+    requiredPackDigest:c.packDigest
   });
   bound=verifyProtectedBootstrapAttestations({
    reviewJson:c.reviewJson,

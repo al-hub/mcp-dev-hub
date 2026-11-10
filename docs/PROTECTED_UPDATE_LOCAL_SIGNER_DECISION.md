@@ -75,7 +75,10 @@ and `safeToMerge:false`.
 
 The **source candidate** now contains a root-pinned `wsl-local-v1`
 initial issuer/provisioner/collector, one-shot bootstrap, routine operation
-issuer and root-apply source paths. `external-v1` retains the original
+issuer and root-apply source paths. After the independently audited five-P2 findings,
+C-mode source verification additionally requires a complete owner-pinned
+immutable source review packet, v2 signed package/input/terminal digests,
+a distinct Codex OS owner and a fresh post-health GitHub admission check. `external-v1` retains the original
 Bot/device controls and existing App approval publisher. Local routine
 signing authenticates the exact Codex receipt and two OS-separated signed
 claims, with root-owned mode, exact CI/protection, immutable two-file update,

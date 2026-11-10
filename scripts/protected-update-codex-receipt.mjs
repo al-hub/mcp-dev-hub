@@ -9,9 +9,10 @@ import {constants,closeSync,fstatSync,fsyncSync,lstatSync,mkdirSync,
   openSync,readFileSync,readSync,writeSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN_V2}
   from '../src/ops/protected-update-github-evidence.mjs';
-import {validatePersistedCodexPass,makeCodexReceiptClaim}
+import {validatePersistedCodexPass,makeCodexReceiptClaim,
+  validatePinnedCodexSourceReviewInput}
   from '../src/ops/protected-update-codex-terminal.mjs';
 
 const CODE='/usr/local/lib/mcp-dev-hub/protected-codex/code';
@@ -237,9 +238,14 @@ function executeOnce(){
   assertPinnedExecutable(CODEX,packet.codexSha256);
   assertPinnedExecutable(COMPANION,packet.companionSha256);
   assertPinnedExecutable(BWRAP,packet.bwrapSha256);
-  const source=ownedFile(INPUT,{owner:0,mode:0o444,max:262144});
-  if(createHash('sha256').update(source).digest('hex')!==
-     packet.reviewInputSha256)deny();
+  // Independently authenticate EVERY source member from the exact immutable
+  // owner-pinned package digest. A correct text hash alone is not enough.
+  const source=ownedFile(INPUT,{owner:0,mode:0o444,max:2*1024*1024});
+  const checked=validatePinnedCodexSourceReviewInput({
+    raw:source.toString('utf8'),head:packet.head,
+    packDigest:packet.packDigest
+  });
+  if(checked.sha256!==packet.reviewInputSha256)deny();
   const key=createPrivateKey(ownedFile(PRIVATE+'/private.ed25519.pem',{
     owner:process.getuid(),mode:0o400,max:8192
   }));
@@ -252,13 +258,14 @@ function executeOnce(){
     reviewInputSha256:packet.reviewInputSha256,
     startedAtMs:Date.now(),state:'dispatched_or_unknown'
   }));
-  const terminal=runRealCodex(packet,source.toString('utf8'));
+  const terminal=runRealCodex(packet,checked.readable);
   const reviewJson=makeCodexReceiptClaim({
     terminal,head:packet.head,base:packet.base,
-    reviewRunId,nowMs:Date.now()
+    reviewRunId,nowMs:Date.now(),packDigest:packet.packDigest,
+    reviewInputSha256:checked.sha256
   });
   const signature=sign(null,Buffer.from(
-    INDEPENDENT_REVIEW_DOMAIN+reviewJson,'utf8'),key).toString('base64');
+    INDEPENDENT_REVIEW_DOMAIN_V2+reviewJson,'utf8'),key).toString('base64');
   // Do not overwrite an old receipt; preserve any partial write as UNKNOWN.
   writeOnce(PRIVATE+'/review.json',reviewJson);
   writeOnce(PRIVATE+'/review.sig',signature+'\n');

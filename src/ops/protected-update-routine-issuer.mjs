@@ -86,7 +86,8 @@ function bound(context,githubEvidence,officialApproval,codexReceipt,nowMs){
       signatureBase64:codexReceipt?.reviewSignatureBase64,
       pinnedReviewerPublicKeyPem:codexReceipt?.codexReviewerPublicKeyPem,
       pinnedApprovalPublicKeyPem:codexReceipt?.issuerReviewerPublicKeyPem,
-      head:c.head,base:c.base,prNumber:39,nowMs
+      head:c.head,base:c.base,prNumber:39,nowMs,
+      requiredPackDigest:c.signerMode==='wsl-local-v1'?c.packDigest:undefined
     });
   }catch{deny();}
   if(c.signerMode!=='wsl-local-v1'&&

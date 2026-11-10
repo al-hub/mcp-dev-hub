@@ -60,8 +60,9 @@ function established({context,githubEvidence,codexReceipt,keys,nowMs}={}){
   if(!instant(nowMs)||!context||typeof context!=='object')deny();
   const c=parsePinnedLocalBootstrapContext(JSON.stringify(context));
   const gh=githubEvidence;
-  if(!exact(gh,['head','base','ciRunId','ciPassed','strictProtection'])||
+  if(!exact(gh,['head','base','ciRunId','ciHead','ciPassed','strictProtection'])||
      gh.head!==c.head||gh.base!==c.base||gh.ciRunId!==c.ciRunId||
+     gh.ciHead!==c.head||
      gh.ciPassed!==true||gh.strictProtection!==true)deny();
   pinnedKeys(keys);
   if(!codexReceipt||!exact(codexReceipt,
@@ -72,7 +73,8 @@ function established({context,githubEvidence,codexReceipt,keys,nowMs}={}){
     signatureBase64:codexReceipt.reviewSignatureBase64,
     pinnedReviewerPublicKeyPem:keys.codexPublicKeyPem,
     pinnedApprovalPublicKeyPem:keys.approvalPublicKeyPem,
-    head:c.head,base:c.base,prNumber:c.prNumber,nowMs
+    head:c.head,base:c.base,prNumber:c.prNumber,nowMs,
+    requiredPackDigest:c.packDigest
   });}catch{deny();}
   return {c,codex};
 }

@@ -17,7 +17,8 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {verifyProtectedBootstrapPack}
   from './protected-update-bootstrap-pack.mjs';
-import {assertFixedOperationalIssuerIsolation}
+import {assertFixedOperationalIssuerIsolation,
+  assertFixedCodexSignerPrerequisites}
   from '../src/ops/protected-update-issuer-boundary.mjs';
 import {parsePinnedBootstrapIssuerContext}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
@@ -263,6 +264,9 @@ export function provisionIndependentProtectedIssuersOnce(){
   if(checked.status!=='source_only_unprivileged_no_go')deny();
   const signerMode=validatePinnedProtectedSignerMode(trust('signer-mode',64));
   const localMode=signerMode==='wsl-local-v1';
+  // Owner-installed Codex signer must be a third isolated OS principal
+  // before the first reviewer/approver account or key creation.
+  if(localMode)assertFixedCodexSignerPrerequisites();
   const workerUid=number(trust('worker-uid',16));
   const workerGid=number(trust('worker-gid',16));
   verifyRootSignerProvisionPlan({

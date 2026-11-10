@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {verifyLocalProtectedBootstrapContract}
  from '../src/ops/protected-update-local-trust-contract.mjs';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN,INDEPENDENT_REVIEW_DOMAIN_V2}
  from '../src/ops/protected-update-github-evidence.mjs';
 import {BOOTSTRAP_REVIEW_DOMAIN,BOOTSTRAP_APPROVAL_DOMAIN}
  from '../src/ops/protected-update-install-attestation.mjs';
@@ -20,9 +20,11 @@ const hash=s=>createHash('sha256').update(s).digest('hex');
 function fixture(){
  const codex=keys(),reviewer=keys(),approver=keys();
  const codexReviewJson=JSON.stringify({
-  version:1,repository:'al-hub/mcp-dev-hub',prNumber:39,
+  version:2,repository:'al-hub/mcp-dev-hub',prNumber:39,
   head:H,base:B,reviewer:'independent-codex',reviewRunId:RUN,
-  reviewVerdict:'PASS',findings:[],issuedAtMs:NOW-1000,
+  reviewVerdict:'PASS',findings:[],
+  packDigest:PACK,reviewInputSha256:'1'.repeat(64),
+  terminalSha256:'2'.repeat(64),issuedAtMs:NOW-1000,
   expiresAtMs:NOW+30000
  });
  const reviewJson=JSON.stringify({
@@ -49,11 +51,11 @@ function fixture(){
      BOOTSTRAP_APPROVAL_DOMAIN,approvalJson),
    reviewerPublicKeyPem:pub(reviewer),approvalPublicKeyPem:pub(approver),
    codexReviewJson,codexSignatureBase64:signed(codex,
-     INDEPENDENT_REVIEW_DOMAIN,codexReviewJson),
+     INDEPENDENT_REVIEW_DOMAIN_V2,codexReviewJson),
    codexPublicKeyPem:pub(codex),head:H,base:B,packDigest:PACK,
    baselineCommit:ORIGINAL,baselineDigest:BACKUP,
    prNumber:39,ciRunId:CI,nowMs:NOW,
-   githubEvidence:{head:H,base:B,ciRunId:CI,
+   githubEvidence:{head:H,base:B,ciRunId:CI,ciHead:H,
     strictProtection:true,ciPassed:true}
   }
  };
@@ -110,7 +112,7 @@ test('signed independent Codex terminal and local claim MUST bind same run',()=>
   ...JSON.parse(f.input.codexReviewJson),reviewRunId:'0'.repeat(32)
  });
  denied({...f.input,codexReviewJson:bad,
-  codexSignatureBase64:signed(f.codex,INDEPENDENT_REVIEW_DOMAIN,bad)});
+  codexSignatureBase64:signed(f.codex,INDEPENDENT_REVIEW_DOMAIN_V2,bad)});
 });
 test('receipt expiry and changed signed claims never grant root installation',()=>{
  const f=fixture();
@@ -121,4 +123,16 @@ test('receipt expiry and changed signed claims never grant root installation',()
   reviewSignatureBase64:signed(f.reviewer,BOOTSTRAP_REVIEW_DOMAIN,bad)});
  const privatePem=f.codex.privateKey.export({format:'pem',type:'pkcs8'});
  denied({...f.input,codexPublicKeyPem:privatePem});
+});
+
+test('C bootstrap rejects correctly signed legacy v1 Codex receipt without source binding',()=>{
+ const f=fixture(),legacy=JSON.parse(f.input.codexReviewJson);
+ legacy.version=1;
+ delete legacy.packDigest;
+ delete legacy.reviewInputSha256;
+ delete legacy.terminalSha256;
+ const codexReviewJson=JSON.stringify(legacy);
+ denied({...f.input,codexReviewJson,
+  codexSignatureBase64:signed(f.codex,INDEPENDENT_REVIEW_DOMAIN,
+   codexReviewJson)});
 });

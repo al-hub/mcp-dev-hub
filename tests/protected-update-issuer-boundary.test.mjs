@@ -87,3 +87,25 @@ test('fixed root trust filenames distinguish UID and GID without suffix duplicat
     ['../worker','gid'],['reviewer',null]])
     denied(()=>pinnedIssuerNumericTrustName(role,kind));
 });
+
+test('C mode fails closed unless Codex key is held by a third OS principal',()=>{
+ const f=fixture();
+ const signer={
+  uid:203,gid:203,dir:{uid:203,gid:203,mode:0o700,directory:true,symlink:false},
+  key:{uid:203,gid:203,mode:0o400,regular:true,symlink:false,links:1,bytes:119}
+ };
+ const local={...f,localMode:true,codex:signer,
+  codexParents:[{uid:0,mode:0o755,directory:true,symlink:false}]};
+ const good=verifyProtectedIssuerIsolationEvidence(local);
+ assert.equal(good.codexUid,203);
+ for(const p of [
+  {codex:{...signer,uid:1000}},
+  {codex:{...signer,gid:1000}},
+  {codex:{...signer,uid:201}},
+  {codex:{...signer,gid:202}},
+  {codex:{...signer,key:{...signer.key,mode:0o440}}},
+  {codex:{...signer,dir:{...signer.dir,mode:0o755}}},
+  {codexParents:[{uid:1000,mode:0o755,directory:true,symlink:false}]},
+  {codex:null}
+ ])denied(()=>verifyProtectedIssuerIsolationEvidence({...local,...p}));
+});

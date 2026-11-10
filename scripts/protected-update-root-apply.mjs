@@ -192,8 +192,9 @@ export async function applyOneProtectedUpdateFixedRoot(){
   const uid=privateDecimal('worker-uid');
   const gid=privateDecimal('worker-gid');
   if(uid===0||gid===0)deny();
-  const verified=await preflightAuthenticatedProtectedUpdate({
-    ...req,nowMs:Date.now()
+  let verified=await preflightAuthenticatedProtectedUpdate({
+    ...req,nowMs:Date.now(),
+    requiredPackDigest:localMode?trust.approvedPackDigest:undefined
   });
   const reviewerBotId=localMode?null:privateDecimal('reviewer-bot-id');
   const official=localMode?null:await fetchAndVerifyOfficialReviewerApproval({
@@ -216,9 +217,10 @@ export async function applyOneProtectedUpdateFixedRoot(){
     operationId:req.operationId,manifestJson:req.manifestJson,
     packDigest:trust.approvedPackDigest
   });
-  const verifyOperationalReviewer=(nowMs)=>buildRoutineApprovalClaim({
-    context:routineContext,githubEvidence:verified.proof,
-    officialApproval:official,
+  const verifyOperationalReviewer=(nowMs,evidence=verified.proof,
+    endorsement=official)=>buildRoutineApprovalClaim({
+    context:routineContext,githubEvidence:evidence,
+    officialApproval:endorsement,
     codexReceipt:{
       reviewJson:req.reviewJson,
       reviewSignatureBase64:req.reviewSignatureBase64,
@@ -259,7 +261,7 @@ export async function applyOneProtectedUpdateFixedRoot(){
       state:outcome.phase,operationId:req.operationId,
       commit:outcome.commit,safeToReplay:false
     });
-  },{verifyReadOnly:()=>{
+  },{verifyReadOnly:async()=>{
     // The emergency restore uses this same durable lock; never accept a
     // baseline captured before restoration or an unexpected pointer change.
     assertPinnedProtectedLauncher(ROOT,launcherHash);
@@ -273,8 +275,27 @@ export async function applyOneProtectedUpdateFixedRoot(){
       pinnedWorkerUid:uid,pinnedWorkerGid:gid,
       expectedCommit:prior.commit,expectedHashes:previousHashes
     })!==true)deny();
+    // The entire initial HTTPS snapshot may have become stale while source
+    // bytes and Worker health were checked. A new root-side CI/protection
+    // fetch is required AFTER baseline health and BEFORE journal mutation.
+    const latest=await preflightAuthenticatedProtectedUpdate({
+      ...req,nowMs:Date.now(),
+      requiredPackDigest:localMode?trust.approvedPackDigest:undefined
+    });
+    const latestBot=localMode?null:
+      await fetchAndVerifyOfficialReviewerApproval({
+        prNumber:req.prNumber,head:req.head,reviewerBotId,
+        githubToken:trust.githubToken,nowMs:Date.now()
+      });
+    if(!localMode&&(latestBot.state!==
+      'official_github_bot_review_confirmed'||
+      latestBot.reviewEvidenceId!==deriveSignedCodexEvidenceId({
+        reviewDigest:latest.proof.reviewDigest,
+        packDigest:trust.approvedPackDigest
+      })))deny();
+    verified=latest;
     finalNowMs=Date.now();
-    verifyOperationalReviewer(finalNowMs);
+    verifyOperationalReviewer(finalNowMs,verified.proof,latestBot);
     verifySignedProtectedUpdateApproval({
       manifestJson:req.manifestJson,approvalJson:req.approvalJson,
       signatureBase64:req.signatureBase64,
@@ -288,7 +309,8 @@ export async function applyOneProtectedUpdateFixedRoot(){
       pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
       pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
       head:req.head,base:req.base,prNumber:req.prNumber,
-      nowMs:finalNowMs
+      nowMs:finalNowMs,
+      requiredPackDigest:localMode?trust.approvedPackDigest:undefined
     });
     // Duplicate operation IDs, stale journals, old staged releases and
     // no-op updates are rejected BEFORE entry to mutation/UNKNOWN state.

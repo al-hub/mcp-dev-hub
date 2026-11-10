@@ -228,3 +228,18 @@ test('unrelated PR policy still requires mandatory independent reviews',()=>{
     }}};
   assert.equal(validateGitHubEvidenceShape(secured).strictProtection,true);
 });
+
+test('additional mandatory GitHub checks are rejected without exact-HEAD proof',()=>{
+ const f=githubFixture();
+ for(const extra of [
+  {contexts:['bootstrap','security'],checks:[{context:'bootstrap',app_id:15368},{context:'security',app_id:15368}]},
+  {contexts:['bootstrap'],checks:[{context:'bootstrap',app_id:15368},{context:'extra',app_id:15368}]},
+  {contexts:['bootstrap','security'],checks:[{context:'bootstrap',app_id:15368}]},
+  {contexts:['bootstrap'],checks:[{context:'bootstrap',app_id:15368},{context:'bootstrap',app_id:999}]}
+ ]){
+  const protection={...f.protection,required_status_checks:{
+   ...f.protection.required_status_checks,...extra}};
+  assert.throws(()=>validateGitHubEvidenceShape({...f,protection}),
+   /protected_evidence_denied/);
+ }
+});

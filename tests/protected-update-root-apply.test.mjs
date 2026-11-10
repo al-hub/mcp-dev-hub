@@ -55,3 +55,16 @@ test('immutable root Codex review checks select the independently pinned key at 
       'pinnedReviewerPublicKeyPem:trust.reviewerPublicKeyPem'));
   }
 });
+
+test('root re-fetches live exact-head GitHub and Bot inside async read-only guard after health',()=>{
+ const src=readFileSync(source,'utf8');
+ const guard=src.indexOf('verifyReadOnly:async()=>');
+ const health=src.indexOf('if(observeProtectedWorkerHealth(',guard);
+ const fresh=src.indexOf('await preflightAuthenticatedProtectedUpdate(',health);
+ const signed=src.indexOf('verifyOperationalReviewer(finalNowMs',fresh);
+ const admitted=src.indexOf('preflightProtectedUpdateAdmission({',signed);
+ assert.ok(guard>0&&health>guard&&fresh>health&&signed>fresh&&admitted>signed);
+ const section=src.slice(fresh,admitted);
+ assert.ok(section.includes('await fetchAndVerifyOfficialReviewerApproval({'));
+ assert.ok(section.includes('verified=latest'));
+});

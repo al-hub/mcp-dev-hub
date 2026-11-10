@@ -181,3 +181,14 @@ test('owner-pinned signer mode is explicit and unknown modes refuse provision',(
  assert.ok(raw.includes("if(!localMode){\n    writePublicIssuerFile('app-device-public.pem'"));
  assert.ok(raw.includes("writePublicIssuerFile('approved-local-bootstrap-context.json'"));
 });
+
+test('local Codex OS principal is inspected before any issuer account mutation',()=>{
+ const src=readFileSync(new URL(
+   '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
+ const body=src.split('export function provisionIndependentProtectedIssuersOnce(){')[1];
+ const start=body.indexOf('const localMode=');
+ const verify=body.indexOf('if(localMode)assertFixedCodexSignerPrerequisites()');
+ const create=body.indexOf("spawnSync('/usr/sbin/useradd'");
+ assert.ok(start>=0&&verify>start&&create>verify);
+ assert.ok(src.includes('assertFixedCodexSignerPrerequisites'));
+});

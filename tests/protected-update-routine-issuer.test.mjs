@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
-import {INDEPENDENT_REVIEW_DOMAIN}
+import {INDEPENDENT_REVIEW_DOMAIN,INDEPENDENT_REVIEW_DOMAIN_V2}
   from '../src/ops/protected-update-github-evidence.mjs';
 import {deriveSignedCodexEvidenceId}
   from '../src/ops/protected-update-bootstrap-issuer.mjs';
@@ -136,7 +136,12 @@ test('Option C routine claim requires genuine independent signatures and live CI
  const localContext={...f.context,signerMode:'wsl-local-v1'};
  delete localContext.reviewerBotId;
  delete localContext.reviewerBotActor;
- const local={...f,context:localContext,officialApproval:null};
+ const json=JSON.stringify({...JSON.parse(f.codexReceipt.reviewJson),
+  version:2,packDigest:localContext.packDigest,
+  reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)});
+ const local={...f,context:localContext,officialApproval:null,
+  codexReceipt:{...f.codexReceipt,reviewJson:json,
+   reviewSignatureBase64:signClaim(INDEPENDENT_REVIEW_DOMAIN_V2,json,codex)}};
  assert.equal(parsePinnedRoutineIssuerContext(
   JSON.stringify(localContext)).signerMode,'wsl-local-v1');
  const reviewerProof=reviewPair(local);

@@ -101,3 +101,14 @@
 - Added a root-only one-shot C-mode signature collector. It independently rechecks the exact fixed package, baseline, owner-pinned separate keys, actual completed signed Codex review and live HTTPS GitHub CI/protection; drops supplementary groups and executes two different OS role runners only after writing a durable non-replayable first-dispatch intent. Partial outcomes remain UNKNOWN. Local trust data is persisted root-owned exclusively.
 - The root one-shot bootstrap entry separately re-verifies three genuine signatures, the exact non-replayable attempt record and current live GitHub CI before original two-file migration, including a final post-HTTPS freshness check. Legacy Bot mode is still separately fail-closed.
 - **LIMITS:** This is audited source preparation, not an operational bootstrap. No production independent Codex signer or issuer keys exist; there is no owner-signed root installation, no privileged changes, actual protected updates are still 0/2. The routine update path, App consumer and root apply still use the existing Bot/external gates: those MUST be consistently replaced and independently reviewed before any C-mode privileged deployment. Nothing in a clean test or an unsigned CLI verdict authorizes installation.
+
+## 2026-11-10 — #35 independent five-P2 audit corrections (source-only; NO-GO)
+
+- An actual isolated WSL Codex read-only audit of PR #39 HEAD 9b40e8eb946b2396cb79966f2ee22362f751679d finished with persisted FAIL and five P2 findings, not PASS.
+- Corrected the six-field real GitHub evidence shape (including ciHead), and reject unverified extra required status contexts/apps.
+- A complete canonical, SHA-256-verified source review input now includes all members of the owner-pinned immutable manifest (2 MiB maximum). C-mode requires a domain-separated v2 Codex receipt bound to package digest, complete input hash and persisted terminal hash; properly signed v1 does not authorize C-mode.
+- Root Codex identity checks verify an owner-pinned third isolated OS UID/GID, fixed root-owned runner metadata and private-key ownership distinct from Worker/reviewer/approver before issuer account provisioning.
+- Routine root read-only admission refreshes PR/CI/protection and any mandatory legacy Bot review after baseline health, prior to starting mutation.
+- Negative regressions reproduce the prior defects; source-only tests do not establish actual operating signer provenance, real installation, rollback, or physical acceptance.
+- Existing original root files, services, data, secrets, AI_WRITE=0, AI_PUSH=0, GitHub protections and sudo policy remain unchanged. New exact-head CI and independent final-code audit are still required before one narrowly owner-approved bootstrap, 2 distinct real updates, post-install acceptance, merge or issue close.
+- Operating status remains NO-GO; Issue #35 OPEN.

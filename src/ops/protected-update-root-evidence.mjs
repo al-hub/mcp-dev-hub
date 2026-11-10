@@ -76,7 +76,7 @@ export function readRootProtectedUpdateTrust(){
 export async function preflightAuthenticatedProtectedUpdate({
   prNumber,head,base,ciRunId,operationId,nowMs,
   reviewJson,reviewSignatureBase64,
-  approvalJson,signatureBase64,manifestJson
+  approvalJson,signatureBase64,manifestJson,requiredPackDigest
 }={}){
   // Reject malformed input BEFORE reading any root-held credential.
   if(typeof head!=='string'||!/^[a-f0-9]{40}$/.test(head)||
@@ -94,7 +94,8 @@ export async function preflightAuthenticatedProtectedUpdate({
     prNumber,head,base,ciRunId,nowMs,reviewJson,
     reviewSignatureBase64,githubToken:trust.githubToken,
     pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
-    pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem
+    pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
+    requiredPackDigest
   });
   const approved=verifySignedProtectedUpdateApproval({
     manifestJson,approvalJson,signatureBase64,

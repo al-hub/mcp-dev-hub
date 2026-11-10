@@ -75,7 +75,7 @@ test('Option C routine route requires root-pinned mode, signed issuer and live H
  for(const [s,fragment] of [
   [root,"rootPinnedSignerMode()==='wsl-local-v1'"],
   [root,"preflightAuthenticatedProtectedUpdate({"],
-  [root,"verifyOperationalReviewer(finalNowMs)"],
+  [root,"verifyOperationalReviewer(finalNowMs,verified.proof,latestBot)"],
   [stage,"pinnedSignerMode()==='wsl-local-v1'"],
   [stage,"acquireRoutineDispatchFence("],
   [collect,"const localMode=signerMode==='wsl-local-v1'"],
