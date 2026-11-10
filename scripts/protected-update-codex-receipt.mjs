@@ -129,14 +129,19 @@ function pinnedPacket(raw){
   if(raw.length<170||raw.length>1024)deny();
   let p;
   try{p=JSON.parse(raw);}catch{deny();}
+  const keys=['base','bwrapSha256','codexSha256','companionSha256',
+    'head','packDigest','prNumber','reviewInputSha256','version'];
+  if(p&&Object.hasOwn(p,'candidateManifestSha256'))
+    keys.push('candidateManifestSha256');
   if(!p||Array.isArray(p)||
-     Object.keys(p).sort().join(',')!==
-      'base,bwrapSha256,codexSha256,companionSha256,head,packDigest,prNumber,reviewInputSha256,version'||
+     Object.keys(p).sort().join(',')!==keys.sort().join(',')||
      JSON.stringify(p)!==raw||
      p.version!==1||p.prNumber!==39||
      !SHA.test(p.head||'')||!SHA.test(p.base||'')||
      p.head===p.base||!HASH.test(p.packDigest||'')||
      !HASH.test(p.reviewInputSha256||'')||
+     (Object.hasOwn(p,'candidateManifestSha256')&&
+      !HASH.test(p.candidateManifestSha256||''))||
      !HASH.test(p.codexSha256||'')||
      !HASH.test(p.companionSha256||'')||
      !HASH.test(p.bwrapSha256||''))deny();
@@ -245,7 +250,11 @@ function executeOnce(){
     raw:source.toString('utf8'),head:packet.head,
     packDigest:packet.packDigest
   });
-  if(checked.sha256!==packet.reviewInputSha256)deny();
+  if(checked.sha256!==packet.reviewInputSha256||
+     (packet.candidateManifestSha256===undefined)!==
+       (checked.candidateManifestSha256===undefined)||
+     (packet.candidateManifestSha256!==undefined&&
+       checked.candidateManifestSha256!==packet.candidateManifestSha256))deny();
   const key=createPrivateKey(ownedFile(PRIVATE+'/private.ed25519.pem',{
     owner:process.getuid(),mode:0o400,max:8192
   }));
@@ -262,7 +271,9 @@ function executeOnce(){
   const reviewJson=makeCodexReceiptClaim({
     terminal,head:packet.head,base:packet.base,
     reviewRunId,nowMs:Date.now(),packDigest:packet.packDigest,
-    reviewInputSha256:checked.sha256
+    reviewInputSha256:checked.sha256,
+    ...(checked.candidateManifestSha256!==undefined?
+      {candidateManifestSha256:checked.candidateManifestSha256}:{})
   });
   const signature=sign(null,Buffer.from(
     INDEPENDENT_REVIEW_DOMAIN_V2+reviewJson,'utf8'),key).toString('base64');

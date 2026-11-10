@@ -5,7 +5,7 @@
 import {
   constants,closeSync,fstatSync,lstatSync,openSync,readFileSync
 } from 'node:fs';
-import {createPublicKey} from 'node:crypto';
+import {createHash,createPublicKey} from 'node:crypto';
 import {verifySignedProtectedUpdateApproval}
   from './protected-update-approval.mjs';
 import {
@@ -95,7 +95,9 @@ export async function preflightAuthenticatedProtectedUpdate({
     reviewSignatureBase64,githubToken:trust.githubToken,
     pinnedReviewerPublicKeyPem:trust.codexReviewerPublicKeyPem,
     pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
-    requiredPackDigest
+    requiredPackDigest,
+    requiredCandidateManifestSha256:requiredPackDigest===undefined
+      ?undefined:createHash('sha256').update(manifestJson).digest('hex')
   });
   const approved=verifySignedProtectedUpdateApproval({
     manifestJson,approvalJson,signatureBase64,

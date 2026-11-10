@@ -209,3 +209,92 @@ test('fixed signer validates complete source against root-pinned manifest before
  assert.ok(body.includes('INDEPENDENT_REVIEW_DOMAIN_V2+reviewJson'));
  assert.ok(body.includes('packDigest:packet.packDigest'));
 });
+
+test('routine Codex source packet binds candidate controller pair without changing fixed verifier digest',()=>{
+ const file=txt=>({sha256:createHash('sha256').update(txt).digest('hex'),bytes:Buffer.byteLength(txt)});
+ const installedHead=HEAD,candidateHead='f'.repeat(40);
+ const sourceFiles=PROTECTED_BOOTSTRAP_FILES.map((path,i)=>({
+   path,content:'// immutable verifier '+i+'\n'
+ }));
+ const manifestJson=JSON.stringify({version:1,
+  repository:'al-hub/mcp-dev-hub',head:installedHead,
+  installAuthorized:false,
+  requiredIndependentIssuers:['independent-codex','protected-approval'],
+  files:sourceFiles.map(f=>({path:f.path,...file(f.content)}))});
+ const fixedDigest=createHash('sha256').update(manifestJson).digest('hex');
+ const controller='// new controller revision\n',policy='// new policy revision\n';
+ const candidateManifestJson=JSON.stringify({version:1,
+  repository:'al-hub/mcp-dev-hub',commit:candidateHead,
+  bundle:'controller-pair',
+  files:[
+   {name:'ai-github-canary-policy.mjs',...file(policy)},
+   {name:'ai-github-canary.mjs',...file(controller)}
+  ]});
+ const candidateFiles=[
+  {name:'ai-github-canary-policy.mjs',content:policy},
+  {name:'ai-github-canary.mjs',content:controller}
+ ];
+ const raw=makePinnedCodexReviewInput({
+  manifestJson,files:sourceFiles,candidateManifestJson,candidateFiles
+ });
+ const verified=validatePinnedCodexSourceReviewInput({
+  raw,head:candidateHead,packDigest:fixedDigest
+ });
+ const candidateDigest=createHash('sha256')
+  .update(candidateManifestJson).digest('hex');
+ assert.equal(verified.candidateManifestSha256,candidateDigest);
+ assert.ok(verified.readable.includes(policy));
+ assert.ok(verified.readable.includes(controller));
+ assert.equal(verified.packDigest,fixedDigest);
+ assert.equal(verified.head,candidateHead);
+ for(const patch of [
+  {candidateFiles:candidateFiles.slice(0,1)},
+  {candidateFiles:[candidateFiles[0],{...candidateFiles[1],
+    content:'// counterfeit controller\n'}]},
+  {candidateManifestJson:JSON.stringify({
+    ...JSON.parse(candidateManifestJson),commit:installedHead})}
+ ])assert.throws(()=>makePinnedCodexReviewInput({
+  manifestJson,files:sourceFiles,candidateManifestJson,candidateFiles,...patch
+ }));
+ assert.throws(()=>validatePinnedCodexSourceReviewInput({
+  raw,head:installedHead,packDigest:fixedDigest
+ }));
+});
+test('controller candidate remains data-only, outside immutable executable package',()=>{
+ for(const p of [
+  'scripts/ai-github-canary.mjs',
+  'src/jobs/ai-github-canary-policy.mjs'
+ ])assert.equal(PROTECTED_BOOTSTRAP_FILES.includes(p),false);
+ // Exact content is authenticated separately as candidateManifestJson and
+ // candidateFiles by the fixed full-source Codex input verifier.
+});
+
+test('routine v2 Codex receipt binds separate fixed verifier and candidate digests',()=>{
+ const reviewer=generateKeyPairSync('ed25519');
+ const approver=generateKeyPairSync('ed25519');
+ const packDigest='d'.repeat(64);
+ const candidateManifestSha256='a'.repeat(64);
+ const base={terminal:pass(),head:HEAD,base:BASE,reviewRunId:RUN,
+  nowMs:NOW,packDigest,reviewInputSha256:'e'.repeat(64),
+  candidateManifestSha256};
+ const claim=makeCodexReceiptClaim(base);
+ assert.equal(JSON.parse(claim).candidateManifestSha256,
+  candidateManifestSha256);
+ const signatureBase64=sign(null,Buffer.from(
+  INDEPENDENT_REVIEW_DOMAIN_V2+claim),reviewer.privateKey).toString('base64');
+ const args={reviewJson:claim,signatureBase64,
+  pinnedReviewerPublicKeyPem:reviewer.publicKey.export({type:'spki',format:'pem'}),
+  pinnedApprovalPublicKeyPem:approver.publicKey.export({type:'spki',format:'pem'}),
+  head:HEAD,base:BASE,prNumber:39,nowMs:NOW+1,
+  requiredPackDigest:packDigest,
+  requiredCandidateManifestSha256:candidateManifestSha256};
+ assert.equal(verifyIndependentSignedReview(args).candidateManifestSha256,
+  candidateManifestSha256);
+ for(const patch of [
+  {requiredCandidateManifestSha256:'b'.repeat(64)},
+  {requiredPackDigest:'c'.repeat(64)},
+  {reviewJson:makeCodexReceiptClaim({
+    terminal:pass(),head:HEAD,base:BASE,reviewRunId:RUN,
+    nowMs:NOW,packDigest,reviewInputSha256:'e'.repeat(64)})}
+ ])assert.throws(()=>verifyIndependentSignedReview({...args,...patch}));
+});

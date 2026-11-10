@@ -138,6 +138,7 @@ test('Option C routine claim requires genuine independent signatures and live CI
  delete localContext.reviewerBotActor;
  const json=JSON.stringify({...JSON.parse(f.codexReceipt.reviewJson),
   version:2,packDigest:localContext.packDigest,
+  candidateManifestSha256:sha(localContext.manifestJson),
   reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)});
  const local={...f,context:localContext,officialApproval:null,
   codexReceipt:{...f.codexReceipt,reviewJson:json,
@@ -165,4 +166,65 @@ test('Option C routine claim requires genuine independent signatures and live CI
  assert.throws(()=>buildRoutineApprovalClaim({...local,
   ...reviewerProof,reviewSignatureBase64:signClaim(
    ROUTINE_REVIEW_DOMAIN,reviewerProof.reviewJson,other)}),denied);
+});
+
+test('two independent candidate revisions use the same immutable root verifier digest',()=>{
+ const f=fixture();
+ const packDigest=f.context.packDigest;
+ const revisions=[H,'e'.repeat(40)];
+ const signed=[];
+ for(let i=0;i<revisions.length;i++){
+  const head=revisions[i],ciRunId=f.context.ciRunId+i;
+  const manifestJson=JSON.stringify({
+   ...JSON.parse(f.context.manifestJson),commit:head
+  });
+  const context={
+   version:1,repository:'al-hub/mcp-dev-hub',scope:'controller-pair',
+   head,base:B,prNumber:39,ciRunId,
+   operationId:(i===0?'c':'d').repeat(32),manifestJson,
+   packDigest,signerMode:'wsl-local-v1'
+  };
+  const reviewJson=JSON.stringify({
+   ...JSON.parse(f.codexReceipt.reviewJson),
+   version:2,head,packDigest,
+   candidateManifestSha256:sha(manifestJson),
+   reviewInputSha256:'1'.repeat(64),
+   terminalSha256:'2'.repeat(64)
+  });
+  const codexReceipt={
+   ...f.codexReceipt,reviewJson,
+   reviewSignatureBase64:signClaim(INDEPENDENT_REVIEW_DOMAIN_V2,
+    reviewJson,codex)
+  };
+  const input={context,codexReceipt,officialApproval:null,
+   githubEvidence:{...f.githubEvidence,head,ciHead:head,ciRunId},
+   nowMs:now};
+  const reviewerClaim=buildRoutineReviewerClaim(input);
+  const reviewSignatureBase64=signClaim(ROUTINE_REVIEW_DOMAIN,
+   reviewerClaim.reviewJson,reviewer);
+  const approvalClaim=buildRoutineApprovalClaim({
+   ...input,reviewJson:reviewerClaim.reviewJson,
+   reviewSignatureBase64,reviewerPublicKeyPem:pem(reviewer)
+  });
+  const signatureBase64=signClaim(ROUTINE_APPROVAL_DOMAIN,
+   approvalClaim.approvalJson,approval);
+  assert.equal(verifySignedProtectedUpdateApproval({
+   manifestJson,approvalJson:approvalClaim.approvalJson,
+   signatureBase64,trustPublicKeyPem:pem(approval),
+   trustedHead:head,trustedBase:B,
+   trustedOperationId:context.operationId,nowMs:now
+  }).head,head);
+  signed.push({context,codexReceipt});
+ }
+ assert.equal(signed[0].context.packDigest,signed[1].context.packDigest);
+ assert.notEqual(
+  JSON.parse(signed[0].codexReceipt.reviewJson).candidateManifestSha256,
+  JSON.parse(signed[1].codexReceipt.reviewJson).candidateManifestSha256
+ );
+ const stale={...signed[1],codexReceipt:signed[0].codexReceipt};
+ assert.throws(()=>buildRoutineReviewerClaim({
+  ...stale,officialApproval:null,
+  githubEvidence:{...f.githubEvidence,head:revisions[1],
+   ciHead:revisions[1],ciRunId:f.context.ciRunId+1},nowMs:now
+ }),denied);
 });

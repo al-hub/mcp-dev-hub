@@ -3,6 +3,7 @@
 // install it before independent privileged code audit and one-time owner
 // authorization. A signed request is DATA, never a shell command.
 import {constants,closeSync,fstatSync,openSync,readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {assertFixedOperationalIssuerIsolation}
   from '../src/ops/protected-update-issuer-boundary.mjs';
@@ -310,7 +311,10 @@ export async function applyOneProtectedUpdateFixedRoot(){
       pinnedApprovalPublicKeyPem:trust.approvalPublicKeyPem,
       head:req.head,base:req.base,prNumber:req.prNumber,
       nowMs:finalNowMs,
-      requiredPackDigest:localMode?trust.approvedPackDigest:undefined
+      requiredPackDigest:localMode?trust.approvedPackDigest:undefined,
+      requiredCandidateManifestSha256:localMode
+        ?createHash('sha256').update(req.manifestJson).digest('hex')
+        :undefined
     });
     // Duplicate operation IDs, stale journals, old staged releases and
     // no-op updates are rejected BEFORE entry to mutation/UNKNOWN state.

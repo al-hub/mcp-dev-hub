@@ -230,7 +230,7 @@ export function verifyProtectedBootstrapPack({outputPath,expectedManifestSha256}
     }else if(!expected.paths.has(item.path)||item.mode!==0o444)deny();
   }
   const manifestPath=join(outputPath,'MANIFEST.json');
-  const manifestBytes=readBoundedPackFile(manifestPath,owner,8192);
+  const manifestBytes=readBoundedPackFile(manifestPath,owner,16384);
   if(digest(manifestBytes)!==expectedManifestSha256)deny();
   let m;
   try{m=JSON.parse(manifestBytes.toString('utf8'));}catch{deny();}

@@ -97,6 +97,7 @@ test('Option C staging accepts only OS-pinned three-principal trust without Bot'
  delete context.reviewerBotActor;
  const json=JSON.stringify({...JSON.parse(f.codexReceipt.reviewJson),
   version:2,packDigest:context.packDigest,
+  candidateManifestSha256:hash(context.manifestJson),
   reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)});
  const codexReceipt={...f.codexReceipt,reviewJson:json,
   reviewSignatureBase64:sign(null,Buffer.from(

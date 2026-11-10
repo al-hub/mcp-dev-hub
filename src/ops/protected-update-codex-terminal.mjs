@@ -56,14 +56,20 @@ export function validatePinnedCodexSourceReviewInput({
     !SHA.test(head||'')||!HASH.test(packDigest||''))deny();
  let doc,manifest;
  try{doc=JSON.parse(raw);manifest=JSON.parse(doc.manifestJson);}catch{deny();}
- if(!own(doc,['version','manifestJson','files'])||doc.version!==2||
+ const routine=Object.hasOwn(doc,'candidateManifestJson')||
+   Object.hasOwn(doc,'candidateFiles');
+ const docFields=routine
+   ?['version','manifestJson','files','candidateManifestJson','candidateFiles']
+   :['version','manifestJson','files'];
+ if(!own(doc,docFields)||doc.version!==2||
     JSON.stringify(doc)!==raw||
     typeof doc.manifestJson!=='string'||
-    Buffer.byteLength(doc.manifestJson,'utf8')>8192||
+    Buffer.byteLength(doc.manifestJson,'utf8')>16384||
     !own(manifest,['version','repository','head','installAuthorized',
       'requiredIndependentIssuers','files'])||
     manifest.version!==1||manifest.repository!=='al-hub/mcp-dev-hub'||
-    manifest.head!==head||manifest.installAuthorized!==false||
+    (routine?!SHA.test(manifest.head||''):manifest.head!==head)||
+    manifest.installAuthorized!==false||
     JSON.stringify(manifest)!==doc.manifestJson||
     hash(doc.manifestJson)!==packDigest||
     JSON.stringify(manifest.requiredIndependentIssuers)!==
@@ -89,20 +95,67 @@ export function validatePinnedCodexSourceReviewInput({
   names.add(m.path);
   rendered.push('### '+m.path+' ('+m.sha256+')\n'+f.content+'\n');
  }
+ let candidateManifestSha256=null;
+ if(routine){
+  if(typeof doc.candidateManifestJson!=='string'||
+     Buffer.byteLength(doc.candidateManifestJson)>4096||
+     !Array.isArray(doc.candidateFiles)||doc.candidateFiles.length!==2)deny();
+  let candidate;
+  try{candidate=JSON.parse(doc.candidateManifestJson);}catch{deny();}
+  if(!own(candidate,['version','repository','commit','bundle','files'])||
+     JSON.stringify(candidate)!==doc.candidateManifestJson||
+     candidate.version!==1||candidate.repository!=='al-hub/mcp-dev-hub'||
+     candidate.commit!==head||candidate.bundle!=='controller-pair'||
+     !Array.isArray(candidate.files)||candidate.files.length!==2||
+     candidate.files[0]?.name!=='ai-github-canary-policy.mjs'||
+     candidate.files[1]?.name!=='ai-github-canary.mjs'||
+     manifest.head===head)deny();
+  for(let i=0;i<2;i++){
+   const f=doc.candidateFiles[i],m=candidate.files[i];
+   if(!own(f,['name','content'])||
+      !own(m,['name','sha256','bytes'])||
+      f.name!==m.name||typeof f.content!=='string'||
+      !Number.isSafeInteger(m.bytes)||m.bytes<1||
+      m.bytes>262144||!HASH.test(m.sha256||'')||
+      Buffer.byteLength(f.content,'utf8')!==m.bytes||
+      hash(f.content)!==m.sha256)deny();
+   total+=m.bytes;
+   if(total>REVIEW_INPUT_LIMIT)deny();
+   rendered.push('### PROPOSED PROTECTED CONTROLLER '+m.name+
+      ' ('+m.sha256+')\n'+f.content+'\n');
+  }
+  candidateManifestSha256=hash(doc.candidateManifestJson);
+ }
  return Object.freeze({
   head,packDigest,fileCount:doc.files.length,sha256:hash(raw),
+  ...(routine?{candidateManifestSha256}:{}),
   readable:'Immutable complete source HEAD '+head+
-    '\nOwner-pinned package digest '+packDigest+'\n'+rendered.join('\n')
+    '\nOwner-pinned immutable verifier package '+packDigest+
+    (routine?'\nController candidate manifest '+candidateManifestSha256:'')+
+    '\n'+rendered.join('\n')
  });
 }
 /** Non-authoritative convenience builder; validation is mandatory even
  * for source assembled by the fixed independently reviewed root stage.
  */
-export function makePinnedCodexReviewInput({manifestJson,files}={}){
- const raw=JSON.stringify({version:2,manifestJson,files});
- let m;try{m=JSON.parse(manifestJson);}catch{deny();}
+export function makePinnedCodexReviewInput({
+  manifestJson,files,candidateManifestJson,candidateFiles
+}={}){
+ const routine=candidateManifestJson!==undefined||
+   candidateFiles!==undefined;
+ if(routine&&(typeof candidateManifestJson!=='string'||
+     !Array.isArray(candidateFiles)))deny();
+ const raw=JSON.stringify({
+  version:2,manifestJson,files,
+  ...(routine?{candidateManifestJson,candidateFiles}:{})
+ });
+ let m,c;
+ try{
+  m=JSON.parse(manifestJson);
+  if(routine)c=JSON.parse(candidateManifestJson);
+ }catch{deny();}
  validatePinnedCodexSourceReviewInput({
-  raw,head:m.head,packDigest:hash(manifestJson)
+  raw,head:routine?c.commit:m.head,packDigest:hash(manifestJson)
  });
  return raw;
 }
@@ -111,7 +164,8 @@ export function makePinnedCodexReviewInput({manifestJson,files}={}){
  * a separately protected operating signer key may sign this JSON.
  */
 export function makeCodexReceiptClaim({
-  terminal,head,base,reviewRunId,nowMs,packDigest,reviewInputSha256
+  terminal,head,base,reviewRunId,nowMs,packDigest,reviewInputSha256,
+  candidateManifestSha256
 }={}){
   if(terminal?.verdict!=='PASS'||terminal.head!==head||
      terminal.base!==base||!SHA.test(head||'')||!SHA.test(base||'')||
@@ -120,12 +174,15 @@ export function makeCodexReceiptClaim({
   const v2=packDigest!==undefined||reviewInputSha256!==undefined;
   if(v2&&(!HASH.test(packDigest||'')||
      !HASH.test(reviewInputSha256||'')))deny();
+  if(candidateManifestSha256!==undefined&&
+     (!v2||!HASH.test(candidateManifestSha256)))deny();
   return JSON.stringify({
     version:v2?2:1,repository:'al-hub/mcp-dev-hub',prNumber:39,
     head,base,reviewer:'independent-codex',reviewRunId,
     reviewVerdict:'PASS',findings:[],
     ...(v2?{packDigest,reviewInputSha256,
-      terminalSha256:terminal.terminalSha256}:{}),
+      terminalSha256:terminal.terminalSha256,
+      ...(candidateManifestSha256!==undefined?{candidateManifestSha256}:{})}:{}),
     issuedAtMs:nowMs,expiresAtMs:nowMs+120000
   });
 }

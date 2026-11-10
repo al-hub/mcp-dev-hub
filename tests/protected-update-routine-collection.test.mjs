@@ -40,6 +40,7 @@ function example(localMode=false){
   reviewer:'independent-codex',reviewRunId:'4'.repeat(32),
   reviewVerdict:'PASS',findings:[],
   ...(localMode?{packDigest:context.packDigest,
+   candidateManifestSha256:hash(manifestJson),
    reviewInputSha256:'1'.repeat(64),terminalSha256:'2'.repeat(64)}:{}),
   issuedAtMs:NOW-1000,expiresAtMs:NOW+300000});
  const codexReceipt={reviewJson,

@@ -18,6 +18,8 @@ const DOMAIN='mcp-dev-hub/independent-codex-review/v1\n';
 const DOMAIN_V2='mcp-dev-hub/independent-codex-review/v2\n';
 const REVIEW_FIELDS_V2=Object.freeze([...REVIEW_FIELDS,
   'packDigest','reviewInputSha256','terminalSha256']);
+const REVIEW_FIELDS_ROUTINE=Object.freeze([...REVIEW_FIELDS_V2,
+  'candidateManifestSha256']);
 const fail=()=>{throw Error('protected_evidence_denied');};
 const exact=(o,k)=>o!==null&&typeof o==='object'&&
   !Array.isArray(o)&&Object.keys(o).length===k.length&&
@@ -27,7 +29,7 @@ const sha256=s=>createHash('sha256').update(s,'utf8').digest('hex');
 export function verifyIndependentSignedReview({
   reviewJson,signatureBase64,pinnedReviewerPublicKeyPem,
   pinnedApprovalPublicKeyPem,head,base,prNumber,nowMs,
-  requiredPackDigest
+  requiredPackDigest,requiredCandidateManifestSha256
 }={}){
   if(typeof reviewJson!=='string'||Buffer.byteLength(reviewJson,'utf8')>2048||
      typeof signatureBase64!=='string'||!B64.test(signatureBase64)||
@@ -38,16 +40,22 @@ export function verifyIndependentSignedReview({
   let r;
   try{r=JSON.parse(reviewJson);}catch{fail();}
   const v2=r?.version===2;
-  if(!exact(r,v2?REVIEW_FIELDS_V2:REVIEW_FIELDS)||
+  const routine=v2&&Object.hasOwn(r,'candidateManifestSha256');
+  if(!exact(r,routine?REVIEW_FIELDS_ROUTINE:
+     v2?REVIEW_FIELDS_V2:REVIEW_FIELDS)||
      JSON.stringify(r)!==reviewJson||
      ![1,2].includes(r.version)||r.repository!==REPO||
      r.prNumber!==prNumber||
      (v2&&(!HASH.test(r.packDigest||'')||
        !HASH.test(r.reviewInputSha256||'')||
        !HASH.test(r.terminalSha256||'')))||
+     (routine&&!HASH.test(r.candidateManifestSha256||''))||
      (requiredPackDigest!==undefined&&
        (!HASH.test(requiredPackDigest)||!v2||
         r.packDigest!==requiredPackDigest))||
+     (requiredCandidateManifestSha256!==undefined&&
+      (!HASH.test(requiredCandidateManifestSha256)||!routine||
+       r.candidateManifestSha256!==requiredCandidateManifestSha256))||
      r.head!==head||r.base!==base||
      r.reviewer!=='independent-codex'||
      typeof r.reviewRunId!=='string'||!UUID.test(r.reviewRunId)||
@@ -77,7 +85,8 @@ export function verifyIndependentSignedReview({
     reviewDigest:sha256(reviewJson),reviewRunId:r.reviewRunId,
     ...(v2?{packDigest:r.packDigest,
       reviewInputSha256:r.reviewInputSha256,
-      terminalSha256:r.terminalSha256}:{}),
+      terminalSha256:r.terminalSha256,
+      ...(routine?{candidateManifestSha256:r.candidateManifestSha256}:{})}:{}),
   });
 }
 export const INDEPENDENT_REVIEW_DOMAIN=DOMAIN;
@@ -245,6 +254,44 @@ async function githubGet(path,token,maxBytes=262144) {
     req.end();
   });
 }
+
+/**
+ * Ensure the selected passing run remains the CURRENT effective protected
+ * bootstrap check, not merely a historical successful run for the same SHA.
+ * This pure validator grants no authority without the fixed root HTTPS reads.
+ * The PR branch policy pins GitHub Actions app 15368, exactly one bootstrap
+ * requirement; commit statuses of the same name are ambiguous and denied.
+ */
+export function validateCurrentRequiredGitHubCheck({
+  head,ciRunId,jobs,checkRuns,commitStatuses
+}={}){
+  if(!SHA.test(head||'')||!Number.isSafeInteger(ciRunId)||ciRunId<1||
+     !checkRuns||!Array.isArray(checkRuns.check_runs)||
+     !Number.isSafeInteger(checkRuns.total_count)||
+     checkRuns.total_count!==checkRuns.check_runs.length||
+     checkRuns.total_count<1||checkRuns.total_count>=100||
+     !Array.isArray(commitStatuses)||commitStatuses.length>=100||
+     commitStatuses.some(s=>!s||typeof s!=='object'||
+       s.context==='bootstrap')||
+     !jobs||!Array.isArray(jobs.jobs))fail();
+  const checkRows=checkRuns.check_runs.filter(c=>c?.name==='bootstrap');
+  if(checkRows.length<1||checkRows.some(c=>
+     !Number.isSafeInteger(c.id)||c.id<1||
+     c.app?.id!==15368||c.head_sha!==head)||
+     new Set(checkRows.map(c=>c.id)).size!==checkRows.length)fail();
+  const latest=checkRows.reduce((a,b)=>b.id>a.id?b:a);
+  if(latest.status!=='completed'||latest.conclusion!=='success')fail();
+  const matches=jobs.jobs.filter(j=>
+    j?.name==='bootstrap'&&j.run_id===ciRunId&&
+    j.head_sha===head&&j.status==='completed'&&
+    j.conclusion==='success'&&
+    j.check_run_url===
+      'https://api.github.com/repos/al-hub/mcp-dev-hub/check-runs/'+latest.id
+  );
+  if(matches.length!==1)fail();
+  return Object.freeze({head,ciRunId,requiredCheckCurrent:true});
+}
+
 /**
  * Root-supervisor-only candidate: fetch fixed GitHub REST endpoints over TLS
  * and independently verify a separately signed Codex review. A fail-closed
@@ -255,7 +302,7 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   prNumber,head,base,ciRunId,githubToken,
   reviewJson,reviewSignatureBase64,
   pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,nowMs,
-  requiredPackDigest
+  requiredPackDigest,requiredCandidateManifestSha256
 }={}){
   // Reject untrusted identifiers BEFORE any token-backed network access.
   if(!Number.isSafeInteger(prNumber)||prNumber<1||
@@ -265,18 +312,24 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   const review=verifyIndependentSignedReview({
     reviewJson,signatureBase64:reviewSignatureBase64,
     pinnedReviewerPublicKeyPem,pinnedApprovalPublicKeyPem,
-    head,base,prNumber,nowMs,requiredPackDigest
+    head,base,prNumber,nowMs,requiredPackDigest,
+    requiredCandidateManifestSha256
   });
   const stem='/repos/al-hub/mcp-dev-hub';
   // No redirects, query URL or hostname is supplied by any Issue/Worker.
-  const [pr,run,jobs,protection]=await Promise.all([
+  const [pr,run,jobs,protection,checkRuns,commitStatuses]=await Promise.all([
     githubGet(stem+'/pulls/'+prNumber,githubToken),
     githubGet(stem+'/actions/runs/'+ciRunId,githubToken),
     githubGet(stem+'/actions/runs/'+ciRunId+'/jobs?per_page=100',githubToken),
-    githubGet(stem+'/branches/main/protection',githubToken)
+    githubGet(stem+'/branches/main/protection',githubToken),
+    githubGet(stem+'/commits/'+head+'/check-runs?per_page=100',githubToken),
+    githubGet(stem+'/commits/'+head+'/statuses?per_page=100',githubToken)
   ]);
   const gh=validateGitHubEvidenceShape({
     pr,run,jobs,protection,prNumber,head,base,ciRunId
+  });
+  validateCurrentRequiredGitHubCheck({
+    head,ciRunId,jobs,checkRuns,commitStatuses
   });
   return Object.freeze({
     ...gh,independentReviewPassed:true,
@@ -299,15 +352,21 @@ export async function fetchAndVerifyGitHubBootstrapEvidence({
      typeof head!=='string'||!SHA.test(head)||
      typeof base!=='string'||!SHA.test(base)||head===base)fail();
   const stem='/repos/al-hub/mcp-dev-hub';
-  const [pr,run,jobs,protection]=await Promise.all([
+  const [pr,run,jobs,protection,checkRuns,commitStatuses]=await Promise.all([
     githubGet(stem+'/pulls/'+prNumber,githubToken),
     githubGet(stem+'/actions/runs/'+ciRunId,githubToken),
     githubGet(stem+'/actions/runs/'+ciRunId+'/jobs?per_page=100',githubToken),
-    githubGet(stem+'/branches/main/protection',githubToken)
+    githubGet(stem+'/branches/main/protection',githubToken),
+    githubGet(stem+'/commits/'+head+'/check-runs?per_page=100',githubToken),
+    githubGet(stem+'/commits/'+head+'/statuses?per_page=100',githubToken)
   ]);
-  return validateGitHubEvidenceShape({
+  const gh=validateGitHubEvidenceShape({
     pr,run,jobs,protection,prNumber,head,base,ciRunId
   });
+  validateCurrentRequiredGitHubCheck({
+    head,ciRunId,jobs,checkRuns,commitStatuses
+  });
+  return gh;
 }
 
 const FILEPATHS=Object.freeze({
