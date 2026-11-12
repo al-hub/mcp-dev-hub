@@ -22,6 +22,7 @@ const SOURCE=Object.freeze([
   'scripts/protected-update-codex-receipt.mjs',
   'scripts/protected-update-codex-os-provision.mjs',
   'scripts/protected-update-owner-bootstrap-preflight.mjs',
+  'scripts/protected-update-bootstrap-readiness.mjs',
   'scripts/protected-update-os-activate.mjs',
   'scripts/protected-update-issuer-provision.mjs',
   'scripts/protected-update-issuer-stage.mjs',

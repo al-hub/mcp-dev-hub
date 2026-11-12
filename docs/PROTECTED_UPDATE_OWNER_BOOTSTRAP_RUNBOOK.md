@@ -5,7 +5,7 @@
 ## 1. 지금 AI가 준비하는 범위 (사용자 작업 없음)
 
 - 기존 GitHub PR #39의 **정확한 HEAD/BASE**, 독립 Codex 최종 감사 JSON과 실제 CI를 확인
-- 변경된 정확한 HEAD로 생성한 비권한 불변 소스 패키지의 MANIFEST SHA-256과 61개 소스 파일 원본·해시·권한 검증
+- 변경된 정확한 HEAD로 생성한 비권한 불변 소스 패키지의 MANIFEST SHA-256과 62개 소스 파일 원본·해시·권한 검증
 - 비권한 WSL에서 기존 보호 컨트롤러·정책 원본 2개의 Git 기준선, 소유권, 격리 시작 확인
 - `scripts/protected-update-owner-bootstrap-preflight.mjs`는 위 두 검증을 실제 실행하고 root 영역/서명 역할은 **메타데이터만** 관찰. 암호·토큰·키를 읽지 않음. 결과의 `rootInstallAuthorized`는 항상 `false`.
 - 독립 서명 코드를 원본 패키지에 보존하고 OS Codex→검토자→승인자 순서를 유지. 실패·UNKNOWN을 재실행하지 않음.
