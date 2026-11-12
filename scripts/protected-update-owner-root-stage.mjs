@@ -203,7 +203,10 @@ export function verifyOwnerStageManifest({raw,head,sha256}={}){
   ownerInstallationAuthorized:false});
 }
 function packPayload(path,owner,head,manifestHash){
- checkedSourcePath(path);
+ if(owner===0){
+  // Only the exact two new, root-owned staging targets; never a caller path.
+  if((path!==PENDING&&path!==DEST)||realpathSync(path)!==path)deny();
+ }else checkedSourcePath(path);
  assertExactTree(path,owner);
  const manifest=fileBytes(join(path,'MANIFEST.json'),owner,0o444,16384);
  const shape=verifyOwnerStageManifest({

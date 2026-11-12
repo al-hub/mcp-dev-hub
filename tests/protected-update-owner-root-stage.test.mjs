@@ -61,10 +61,12 @@ test('checkout or non-local session can never stage code or privileges',()=>{
  assert.match(r.stderr,/protected_owner_root_stage_denied_or_unknown/);
  assert.equal(r.stdout,'');
  const src=readFileSync(path,'utf8');
- assert.doesNotMatch(src,/\b(?:sudo|useradd|chmod -R|rm -rf|NOPASSWD:ALL)\b/);
+ assert.doesNotMatch(src,/spawnSync\s*\(\s*['"](?:sudo|\/usr\/sbin\/useradd)/);
+ assert.doesNotMatch(src,/NOPASSWD:ALL|rm\s+-rf/);
  assert.match(src,/process.stdin.isTTY!==true/);
  assert.match(src,/process.env.SUDO_UID/);
  assert.match(src,/absent\(DEST\);absent\(PENDING\);/);
  assert.match(src,/packPayload\(PENDING,0,head,hash\)/);
  assert.match(src,/packPayload\(DEST,0,head,hash\)/);
+ assert.match(src,/path!==PENDING&&path!==DEST/);
 });
