@@ -13,6 +13,16 @@ import {verifyProtectedBootstrapPack}
 const SHA=/^[0-9a-f]{40}$/;
 const HASH=/^[0-9a-f]{64}$/;
 const fail=()=>{throw Error('protected_owner_bootstrap_preflight_denied');};
+const PINNED_BASELINE='175ba1a481d9a55c0567402a2c905f457c7601e5';
+// Exact original bytes were independently measured from the genuine WSL
+// root-owned pair in #35; NEVER infer them only from a Git checkout, whose
+// refs/replace could make 'git show <commit>' report synthetic object bytes.
+export const PINNED_OWNER_ORIGINAL_FILES=Object.freeze([
+ Object.freeze({name:'ai-github-canary-policy.mjs',bytes:7887,
+  sha256:'a2b81bca5d27a50a9a84d11d9240ee4ab85f1b07695a0fbc2c44d2e6a61dd839'}),
+ Object.freeze({name:'ai-github-canary.mjs',bytes:14357,
+  sha256:'595d6c5180abf82f2ecb50534a7a2e6d70c7f9f3395135082b2cc881be77231e'})
+]);
 const ROOT_PATHS=Object.freeze([
   {label:'protectedCodexSource',path:'/usr/local/lib/mcp-dev-hub/protected-codex'},
   {label:'protectedCodexState',path:'/var/lib/mcp-dev-hub-codex-review'},
@@ -56,13 +66,21 @@ function accountState(name){
 /** Pure result-shape guard for tests; caller values have NO OS authority. */
 export function evaluateOwnerBootstrapHandoff({
  head,expectedHead,manifestSha256,expectedManifestSha256,
- fileCount,baselineConfirmed
+ fileCount,baselineConfirmed,baselineCommit,baselineFiles
 }={}){
  if(!SHA.test(head||'')||head!==expectedHead||
     !HASH.test(manifestSha256||'')||
     manifestSha256!==expectedManifestSha256||
     !Number.isSafeInteger(fileCount)||fileCount<1||fileCount>100||
-    baselineConfirmed!==true)fail();
+    baselineConfirmed!==true||baselineCommit!==PINNED_BASELINE||
+    !Array.isArray(baselineFiles)||
+    baselineFiles.length!==PINNED_OWNER_ORIGINAL_FILES.length||
+    baselineFiles.some((f,i)=>{
+     const v=PINNED_OWNER_ORIGINAL_FILES[i];
+     return !f||typeof f!=='object'||Array.isArray(f)||
+       Object.keys(f).sort().join(',')!=='bytes,name,sha256'||
+       f.name!==v.name||f.bytes!==v.bytes||f.sha256!==v.sha256;
+    }))fail();
  return Object.freeze({
   phase:'nonprivileged_owner_preflight_only',
   head,manifestSha256,fileCount,originalBaselineConfirmed:true,
@@ -87,7 +105,7 @@ export function inspectLocalOwnerBootstrapHandoff({
 }={}){
  const uid=process.getuid?.(),euid=process.geteuid?.();
  if(!Number.isSafeInteger(uid)||uid<=0||euid!==uid||
-    !SHA.test(baselineCommit||'')||!SHA.test(head||'')||
+    baselineCommit!==PINNED_BASELINE||!SHA.test(head||'')||
     !HASH.test(expectedManifestSha256||''))fail();
  checkedAbsolute(repositoryPath);checkedAbsolute(outputPath);
  let baseline,pack;
@@ -108,7 +126,8 @@ export function inspectLocalOwnerBootstrapHandoff({
  const result=evaluateOwnerBootstrapHandoff({
   head:pack.head,expectedHead:head,
   manifestSha256:pack.manifestSha256,expectedManifestSha256,
-  fileCount:pack.fileCount,baselineConfirmed:true
+  fileCount:pack.fileCount,baselineConfirmed:true,
+  baselineCommit:baseline.baselineCommit,baselineFiles:baseline.files
  });
  const observed=Object.freeze({
   rootPaths:Object.freeze(ROOT_PATHS.map(r=>Object.freeze({
