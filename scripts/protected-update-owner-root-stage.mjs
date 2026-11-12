@@ -250,18 +250,21 @@ function rootParentTree(base,files){
  }
  return created;
 }
-function checkOwnerSession(ownerUid){
+function checkOwnerSession(ownerUid=null){
  if(process.getuid?.()!==0||process.geteuid?.()!==0||
     process.argv.length!==2||fileURLToPath(import.meta.url)!==ENTRY||
     process.stdin.isTTY!==true||process.stderr.isTTY!==true||
     process.env.SSH_CLIENT!==undefined||
     process.env.SSH_CONNECTION!==undefined||
-    String(ownerUid)!==process.env.SUDO_UID)deny();
+    (ownerUid!==null&&String(ownerUid)!==process.env.SUDO_UID))deny();
  const self=lstatSync(ENTRY);
  if(!self.isFile()||self.isSymbolicLink()||self.uid!==0||
     self.nlink!==1||(self.mode&0o777)!==0o444)deny();
 }
 export function stageOwnerApprovedPackOnce(){
+ // Reject untrusted/nonroot/mutable checkout invocation BEFORE touching
+ // any protected trust directories, signer metadata or root staging paths.
+ checkOwnerSession();
  const ancestors=['/','/usr','/usr/local','/usr/local/lib',ROOT,
    '/etc','/etc/mcp-dev-hub',TRUST];
  for(const p of ancestors)rootDir(p,p===TRUST?0o700:null);
