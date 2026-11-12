@@ -63,7 +63,7 @@ test('P2 inherited rulesets must be complete; unsupported active rules deny',()=
 
 test('Codex P2: pinned CI explicitly overrides repository npm shell',()=>{
  const ci=readFileSync(new URL('../.github/workflows/ci.yml',import.meta.url),'utf8');
- assert.match(ci,/run: npm --script-shell=\\/bin\\/sh run check/);
+ assert.ok(ci.includes('run: npm --script-shell=/bin/sh run check'));
  assert.doesNotMatch(ci,/run: npm run check/);
 });
 
