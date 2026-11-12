@@ -350,7 +350,8 @@ export function validateNoNpmConfigGitTree({head,commit,tree}={}){
      !Array.isArray(rows)||rows.length<1||rows.length>=10000||
      rows.some(r=>typeof r?.path!=='string'||r.path.length<1||
        r.path.length>4096||r.path.startsWith('/')||
-       r.path.split('/').some(p=>!p||p==='.'||p==='..')||
+       r.path.split('/').some(p=>!p||p==='.'||p==='..'||
+         p.toLowerCase()==='node_modules')||
        !SHA.test(r.sha||'')||
        !['blob','tree','commit'].includes(r.type)||
        r.path.split('/').at(-1).toLowerCase()==='.npmrc'))fail();
