@@ -1,3 +1,9 @@
+## 2026-11-12 #35 owner Codex signer provision first independent audit: umask P2 correction (SOURCE-ONLY NO-GO)
+
+- Genuine independent WSL Codex 0.166.0 read-only audit of exact previous HEAD `079421885e7031891ea8c212dbf658ab393d9603` / base `cceb9191d177d01ee9a4136d4da7d3a3538b93db` returned persisted terminal **FAIL/P2 x1** despite CLI exit 0: root `umask(077)` made `mkdir(mode:0755)` create 0700 protected code and public signer-state parents, so an independent dropped UID could not traverse to generate its private key. This would strand a partially created account and require explicit owner recovery, not blind retries.
+- Minimal correction: explicitly `chmod(0755)` and root-owner/mode-check ONLY the designated nonsecret, immutable signer source ancestors and public signer-state parent before any child dispatch. Signer-owned `PRIVATE` remains 0700, private key and authentication remain 0400. New ordering/negative regression; no changes to protected original two-file policy, root trust keys, sudo, services or live OS users. Changed HEAD requires fresh source tests, CI and real Codex audit; prior result is not PASS.
+- Source handoff for prior HEAD `0794218` was correctly staged in a nonroot private directory and verified 60-file immutable manifest SHA-256 `32ecb29cb476e56146b5a538862eb59172e8b18370be382517cedf91a7355fe1`; the previous pack becomes stale as soon as HEAD changes and must not be treated as installation-approved.
+
 ## 2026-11-12 #35 C-mode independent Codex OS signer first-stage provision CANDIDATE (NO ROOT GO)
 
 - Built new fixed-path, no-argument root-only *source candidate* for the previously absent third independently operated Codex signer OS principal. This is the minimum prerequisite for the existing protected reviewer/approver provisioner, not an expansion of the root file update allowlist or GitHub privileges.

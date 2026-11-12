@@ -63,3 +63,14 @@ test('trusted owner metadata, immutable sources and binary hashes precede userad
  assert.match(src,/safeToRetry:false/);
  assert.doesNotMatch(src,/NOPASSWD:ALL|chmodSync\(.*0o777/);
 });
+
+test('Codex P2: restrictive umask cannot seal root-owned signer code/state ancestors',()=>{
+ const src=readFileSync(new URL(
+  '../scripts/protected-update-codex-os-provision.mjs',import.meta.url),'utf8');
+ const parent=src.indexOf("for(const path of [CODE,CODE+'/code',CODE+'/code/scripts'");
+ const chmod=src.indexOf('chmodSync(path,0o755);dir(path,0o755)',parent);
+ const state=src.indexOf('chmodSync(STATE,0o755);dir(STATE,0o755)');
+ const keygen=src.indexOf("spawnSync('/usr/bin/node',['-e',KEYGEN]");
+ assert.ok(parent>=0&&chmod>parent&&state>chmod&&keygen>state);
+ assert.match(src,/chmodSync\(PRIVATE,0o700\)/);
+});

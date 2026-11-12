@@ -204,6 +204,13 @@ export function provisionCodexSignerOSOnce(){
  mkdirSync(CODE+'/code/scripts',{mode:0o755});
  mkdirSync(CODE+'/code/src',{mode:0o755});
  mkdirSync(CODE+'/code/src/ops',{mode:0o755});
+ // umask(077) masks mkdir(0755) to 0700. The isolated signing UID must
+ // traverse *only these root-owned public code ancestors*, never PRIVATE.
+ // Normalize and read back exact 0755 before any signer keygen/dispatch.
+ for(const path of [CODE,CODE+'/code',CODE+'/code/scripts',
+   CODE+'/code/src',CODE+'/code/src/ops']){
+  chmodSync(path,0o755);dir(path,0o755);
+ }
  for(const path of FILES){
   const row=pack.files.find(x=>x.path===path);
   if(!row)deny();
@@ -213,6 +220,7 @@ export function provisionCodexSignerOSOnce(){
   exclusive(CODE+'/code/'+path,bytes,0o444);
  }
  mkdirSync(STATE,{mode:0o755});
+ chmodSync(STATE,0o755);dir(STATE,0o755);
  mkdirSync(PRIVATE,{mode:0o700});
  chownSync(PRIVATE,uid,gid);chmodSync(PRIVATE,0o700);
  exclusive(PRIVATE+'/codex-auth.json',auth,0o400,uid,gid);
