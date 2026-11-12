@@ -107,3 +107,18 @@ test('exact file-size limits and JSON type boundaries',()=>{
  assert.throws(()=>accepts({...v,commit:123}),/invalid_protected_update_manifest/);
  assert.throws(()=>accepts({...v,files:[{...v.files[0],bytes:true},v.files[1]]}),/invalid_protected_update_file/);
 });
+
+test('reject duplicate JSON keys and noncanonical manifest bytes before root verification',()=>{
+ const raw=JSON.stringify(valid());
+ for(const candidate of [
+  raw.replace('"version":1','"version":1,"version":1'),
+  raw.replace('"bytes":1200','"bytes":1200,"bytes":1200'),
+  raw.replace('"name":"ai-github-canary-policy.mjs"',
+   '"name":"ai-github-canary-policy.mjs","name":"ai-github-canary-policy.mjs"'),
+  ' '+raw,raw.replace('"files":','"files": ')
+ ]){
+  assert.notEqual(JSON.stringify(JSON.parse(candidate)),candidate);
+  assert.throws(()=>validateProposedProtectedUpdate(candidate,{verifiedCommit:sha}),
+   /noncanonical_protected_update_manifest/);
+ }
+});

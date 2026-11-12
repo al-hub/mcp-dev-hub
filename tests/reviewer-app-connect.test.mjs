@@ -59,3 +59,56 @@ test('invalid expected SHA blocks before key access',async()=>{
   readKey:()=>{reads++;return 'bad'},createClient:async()=>{throw Error('not allowed')}});
  assert.equal(r.status,'blocked');assert.equal(reads,0);
 });
+
+test('existing reviewer App may target #39 only when non-Draft same-HEAD main PR',async()=>{
+ const targetEnv={...env,MCP_DEV_HUB_REVIEWER_TARGET_PR:'39'};
+ const checked=[];
+ const r=await checkReviewerConnection({
+  env:targetEnv,readKey:()=> 'synthetic-test-key',
+  createClient:async args=>{
+   assert.equal(args.prNumber,39);
+   return {actor:'mcp-dev-hub-ai-reviewer[bot]',
+    api:async(method,path)=>{
+     checked.push(path);
+     return {number:39,state:'open',draft:false,
+      head:{sha},base:{ref:'main',
+       repo:{full_name:'al-hub/mcp-dev-hub'}},user:{login:'al-hub'}};
+    }};
+  }
+ });
+ assert.deepEqual(checked,['/repos/al-hub/mcp-dev-hub/pulls/39']);
+ assert.equal(r.status,'ready');
+ assert.equal(r.prNumber,39);
+});
+test('PR39 Draft, cross-repo and attacker-controlled PR flags fail closed',async()=>{
+ for(const patch of [
+  {draft:true},
+  {base:{ref:'main',repo:{full_name:'attacker/repository'}}},
+  {state:'closed'}
+ ]){
+  const r=await checkReviewerConnection({
+   env:{...env,MCP_DEV_HUB_REVIEWER_TARGET_PR:'39'},
+   readKey:()=> 'synthetic-test-key',
+   createClient:async()=>({
+    actor:'mcp-dev-hub-ai-reviewer[bot]',
+    api:async()=>({number:39,state:'open',draft:false,
+      head:{sha},base:{ref:'main',
+       repo:{full_name:'al-hub/mcp-dev-hub'}},
+      user:{login:'al-hub'},...patch})
+   })
+  });
+  assert.equal(r.status,'blocked');
+ }
+});
+test('arbitrary reviewer App PR target fails before key access',async()=>{
+ for(const target of ['1','38','40','abc','','39/other']){
+  let read=false;
+  const r=await checkReviewerConnection({
+   env:{...env,MCP_DEV_HUB_REVIEWER_TARGET_PR:target},
+   readKey:()=>{read=true;throw Error('must not read');},
+   createClient:async()=>{throw Error('must not call');}
+  });
+  assert.equal(r.status,'blocked');
+  assert.equal(read,false);
+ }
+});

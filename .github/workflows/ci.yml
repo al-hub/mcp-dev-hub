@@ -12,4 +12,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm run check
+      - name: Run npm run check
+        run: node scripts/check-privacy.mjs && node --test tests/*.test.*

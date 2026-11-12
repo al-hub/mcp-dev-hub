@@ -1,0 +1,169 @@
+// #35 source-only root-owned routine signer attempt fence.
+// Never infer replay permission from process exit or missing journal.
+import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,
+  readFileSync,writeSync,unlinkSync,fchmodSync} from 'node:fs';
+const OPS='/var/lib/mcp-dev-hub-signers/routine-operations';
+const LOCK=OPS+'/.active-routine';
+const ID=/^[a-f0-9]{32}$/;
+const SHA=/^[a-f0-9]{40}$/;
+const deny=()=>{throw Error('routine_dispatch_unknown_or_denied');};
+function root(){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0)deny();
+ for(const p of ['/','/var','/var/lib',
+  '/var/lib/mcp-dev-hub-signers',OPS]){
+  const s=lstatSync(p);
+  if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==0||
+   (s.mode&0o022)!==0||
+   (p===OPS&&(s.mode&0o777)!==0o755))deny();
+ }
+}
+function directorySync(){
+ const fd=openSync(OPS,constants.O_RDONLY|constants.O_NOFOLLOW|
+  constants.O_DIRECTORY);
+ try{fsyncSync(fd);}finally{closeSync(fd);}
+}
+export function parseRoutineDispatchFence(raw){
+ let a;try{a=JSON.parse(raw);}catch{deny();}
+ if(!a||Array.isArray(a)||typeof a!=='object'||
+  Object.keys(a).sort().join(',')!=='operationId,state,version'||
+  JSON.stringify(a)!==raw||a.version!==1||
+  !ID.test(a.operationId||'')||a.state!=='dispatched_or_unknown')deny();
+ return Object.freeze(a);
+}
+function readFence(){
+ const fd=openSync(LOCK,constants.O_RDONLY|constants.O_NOFOLLOW|
+  constants.O_NONBLOCK);
+ try{
+  const s=fstatSync(fd);
+  if(!s.isFile()||s.uid!==0||s.nlink!==1||
+   (s.mode&0o777)!==0o600||s.size<1||s.size>256)deny();
+  return parseRoutineDispatchFence(readFileSync(fd,'utf8'));
+ }finally{closeSync(fd);}
+}
+/** Root-only readback: an existing active fence is never a retry grant.
+ * The returned state does not disclose another operation's identifier.
+ */
+export function inspectRoutineDispatchFence(operationId){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0||
+    !ID.test(operationId||''))deny();
+ try{root();}catch(e){
+  if(e.code==='ENOENT')return Object.freeze({
+   state:'not_provisioned',safeToReplay:false});
+  throw e;
+ }
+ let s;try{s=lstatSync(LOCK);}catch(e){
+  if(e.code==='ENOENT')return Object.freeze({
+   state:'inactive',safeToReplay:false});
+  throw e;
+ }
+ if(!s.isFile()||s.isSymbolicLink())deny();
+ const actual=readFence();
+ return Object.freeze({
+  state:actual.operationId===operationId
+    ?'active_same_operation_unknown':'other_operation_active_unknown',
+  safeToReplay:false
+ });
+}
+// A durable slot is an irrevocable attempt, even after its global fence
+// was legitimately released. Never let a duplicate completed/partial slot
+// strand a fresh global fence during a rejected replay.
+function slotAbsent(operationId){
+ try{lstatSync(OPS+'/'+operationId);}
+ catch(e){if(e.code==='ENOENT')return true;throw e;}
+ return false;
+}
+/** Only a real immutable installed pointer and a parsed requested HEAD
+ * establish a confirmed no-op. UNKNOWN pointer state must throw.
+ */
+export function probeDifferentInstalledHead({installedCommit,requestedHead}={}){
+ if(!SHA.test(installedCommit||'')||!SHA.test(requestedHead||''))deny();
+ return installedCommit!==requestedHead;
+}
+const PAIR_FILES=Object.freeze([
+ 'ai-github-canary-policy.mjs','ai-github-canary.mjs'
+]);
+const HASH=/^[a-f0-9]{64}$/;
+function exactPair(files){
+ if(!Array.isArray(files)||files.length!==PAIR_FILES.length)deny();
+ return PAIR_FILES.map(name=>{
+  const row=files.find(f=>f?.name===name);
+  if(!row||Object.keys(row).sort().join(',')!=='bytes,name,sha256'||
+     !Number.isSafeInteger(row.bytes)||row.bytes<1||row.bytes>256*1024||
+     !HASH.test(row.sha256||''))deny();
+  return row;
+ });
+}
+/** Identity and actual authenticated release bytes must both differ.
+ * No-op comparisons occur before signer dispatch AND after taking the
+ * exclusive fence; UNKNOWN physical snapshot or metadata fails closed.
+ */
+export function probeDifferentInstalledPair({
+ installedCommit,requestedHead,installedFiles,requestedFiles
+}={}){
+ const changedHead=probeDifferentInstalledHead({installedCommit,requestedHead});
+ const installed=exactPair(installedFiles);
+ const proposed=exactPair(requestedFiles);
+ return changedHead&&installed.some((f,i)=>
+  f.bytes!==proposed[i].bytes||f.sha256!==proposed[i].sha256);
+}
+export function acquireRoutineDispatchFence(operationId,{validateCandidate}={}){
+ root();
+ if(!ID.test(operationId||'')||typeof validateCandidate!=='function')deny();
+ // Fast rejection with no filesystem mutations for ordinary replay/no-op.
+ if(!slotAbsent(operationId)||validateCandidate()!==true)deny();
+ const b=Buffer.from(JSON.stringify({
+  version:1,operationId,state:'dispatched_or_unknown'
+ }));
+ const fd=openSync(LOCK,constants.O_WRONLY|constants.O_CREAT|
+  constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+ try{
+  if(writeSync(fd,b,0,b.length,0)!==b.length)deny();
+  fchmodSync(fd,0o600);fsyncSync(fd);
+  const s=fstatSync(fd);
+  if(!s.isFile()||s.uid!==0||s.nlink!==1||
+   s.size!==b.length||(s.mode&0o777)!==0o600)deny();
+ }finally{closeSync(fd);}
+ directorySync();
+ // Race defense: a prior successful operation can finish and release its
+ // fence after our first slot check but before our O_EXCL acquisition.
+ // This process has not staged files or dispatched signers yet, so ONLY
+ // this confirmed pre-dispatch slot collision may release its own fence.
+ // Any other I/O or signer uncertainty must retain the UNKNOWN fence.
+ if(!slotAbsent(operationId)){
+  if(readFence().operationId!==operationId)deny();
+  unlinkSync(LOCK);directorySync();
+  deny();
+ }
+ // Between the pre-lock snapshot and O_EXCL acquisition another approved
+ // update can finish. A confirmed already-installed HEAD is not UNKNOWN:
+ // release ONLY this newly acquired pre-dispatch lock; no slot or signer
+ // side effect has happened. Errors/indeterminate reads retain the fence.
+ const fresh=validateCandidate();
+ if(fresh===false){
+  if(readFence().operationId!==operationId)deny();
+  unlinkSync(LOCK);directorySync();
+  deny();
+ }
+ if(fresh!==true)deny();
+ return Object.freeze({operationId,safeToReplay:false});
+}
+export function requireNoRoutineDispatchFence(){
+ if(process.getuid?.()!==0||process.geteuid?.()!==0)deny();
+ try{root();}catch(e){
+  if(e.code==='ENOENT')return true;
+  throw e;
+ }
+ try{lstatSync(LOCK);}catch(e){
+  if(e.code==='ENOENT')return true;
+  throw e;
+ }
+ readFence();deny();
+}
+export function releaseTerminalRoutineDispatchFence(operationId,phase){
+ root();
+ if(!ID.test(operationId||'')||
+  !['verified','rolled_back'].includes(phase)||
+  readFence().operationId!==operationId)deny();
+ unlinkSync(LOCK);directorySync();
+ return Object.freeze({operationId,phase,safeToReplay:false});
+}
