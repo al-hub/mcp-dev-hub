@@ -20,6 +20,7 @@ const SOURCE=Object.freeze([
   'scripts/reviewer-app-trusted-preflight.mjs',
   'scripts/reviewer-app-trusted-publish.mjs',
   'scripts/protected-update-codex-receipt.mjs',
+  'scripts/protected-update-codex-os-provision.mjs',
   'scripts/protected-update-os-activate.mjs',
   'scripts/protected-update-issuer-provision.mjs',
   'scripts/protected-update-issuer-stage.mjs',
