@@ -68,5 +68,8 @@ test('checkout or non-local session can never stage code or privileges',()=>{
  assert.match(src,/absent\(DEST\);absent\(PENDING\);/);
  assert.match(src,/packPayload\(PENDING,0,head,hash\)/);
  assert.match(src,/packPayload\(DEST,0,head,hash\)/);
+ assert.match(src,/opendirSync\(path\)/);
+ assert.match(src,/scanned>maxMembers/);
+ assert.doesNotMatch(src,/readdirSync/);
  assert.match(src,/path!==PENDING&&path!==DEST/);
 });

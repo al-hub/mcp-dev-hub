@@ -1,3 +1,9 @@
+## 2026-11-12 #35 independent Codex root owner staging audit P2: directory memory DoS (SOURCE-ONLY NO-GO)
+
+- Real independent read-only WSL Codex final HEAD audit on previous `67831b7fe7e37f92b63792c2886557b65b236f78` returned persisted **FAIL/P2 x1** despite CLI exit 0. The proposed root owner package stager read untrusted source directories using unbounded `readdirSync`, allowing a mutable source owner to supply millions of names and force excessive root process memory before rejecting extras.
+- Minimal correction switches to `opendirSync` + one `readSync` Dirent at a time, caps the **total** examined entries to the exact static expected directories+files count, and rejects malformed/extra entries immediately. The root staging boundary, strict pinned owner manifest, fixed OS paths, original root-owned controller, root trust, keys, sudo and services remain unchanged. Add a negative structural regression for streaming bounded enumeration and no `readdirSync`.
+- No root execution or installation was performed. New exact-HEAD tests, CI and independent persisted Codex PASS are required before any locally authenticated owner action. Prior-HEAD source audit FAIL is not a GO.
+
 ## 2026-11-12 #35 owner-local immutable root PACK staging candidate (NO operating GO)
 
 - New source-only `scripts/protected-update-owner-root-stage.mjs` is a **standalone fixed-path root staging candidate**, not a root install authorization or key producer. It must first be independently byte-pinned and installed by the actual owner at a single fixed root-owned path. It strictly refuses mutable-checkout direct execution, any command-line args, non-root caller, non-local/remote or noninteractive stdin, and the absence of root-owned pinned owner-input trust. No sudo command, key generator or OS identity mutation exists in this stage.

@@ -6,7 +6,7 @@
 // One-shot effects are UNKNOWN on failure; do not automatically replay.
 import {createHash} from 'node:crypto';
 import {constants,closeSync,fchmodSync,fstatSync,fsyncSync,
- lstatSync,mkdirSync,openSync,readFileSync,readdirSync,
+ lstatSync,mkdirSync,openSync,readFileSync,opendirSync,
  readSync,realpathSync,renameSync,writeSync} from 'node:fs';
 import {resolve,isAbsolute,dirname,join,posix} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -149,23 +149,33 @@ function expectedTree(){
 }
 function assertExactTree(base,owner){
  const expected=expectedTree(),foundDirs=new Set(),foundFiles=new Set();
+ // Never allocate a directory's complete names array from untrusted input.
+ // Read one entry at a time with a fixed bound across the complete tree.
+ const maxMembers=expected.dirs.size+expected.files.size-1;
+ let scanned=0;
  function walk(path,relative){
   dir(path,owner,0o700);
   foundDirs.add(relative);
-  for(const name of readdirSync(path)){
-   if(!name||name==='.'||name==='..')deny();
-   const rel=relative?relative+'/'+name:name;
-   const item=join(path,name),s=lstatSync(item);
-   if(s.uid!==owner||s.isSymbolicLink())deny();
-   if(s.isDirectory()){
-    if(!expected.dirs.has(rel))deny();
-    walk(item,rel);
-   }else if(s.isFile()){
-    if(!expected.files.has(rel)||(s.mode&0o777)!==0o444||
-       s.nlink!==1)deny();
-    foundFiles.add(rel);
-   }else deny();
-  }
+  const stream=opendirSync(path);
+  try{
+   for(let entry=stream.readSync();entry!==null;entry=stream.readSync()){
+    if(++scanned>maxMembers)deny();
+    const name=entry.name;
+    if(typeof name!=='string'||!name||name.length>255||
+       name==='.'||name==='..')deny();
+    const rel=relative?relative+'/'+name:name;
+    const item=join(path,name),s=lstatSync(item);
+    if(s.uid!==owner||s.isSymbolicLink())deny();
+    if(s.isDirectory()){
+     if(!expected.dirs.has(rel))deny();
+     walk(item,rel);
+    }else if(s.isFile()){
+     if(!expected.files.has(rel)||(s.mode&0o777)!==0o444||
+        s.nlink!==1)deny();
+     foundFiles.add(rel);
+    }else deny();
+   }
+  }finally{stream.closeSync();}
  }
  walk(base,'');
  if(foundDirs.size!==expected.dirs.size||
