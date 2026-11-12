@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
   PINNED_CI_SOURCES,validatePinnedCiSources,
-  validateGitHubReviewThreads,validateGitHubRulesets
+  validateGitHubReviewThreads,validateGitHubRulesets,
+  validateNoNpmConfigGitTree
 } from '../src/ops/protected-update-github-evidence.mjs';
 import {PROTECTED_BOOTSTRAP_FILES} from '../scripts/protected-update-bootstrap-pack.mjs';
 
@@ -58,4 +59,39 @@ test('P2 inherited rulesets must be complete; unsupported active rules deny',()=
  denied(()=>validateGitHubRulesets([], '<https://api.github.com/...>; rel="next"'));
  denied(()=>validateGitHubRulesets([], '<https://api.github.com/...>; rel="prev"'));
  assert.equal(validateGitHubRulesets([{id:8,enforcement:'disabled',target:'branch',name:'off'}],null).rulesetsCovered,true);
+});
+
+test('Codex P2: pinned CI explicitly overrides repository npm shell',()=>{
+ const ci=readFileSync(new URL('../.github/workflows/ci.yml',import.meta.url),'utf8');
+ assert.match(ci,/run: npm --script-shell=\\/bin\\/sh run check/);
+ assert.doesNotMatch(ci,/run: npm run check/);
+});
+
+test('Codex P2: reject .npmrc in authenticated exact HEAD or BASE tree',()=>{
+ const sha='a'.repeat(40),treeSha='b'.repeat(40);
+ const commit={sha,tree:{sha:treeSha}};
+ const good={sha:treeSha,truncated:false,tree:[
+   {path:'package.json',type:'blob',sha:'c'.repeat(40)},
+   {path:'tests',type:'tree',sha:'d'.repeat(40)},
+   {path:'tests/example.mjs',type:'blob',sha:'e'.repeat(40)}
+ ]};
+ assert.equal(validateNoNpmConfigGitTree({
+   head:sha,commit,tree:good}).npmConfigurationAbsent,true);
+ for(const patch of [
+   {tree:{...good,tree:[...good.tree,{path:'.npmrc',type:'blob',sha:'f'.repeat(40)}]}},
+   {tree:{...good,tree:[...good.tree,{path:'nested/.npmrc',type:'blob',sha:'f'.repeat(40)}]}},
+   {tree:{...good,tree:[...good.tree,{path:'nested/.NPMRC',type:'blob',sha:'f'.repeat(40)}]}},
+   {tree:{...good,truncated:true}},
+   {tree:{...good,truncated:undefined}},
+   {tree:{...good,sha:'0'.repeat(40)}},
+   {tree:{...good,tree:[]}},
+   {tree:{...good,tree:[{path:'a',type:'blob',sha:'short'}]}},
+   {tree:{...good,tree:[{path:'a/../.npmrc',type:'blob',sha:'f'.repeat(40)}]}},
+   {head:'0'.repeat(40)},
+   {commit:{...commit,sha:'0'.repeat(40)}},
+   {commit:{...commit,tree:{sha:'0'.repeat(40)}}},
+   {commit:null},{tree:null}
+ ])denied(()=>validateNoNpmConfigGitTree({
+   head:sha,commit,tree:good,...patch
+ }));
 });

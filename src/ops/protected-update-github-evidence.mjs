@@ -95,7 +95,7 @@ export const INDEPENDENT_REVIEW_DOMAIN_V2=DOMAIN_V2;
 // Root-pinned immutable CI implementation. Replacements (including no-op
 // tests) require a separately audited verifier package and owner trust update.
 export const PINNED_CI_SOURCES=Object.freeze([
-  {path:'.github/workflows/ci.yml',sha256:'cf01ae13499c18812312eb119ab99f25397d751285a76f94e9624a5da27b31f9'},
+  {path:'.github/workflows/ci.yml',sha256:'fb2e75d1a188e0b145866d816480f5f61f3e31c60115a1750b6bf11c5acc8e8c'},
   {path:'package.json',sha256:'7ee947ca04e36e83bcbaa8ff82b7efccef56c20ea6cef77434fdd840d3c0b963'},
   {path:'scripts/check-privacy.mjs',sha256:'52682f4ed4877aa452aaf7547a748707d48d80568d400c76244ae429f76fdaaa'},
   {path:'scripts/privacy-rules.mjs',sha256:'966fb0e4fd821bef35c3f66b00a15440696cf46064d265dc928a36f4f4e9a559'}
@@ -340,17 +340,46 @@ async function githubGraphqlThreads(prNumber,token){
     req.end(body);
   });
 }
+// GitHub Git DB's authenticated exact-commit recursive tree is required:
+// 404 on Contents/.npmrc is NOT an absence proof. No truncated/partial trees.
+export function validateNoNpmConfigGitTree({head,commit,tree}={}){
+  const rows=tree?.tree;
+  if(!SHA.test(head||'')||commit?.sha!==head||
+     !SHA.test(commit?.tree?.sha||'')||
+     tree?.sha!==commit.tree.sha||tree.truncated!==false||
+     !Array.isArray(rows)||rows.length<1||rows.length>=10000||
+     rows.some(r=>typeof r?.path!=='string'||r.path.length<1||
+       r.path.length>4096||r.path.startsWith('/')||
+       r.path.split('/').some(p=>!p||p==='.'||p==='..')||
+       !SHA.test(r.sha||'')||
+       !['blob','tree','commit'].includes(r.type)||
+       /(?:^|\\/)\\.npmrc$/i.test(r.path)))fail();
+  return Object.freeze({head,npmConfigurationAbsent:true});
+}
+async function fetchNoNpmConfigGitTree(sha,githubToken){
+  if(!SHA.test(sha||''))fail();
+  const stem='/repos/al-hub/mcp-dev-hub';
+  const commit=await githubGet(stem+'/git/commits/'+sha,githubToken);
+  if(commit?.sha!==sha||!SHA.test(commit?.tree?.sha||''))fail();
+  const tree=await githubGet(stem+'/git/trees/'+commit.tree.sha+
+     '?recursive=1',githubToken,1024*1024);
+  return validateNoNpmConfigGitTree({head:sha,commit,tree});
+}
+
 async function fetchAndValidateLiveGitHubAdditionalEvidence({
-  prNumber,head,githubToken
+  prNumber,head,base,githubToken
 }){
   const stem='/repos/al-hub/mcp-dev-hub';
-  const [rows,threads,rulesets]=await Promise.all([
+  const [rows,threads,rulesets,gitTrees]=await Promise.all([
     Promise.all(PINNED_CI_SOURCES.map(f=>
       githubGet(stem+'/contents/'+f.path+'?ref='+head,githubToken))),
     githubGraphqlThreads(prNumber,githubToken),
     githubGet(stem+'/rulesets?includes_parents=true&per_page=100',
-      githubToken,262144,true)
+      githubToken,262144,true),
+    Promise.all([head,base].map(sha=>fetchNoNpmConfigGitTree(sha,githubToken)))
   ]);
+  if(gitTrees.length!==2||gitTrees[0].head!==head||
+     gitTrees[1].head!==base)fail();
   validatePinnedCiSources(rows);
   validateGitHubReviewThreads(threads,prNumber);
   validateGitHubRulesets(rulesets.body,rulesets.link);
@@ -432,7 +461,7 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   validateCurrentRequiredGitHubCheck({
     head,ciRunId,jobs,checkRuns,commitStatuses
   });
-  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,githubToken});
+  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,base,githubToken});
   return Object.freeze({
     ...gh,independentReviewPassed:true,
     reviewHead:review.head,reviewBase:review.base,
@@ -468,7 +497,7 @@ export async function fetchAndVerifyGitHubBootstrapEvidence({
   validateCurrentRequiredGitHubCheck({
     head,ciRunId,jobs,checkRuns,commitStatuses
   });
-  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,githubToken});
+  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,base,githubToken});
   return gh;
 }
 
