@@ -85,21 +85,26 @@ export function evaluateOwnerBootstrapHandoff({
 export function inspectLocalOwnerBootstrapHandoff({
  repositoryPath,baselineCommit,outputPath,head,expectedManifestSha256
 }={}){
- if(process.getuid?.()===0||process.geteuid?.()===0||
-    process.getuid?.()!==process.geteuid?.()||
+ const uid=process.getuid?.(),euid=process.geteuid?.();
+ if(!Number.isSafeInteger(uid)||uid<=0||euid!==uid||
     !SHA.test(baselineCommit||'')||!SHA.test(head||'')||
     !HASH.test(expectedManifestSha256||''))fail();
  checkedAbsolute(repositoryPath);checkedAbsolute(outputPath);
- const baseline=inspectExistingProtectedBootstrapBaseline({
-  repositoryPath,baselineCommit
- });
+ let baseline,pack;
+ // A missing or malformed original/pack must have one generic, fail-closed
+ // result. Never surface private paths, underlying OS errors or git output.
+ try{
+  baseline=inspectExistingProtectedBootstrapBaseline({
+   repositoryPath,baselineCommit
+  });
+  pack=verifyProtectedBootstrapPack({
+   outputPath,expectedManifestSha256
+  });
+ }catch{fail();}
  if(baseline.status!=='original_baseline_and_isolated_startup_confirmed'||
     baseline.installerAuthorized!==false||
-    baseline.realProtectedUpdates!==0)fail();
- const pack=verifyProtectedBootstrapPack({
-  outputPath,expectedManifestSha256
- });
- if(pack.status!=='source_only_unprivileged_no_go')fail();
+    baseline.realProtectedUpdates!==0||
+    pack.status!=='source_only_unprivileged_no_go')fail();
  const result=evaluateOwnerBootstrapHandoff({
   head:pack.head,expectedHead:head,
   manifestSha256:pack.manifestSha256,expectedManifestSha256,
