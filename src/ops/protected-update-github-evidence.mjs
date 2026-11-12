@@ -353,7 +353,7 @@ export function validateNoNpmConfigGitTree({head,commit,tree}={}){
        r.path.split('/').some(p=>!p||p==='.'||p==='..')||
        !SHA.test(r.sha||'')||
        !['blob','tree','commit'].includes(r.type)||
-       /(?:^|\\/)\\.npmrc$/i.test(r.path)))fail();
+       r.path.split('/').at(-1).toLowerCase()==='.npmrc'))fail();
   return Object.freeze({head,npmConfigurationAbsent:true});
 }
 async function fetchNoNpmConfigGitTree(sha,githubToken){
