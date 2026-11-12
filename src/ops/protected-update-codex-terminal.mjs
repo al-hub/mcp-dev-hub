@@ -3,6 +3,7 @@
 // Only the separately installed, OS-pinned immutable runner can generate a
 // signed receipt after it personally launches Codex and validates its result.
 import {createHash} from 'node:crypto';
+import {PINNED_CI_SOURCES} from './protected-update-github-evidence.mjs';
 
 const SHA=/^[0-9a-f]{40}$/;
 const RUN=/^[0-9a-f]{32}$/;
@@ -84,7 +85,7 @@ export function validatePinnedCodexSourceReviewInput({
   const m=manifest.files[i],f=doc.files[i];
   if(!own(m,['path','bytes','sha256'])||!own(f,['path','content'])||
      typeof m.path!=='string'||!
-       /^(?:scripts|src\/(?:ops|jobs))\/[a-z0-9.-]+\.mjs$/.test(m.path)||
+       /^(?:\.github\/workflows\/ci\.yml|package\.json|(?:scripts|src\/(?:ops|jobs))\/[a-z0-9.-]+\.mjs)$/.test(m.path)||
      names.has(m.path)||f.path!==m.path||
      !Number.isSafeInteger(m.bytes)||m.bytes<1||m.bytes>262144||
      !HASH.test(m.sha256||'')||typeof f.content!=='string')deny();
@@ -95,6 +96,7 @@ export function validatePinnedCodexSourceReviewInput({
   names.add(m.path);
   rendered.push('### '+m.path+' ('+m.sha256+')\n'+f.content+'\n');
  }
+ for(const pin of PINNED_CI_SOURCES)if(!names.has(pin.path))deny();
  let candidateManifestSha256=null;
  if(routine){
   if(typeof doc.candidateManifestJson!=='string'||

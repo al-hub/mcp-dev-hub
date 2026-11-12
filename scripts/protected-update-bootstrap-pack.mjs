@@ -70,7 +70,11 @@ const SOURCE=Object.freeze([
   'src/ops/protected-update-root-layout.mjs',
   'src/ops/protected-update-root-preflight.mjs',
   'src/ops/protected-update-sudo-policy.mjs',
-  'src/ops/protected-update-transaction.mjs'
+  'src/ops/protected-update-transaction.mjs',
+  '.github/workflows/ci.yml',
+  'package.json',
+  'scripts/check-privacy.mjs',
+  'scripts/privacy-rules.mjs'
 ]);
 const deny=()=>{throw Error('protected_bootstrap_pack_denied');};
 const digest=b=>createHash('sha256').update(b).digest('hex');

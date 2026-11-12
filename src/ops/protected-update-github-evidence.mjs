@@ -92,6 +92,53 @@ export function verifyIndependentSignedReview({
 export const INDEPENDENT_REVIEW_DOMAIN=DOMAIN;
 export const INDEPENDENT_REVIEW_DOMAIN_V2=DOMAIN_V2;
 
+// Root-pinned immutable CI implementation. Replacements (including no-op
+// tests) require a separately audited verifier package and owner trust update.
+export const PINNED_CI_SOURCES=Object.freeze([
+  {path:'.github/workflows/ci.yml',sha256:'cf01ae13499c18812312eb119ab99f25397d751285a76f94e9624a5da27b31f9'},
+  {path:'package.json',sha256:'7ee947ca04e36e83bcbaa8ff82b7efccef56c20ea6cef77434fdd840d3c0b963'},
+  {path:'scripts/check-privacy.mjs',sha256:'52682f4ed4877aa452aaf7547a748707d48d80568d400c76244ae429f76fdaaa'},
+  {path:'scripts/privacy-rules.mjs',sha256:'966fb0e4fd821bef35c3f66b00a15440696cf46064d265dc928a36f4f4e9a559'}
+].map(row=>Object.freeze(row)));
+export function validatePinnedCiSources(rows){
+  if(!Array.isArray(rows)||rows.length!==PINNED_CI_SOURCES.length)fail();
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i],pin=PINNED_CI_SOURCES[i];
+    if(row?.type!=='file'||row.path!==pin.path||
+       row.encoding!=='base64'||!Number.isSafeInteger(row.size)||
+       row.size<1||row.size>262144||typeof row.content!=='string')fail();
+    const raw=row.content.replace(/\n/g,'');
+    if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw))fail();
+    const bytes=Buffer.from(raw,'base64');
+    if(bytes.length!==row.size||bytes.toString('base64')!==raw||
+       createHash('sha256').update(bytes).digest('hex')!==pin.sha256)fail();
+  }
+  return Object.freeze({ciImplementationPinned:true});
+}
+export function validateGitHubReviewThreads(payload,prNumber){
+  if(!Number.isSafeInteger(prNumber)||prNumber<1||
+     !payload||typeof payload!=='object'||payload.errors!==undefined)fail();
+  const pr=payload.data?.repository?.pullRequest;
+  const connection=pr?.reviewThreads,page=connection?.pageInfo;
+  if(pr?.number!==prNumber||!Array.isArray(connection?.nodes)||
+     connection.nodes.length>=100||page?.hasNextPage!==false||
+     page?.hasPreviousPage!==false||
+     connection.nodes.some(node=>typeof node?.id!=='string'||
+       node.id.length<1||node.isResolved!==true))fail();
+  return Object.freeze({conversationResolved:true});
+}
+// Deliberately conservative: current design cannot discharge extra active
+// inherited organization/repository rules. Deny until explicitly audited.
+export function validateGitHubRulesets(rows,linkHeader){
+  if(!Array.isArray(rows)||rows.length>=100||
+     (linkHeader!==null&&linkHeader!==undefined&&linkHeader!=='')||
+     rows.some(r=>!Number.isSafeInteger(r?.id)||r.id<1||
+       typeof r?.name!=='string'||!r.name||
+       !['branch','tag','push'].includes(r.target)||
+       r.enforcement!=='disabled'))fail();
+  return Object.freeze({rulesetsCovered:true});
+}
+
 // Only call with objects obtained by the immutable root HTTPS client below.
 // This *pure* shape check by itself authenticates NOTHING and is never a
 // production authorization token. It is exported solely for synthetic tests.
@@ -214,7 +261,7 @@ export async function fetchAndVerifyOfficialReviewerApproval({
   });
 }
 
-async function githubGet(path,token,maxBytes=262144) {
+async function githubGet(path,token,maxBytes=262144,includeLink=false) {
   if(typeof token!=='string'||token.length<8||token.length>4096||
      /[\r\n\t ]/.test(token)||typeof path!=='string'||
      !/^\/repos\/al-hub\/mcp-dev-hub\//.test(path))fail();
@@ -244,7 +291,8 @@ async function githubGet(path,token,maxBytes=262144) {
         chunks.push(chunk);
       });
       res.on('end',()=>{
-        try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
+        try{const parsed=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          resolve(includeLink?{body:parsed,link:res.headers.link??null}:parsed);}
         catch{reject(Error('protected_evidence_denied'));}
       });
       res.on('error',()=>reject(Error('protected_evidence_denied')));
@@ -253,6 +301,59 @@ async function githubGet(path,token,maxBytes=262144) {
     req.on('error',()=>reject(Error('protected_evidence_denied')));
     req.end();
   });
+}
+
+async function githubGraphqlThreads(prNumber,token){
+  if(!Number.isSafeInteger(prNumber)||prNumber<1||
+     typeof token!=='string'||token.length<8||token.length>4096||
+     /[\r\n\t ]/.test(token))fail();
+  const body=JSON.stringify({query:
+    'query($n:Int!){repository(owner:"al-hub",name:"mcp-dev-hub"){pullRequest(number:$n){number reviewThreads(first:100){nodes{id isResolved}pageInfo{hasNextPage hasPreviousPage}}}}}',
+    variables:{n:prNumber}});
+  return await new Promise((resolve,reject)=>{
+    const req=request({hostname:'api.github.com',port:443,
+      protocol:'https:',method:'POST',path:'/graphql',timeout:10000,
+      headers:{Accept:'application/vnd.github+json',
+        Authorization:'Bearer '+token,
+        'X-GitHub-Api-Version':'2022-11-28',
+        'User-Agent':'mcp-dev-hub-protected-evidence/1',
+        'Content-Type':'application/json',
+        'Content-Length':Buffer.byteLength(body)}},res=>{
+      if(res.statusCode!==200||!String(res.headers['content-type']||'')
+         .toLowerCase().includes('application/json')){
+        res.resume();reject(Error('protected_evidence_denied'));return;
+      }
+      const chunks=[];let size=0;
+      res.on('data',chunk=>{
+        size+=chunk.length;
+        if(size>262144){req.destroy(Error('protected_evidence_denied'));return;}
+        chunks.push(chunk);
+      });
+      res.on('end',()=>{
+        try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}
+        catch{reject(Error('protected_evidence_denied'));}
+      });
+      res.on('error',()=>reject(Error('protected_evidence_denied')));
+    });
+    req.on('timeout',()=>req.destroy(Error('protected_evidence_denied')));
+    req.on('error',()=>reject(Error('protected_evidence_denied')));
+    req.end(body);
+  });
+}
+async function fetchAndValidateLiveGitHubAdditionalEvidence({
+  prNumber,head,githubToken
+}){
+  const stem='/repos/al-hub/mcp-dev-hub';
+  const [rows,threads,rulesets]=await Promise.all([
+    Promise.all(PINNED_CI_SOURCES.map(f=>
+      githubGet(stem+'/contents/'+f.path+'?ref='+head,githubToken))),
+    githubGraphqlThreads(prNumber,githubToken),
+    githubGet(stem+'/rulesets?includes_parents=true&per_page=100',
+      githubToken,262144,true)
+  ]);
+  validatePinnedCiSources(rows);
+  validateGitHubReviewThreads(threads,prNumber);
+  validateGitHubRulesets(rulesets.body,rulesets.link);
 }
 
 /**
@@ -331,6 +432,7 @@ export async function fetchAndVerifyGitHubUpdateEvidence({
   validateCurrentRequiredGitHubCheck({
     head,ciRunId,jobs,checkRuns,commitStatuses
   });
+  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,githubToken});
   return Object.freeze({
     ...gh,independentReviewPassed:true,
     reviewHead:review.head,reviewBase:review.base,
@@ -366,6 +468,7 @@ export async function fetchAndVerifyGitHubBootstrapEvidence({
   validateCurrentRequiredGitHubCheck({
     head,ciRunId,jobs,checkRuns,commitStatuses
   });
+  await fetchAndValidateLiveGitHubAdditionalEvidence({prNumber,head,githubToken});
   return gh;
 }
 
