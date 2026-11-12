@@ -61,10 +61,12 @@ test('P2 inherited rulesets must be complete; unsupported active rules deny',()=
  assert.equal(validateGitHubRulesets([{id:8,enforcement:'disabled',target:'branch',name:'off'}],null).rulesetsCovered,true);
 });
 
-test('Codex P2: pinned CI explicitly overrides repository npm shell',()=>{
+test('Codex P2: pinned CI checks privacy before any PR-controlled tests, without nested npm',()=>{
  const ci=readFileSync(new URL('../.github/workflows/ci.yml',import.meta.url),'utf8');
- assert.ok(ci.includes('run: npm --script-shell=/bin/sh run check'));
- assert.doesNotMatch(ci,/run: npm run check/);
+ assert.ok(ci.includes('run: node scripts/check-privacy.mjs && node --test tests/*.test.*'));
+ assert.doesNotMatch(ci,/run: npm(?:\\s|$)/m);
+ assert.ok(ci.indexOf('node scripts/check-privacy.mjs') <
+           ci.indexOf('node --test tests/*.test.*'));
 });
 
 test('Codex P2: reject .npmrc in authenticated exact HEAD or BASE tree',()=>{

@@ -13,4 +13,4 @@ jobs:
         with:
           node-version: '24'
       - name: Run npm run check
-        run: npm --script-shell=/bin/sh run check
+        run: node scripts/check-privacy.mjs && node --test tests/*.test.*

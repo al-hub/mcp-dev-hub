@@ -95,7 +95,7 @@ export const INDEPENDENT_REVIEW_DOMAIN_V2=DOMAIN_V2;
 // Root-pinned immutable CI implementation. Replacements (including no-op
 // tests) require a separately audited verifier package and owner trust update.
 export const PINNED_CI_SOURCES=Object.freeze([
-  {path:'.github/workflows/ci.yml',sha256:'fb2e75d1a188e0b145866d816480f5f61f3e31c60115a1750b6bf11c5acc8e8c'},
+  {path:'.github/workflows/ci.yml',sha256:'f7f67e19cd3ef547fcb86ca2538ea817ce85336ece62f235e568102158afa8ff'},
   {path:'package.json',sha256:'7ee947ca04e36e83bcbaa8ff82b7efccef56c20ea6cef77434fdd840d3c0b963'},
   {path:'scripts/check-privacy.mjs',sha256:'52682f4ed4877aa452aaf7547a748707d48d80568d400c76244ae429f76fdaaa'},
   {path:'scripts/privacy-rules.mjs',sha256:'966fb0e4fd821bef35c3f66b00a15440696cf46064d265dc928a36f4f4e9a559'}
