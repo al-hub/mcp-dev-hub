@@ -10,7 +10,7 @@
 // something to blindly rerun or delete.
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,mkdirSync,
   openSync,readFileSync,writeSync,chmodSync,chownSync,fchownSync,
-  fchmodSync} from 'node:fs';
+  fchmodSync,rmdirSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createPublicKey,createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
@@ -31,6 +31,7 @@ const ENTRY=PACK+'/code/scripts/protected-update-issuer-provision.mjs';
 const BASE='/var/lib/mcp-dev-hub-signers';
 const APP_PUBLICATION=BASE+'/app-publication';
 const TRUST='/etc/mcp-dev-hub/protected-update';
+const TOKEN_REFRESH_FENCE=TRUST+'/.readonly-token-refresh.lock';
 const ROLES=Object.freeze([
   {role:'reviewer',user:'mcp35_reviewer'},
   {role:'approval',user:'mcp35_approver'}
@@ -314,6 +315,11 @@ export function provisionIndependentProtectedIssuersOnce(){
     [external.devicePublicPem,external.rootPublicPem]
       .map(p=>createPublicKey(p).export({type:'spki',format:'der'}));
   const identities=[];
+  // Credential renewal and role creation share an exclusive owner-root fence.
+  // Partial failure preserves this fence; never blindly replay.
+  mkdirSync(TOKEN_REFRESH_FENCE,{mode:0o700});
+  dir(TOKEN_REFRESH_FENCE,0o700);
+  syncDir(TRUST);
   // NO root-owned private keys are generated: each issuer child receives a
   // fixed literal keygen program and drops to its own OS account identity.
   try{
@@ -410,6 +416,8 @@ export function provisionIndependentProtectedIssuersOnce(){
   }
   syncDir(BASE);syncDir(TRUST);
   assertFixedOperationalIssuerIsolation();
+  rmdirSync(TOKEN_REFRESH_FENCE);
+  syncDir(TRUST);
   return Object.freeze({phase:'issuer_keys_provisioned_not_approved',
     distinctAccounts:2,
     privateKeysReturned:false,

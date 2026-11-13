@@ -24,6 +24,6 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/etc/mcp-dev-hub/protected-update /var/lib/mcp-dev-hub-signers
+ReadWritePaths=/etc/mcp-dev-hub/protected-update -/var/lib/mcp-dev-hub-signers
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
 AmbientCapabilities=

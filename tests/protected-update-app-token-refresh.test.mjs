@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {
  decideRefreshPhase
@@ -24,6 +25,14 @@ test('routine requires three distinct OS principals and distinct gids',()=>{
  assert.throws(()=>decideRefreshPhase({
    codex:null,reviewer,approval
  }));
+});
+test('issuer provisioning and root refresh hold the same exclusive fence',()=>{
+ const refresh=readFileSync('scripts/protected-update-app-token-refresh.mjs','utf8');
+ const issuer=readFileSync('scripts/protected-update-issuer-provision.mjs','utf8');
+ assert.match(refresh,/\\.readonly-token-refresh\\.lock/);
+ assert.match(issuer,/\\.readonly-token-refresh\\.lock/);
+ assert.match(issuer,/mkdirSync\\(TOKEN_REFRESH_FENCE/);
+ assert.match(issuer,/rmdirSync\\(TOKEN_REFRESH_FENCE/);
 });
 test('checkout invocation cannot execute privileged refresh or issue secrets',()=>{
  const child=spawnSync(process.execPath,[

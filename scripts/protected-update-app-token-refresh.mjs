@@ -177,9 +177,20 @@ function assurePaths(phase,reviewer,approval){
  }else missing(BASE);
  const rootInputs=['github-token','reviewer-github-readonly-token',
   'approval-github-readonly-token'];
- for(const name of rootInputs)target(TRUST+'/'+name,0,0,phase==='bootstrap');
+ let firstMint=false;
+ if(phase==='bootstrap'){
+  let present=0;
+  for(const name of rootInputs){
+   try{lstatSync(TRUST+'/'+name);present++;}
+   catch(e){if(e?.code!=='ENOENT')throw e;}
+  }
+  if(present!==0&&present!==3)deny();
+  firstMint=present===0;
+ }
+ for(const name of rootInputs)target(TRUST+'/'+name,0,0,firstMint);
  missing(LOCK);
  for(const name of rootInputs)missing(TRUST+'/.'+name+'.pending');
+ return Object.freeze({firstMint});
 }
 export async function refreshPinnedAppReadOnlyTokens(){
  if(process.getuid?.()!==0||process.geteuid?.()!==0||
@@ -191,7 +202,7 @@ export async function refreshPinnedAppReadOnlyTokens(){
  const reviewer=account('mcp35_reviewer');
  const approval=account('mcp35_approver');
  const phase=decideRefreshPhase({codex,reviewer,approval});
- assurePaths(phase,reviewer,approval);
+ const {firstMint}=assurePaths(phase,reviewer,approval);
  const digest=rootTrust('approved-pack-digest',128).trim();
  const head=rootTrust('approved-head',128).trim();
  const pack=verifyProtectedBootstrapPack({
@@ -235,7 +246,7 @@ export async function refreshPinnedAppReadOnlyTokens(){
  }
  sync(TRUST);
  for(const name of names)
-  target(TRUST+'/'+name,0,0,phase==='bootstrap');
+  target(TRUST+'/'+name,0,0,firstMint);
  for(const name of names)
   renameSync(TRUST+'/.'+name+'.pending',TRUST+'/'+name);
  if(phase==='routine'){

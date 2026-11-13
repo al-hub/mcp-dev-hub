@@ -47,6 +47,10 @@ test('restricts minted token to selected repository and read-only permissions',(
   const x=access();x.permissions[n]='write';
   assert.throws(()=>verifyScopedReadOnlyToken(x,now));
  }
+ const omitted=access();delete omitted.permissions.metadata;
+ assert.equal(verifyScopedReadOnlyToken(omitted,now).singleRepository,true);
+ const invalidMetadata=access();invalidMetadata.permissions.metadata='write';
+ assert.throws(()=>verifyScopedReadOnlyToken(invalidMetadata,now));
  const extra=access();extra.permissions.workflows='write';
  assert.throws(()=>verifyScopedReadOnlyToken(extra,now));
  const repo=access();repo.repositories=[{id:1}];

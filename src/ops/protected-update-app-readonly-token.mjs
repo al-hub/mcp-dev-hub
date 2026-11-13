@@ -44,12 +44,16 @@ export function verifyScopedReadOnlyToken(response,nowMs=Date.now()){
     !object(response.permissions)||
     response.repository_selection!=='selected')fail();
  const actual=Object.keys(response.permissions).sort();
- const expected=[...Object.keys(READ_PERMISSIONS),'metadata'].sort();
- if(actual.join(',')!==expected.join(','))fail();
+ const allowed=new Set([...Object.keys(READ_PERMISSIONS),'metadata']);
+ if(actual.some(name=>!allowed.has(name))||
+    Object.keys(READ_PERMISSIONS).some(name=>
+      !Object.hasOwn(response.permissions,name)))fail();
  for(const [name,grant] of Object.entries(READ_PERMISSIONS)){
   if(response.permissions[name]!==grant)fail();
  }
- if(response.permissions.metadata!=='read')fail();
+ // GitHub may omit implicit Metadata:read from its successful response.
+ if(Object.hasOwn(response.permissions,'metadata')&&
+    response.permissions.metadata!=='read')fail();
  if(Object.hasOwn(response,'repositories')&&
     (!Array.isArray(response.repositories)||
       response.repositories.length!==1||
