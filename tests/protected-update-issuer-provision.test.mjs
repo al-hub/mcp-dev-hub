@@ -187,8 +187,12 @@ test('local Codex OS principal is inspected before any issuer account mutation',
    '../scripts/protected-update-issuer-provision.mjs',import.meta.url),'utf8');
  const body=src.split('export function provisionIndependentProtectedIssuersOnce(){')[1];
  const start=body.indexOf('const localMode=');
+ const lock=body.indexOf('mkdirSync(TOKEN_REFRESH_FENCE');
  const verify=body.indexOf('if(localMode)assertFixedCodexSignerPrerequisites()');
+ const missing=body.indexOf('requireMissingAccount(user)');
+ const tokens=body.indexOf("trust('reviewer-github-readonly-token')");
  const create=body.indexOf("spawnSync('/usr/sbin/useradd'");
- assert.ok(start>=0&&verify>start&&create>verify);
+ assert.ok(start>=0&&lock>start&&verify>lock&&missing>verify&&
+   tokens>missing&&create>tokens);
  assert.ok(src.includes('assertFixedCodexSignerPrerequisites'));
 });

@@ -188,9 +188,23 @@ function assurePaths(phase,reviewer,approval){
   firstMint=present===0;
  }
  for(const name of rootInputs)target(TRUST+'/'+name,0,0,firstMint);
- missing(LOCK);
  for(const name of rootInputs)missing(TRUST+'/.'+name+'.pending');
  return Object.freeze({firstMint});
+}
+function readRefreshState(){
+ const codex=account('mcp35_codex');
+ const reviewer=account('mcp35_reviewer');
+ const approval=account('mcp35_approver');
+ const phase=decideRefreshPhase({codex,reviewer,approval});
+ const {firstMint}=assurePaths(phase,reviewer,approval);
+ return {codex,reviewer,approval,phase,firstMint};
+}
+export function assertUnchangedRefreshState(before,current){
+ const sameIdentity=(a,b)=>a===null||b===null?a===b:
+  a.uid===b.uid&&a.gid===b.gid;
+ if(before.phase!==current.phase||before.firstMint!==current.firstMint||
+   !['codex','reviewer','approval'].every(role=>
+    sameIdentity(before[role],current[role])))deny();
 }
 export async function refreshPinnedAppReadOnlyTokens(){
  if(process.getuid?.()!==0||process.geteuid?.()!==0||
@@ -198,11 +212,8 @@ export async function refreshPinnedAppReadOnlyTokens(){
     process.execArgv.length!==0||
     process.env.NODE_OPTIONS)deny();
  process.umask(0o077);
- const codex=account('mcp35_codex');
- const reviewer=account('mcp35_reviewer');
- const approval=account('mcp35_approver');
- const phase=decideRefreshPhase({codex,reviewer,approval});
- const {firstMint}=assurePaths(phase,reviewer,approval);
+ const before=readRefreshState();
+ missing(LOCK);
  const digest=rootTrust('approved-pack-digest',128).trim();
  const head=rootTrust('approved-head',128).trim();
  const pack=verifyProtectedBootstrapPack({
@@ -230,8 +241,18 @@ export async function refreshPinnedAppReadOnlyTokens(){
  }
  if(new Set(tokens.map(x=>x.token)).size!==3)deny();
  if(tokens.some(x=>x.expiresAtMs-Date.now()<25*60_000))deny();
- // From HERE, failures are UNKNOWN (durable fence is never removed).
  mkdirSync(LOCK,{mode:0o700});dir(LOCK,0,0o700);sync(TRUST);
+ let current;
+ try{
+  current=readRefreshState();
+  assertUnchangedRefreshState(before,current);
+ }catch(e){
+  // No token was staged or replaced. Release our own preflight-only fence.
+  rmdirSync(LOCK);sync(TRUST);
+  throw e;
+ }
+ const {reviewer,approval,phase,firstMint}=current;
+ // From the first token write, failures are UNKNOWN and retain the fence.
  const names=['github-token','reviewer-github-readonly-token',
   'approval-github-readonly-token'];
  for(let i=0;i<3;i++)staged(TRUST+'/.'+names[i]+'.pending',

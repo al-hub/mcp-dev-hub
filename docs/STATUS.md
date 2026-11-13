@@ -1,3 +1,8 @@
+## 2026-11-13 #35 shared refresh/provision fence — source candidate only
+
+- Recheck signer account identities, bootstrap/routine phase and token target state under the shared fence before the refresh stages or replaces any token. If the preflight snapshot changed, stop without token writes. The provisioner now checks account absence and token inputs under the same fence before creating accounts or keys.
+- Synthetic regressions cover phase, first-mint and UID/GID changes and check preflight ordering. No protected host code, token, signer account or service is changed by this source patch. Exact-commit independent Codex audit and PR CI remain separate requirements before any operating step.
+
 ## 2026-11-12 #35 independent Codex root owner staging audit P2: directory memory DoS (SOURCE-ONLY NO-GO)
 
 - Real independent read-only WSL Codex final HEAD audit on previous `67831b7fe7e37f92b63792c2886557b65b236f78` returned persisted **FAIL/P2 x1** despite CLI exit 0. The proposed root owner package stager read untrusted source directories using unbounded `readdirSync`, allowing a mutable source owner to supply millions of names and force excessive root process memory before rejecting extras.
