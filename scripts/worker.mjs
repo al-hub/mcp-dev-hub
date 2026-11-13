@@ -8,6 +8,8 @@ import {pollPrWithGh} from '../src/jobs/pr-gh-cli.mjs';
 import { decideReviewRetry } from '../src/jobs/review-retry.mjs';
 import { dispatchScheduledCiRetry } from '../src/jobs/ci-retry-dispatch.mjs';
 import { ensureCiRetryTable } from '../src/jobs/ci-retry-store.mjs';
+import {ensureIssueIntakeLedger} from '../src/jobs/issue-intake-ledger.mjs';
+import {pollAuthorizedIssueOnce} from '../src/jobs/issue-intake-poll.mjs';
 import { allocateWorktree } from '../src/jobs/worktree-allocate.mjs';
 import { cleanupWorktree, ensureWorktreeTable } from '../src/jobs/worktree-cleanup.mjs';
 import { spawnSync,spawn } from 'node:child_process';
@@ -129,6 +131,8 @@ export function openDb({readOnly=false}={}) {
     WHEN NEW.state IS NOT OLD.state OR NEW.exit_code IS NOT OLD.exit_code BEGIN
       INSERT INTO job_events(job_id,kind,project,state,exit_code,created_at) VALUES(NEW.id,NEW.kind,NEW.project,NEW.state,NEW.exit_code,NEW.updated_at);
     END;`);
+  // #36: source-only durable candidate ledger; never auto-dispatch jobs.
+  ensureIssueIntakeLedger(db);
   // One-time snapshot for jobs created by older Worker versions; never double backfill.
   db.exec(`CREATE TABLE IF NOT EXISTS worker_schema_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)`);
   db.exec('BEGIN IMMEDIATE');
@@ -496,8 +500,15 @@ export function claimPrDevelopmentIfNeeded(db,{prKey=process.env.MCP_DEV_HUB_AUT
  }
  return {state:'remediation_required',claimed:result.claimed,jobId};
 }
-export async function runWorker(db,{interval=300}={}) {
- let lastPrPoll=0;
+// #36 opt-in intake boundary. Worker must always use its own persistent DB.
+export async function pollTrustedWorkerIssueOnce(db,issueIntake){
+ if(!issueIntake||typeof issueIntake!=='object'||Array.isArray(issueIntake))
+  throw Error('issue_intake_not_configured');
+ // Trusted intake can supply only poll options; it cannot replace Worker SQLite.
+ return pollAuthorizedIssueOnce({...issueIntake,db});
+}
+export async function runWorker(db,{interval=300,issueIntake=null}={}) {
+ let lastPrPoll=0,lastIssuePoll=0;
  while(true){
     tick(db);
     try{await dispatchDueCiRetries(db);}catch{console.error('CI_RETRY_DISPATCH_ERROR');}
@@ -507,6 +518,13 @@ export async function runWorker(db,{interval=300}={}) {
       lastPrPoll=Date.now();
       try{enqueuePrReviewIfReady(db,token?await pollPrGithub({db,prKey,token}):await pollPrWithGh({db,prKey}));claimPrDevelopmentIfNeeded(db,{prKey});}
       catch{console.error('PR_POLL_UNAVAILABLE_OR_BLOCKED');}
+    }
+    // #36: explicitly injected trusted intake only. Default production path
+    // remains disabled; no issue text/env flag can grant execution.
+    if(issueIntake && Date.now()-lastIssuePoll>=30000){
+      lastIssuePoll=Date.now();
+      try{await pollTrustedWorkerIssueOnce(db,issueIntake);}
+      catch{console.error('ISSUE_INTAKE_BLOCKED');}
     }
     await new Promise(r=>setTimeout(r,interval));
   }
