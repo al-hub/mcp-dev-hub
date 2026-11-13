@@ -1,3 +1,8 @@
+## 2026-11-13 #35 package replacement readback checks — source-only preparation
+
+- Added an inert transition classifier for already verified observations. Old and new package identities must each agree with their exact HEAD, digest, base, PR and CI trust record. A consistent candidate requires an intact, matching original backup. Any partial or mixed state, pending work, or uncertain observation requires reconciliation and never grants replay, install or rollback permission.
+- The original first-install stager and protected runtime are unchanged. Focused tests cover the original, candidate and restored states, 243 combinations of package, trust, backup and pending observations, and interrupted switch/restore in a temporary directory. This helper is not wired to WSL, does not authenticate the observations, and is not a privileged upgrade or rollback implementation. Keep it separate from the candidate under independent audit.
+
 ## 2026-11-13 #35 shared refresh/provision fence — source candidate only
 
 - Recheck signer account identities, bootstrap/routine phase and token target state under the shared fence before the refresh stages or replaces any token. If the preflight snapshot changed, stop without token writes. The provisioner now checks account absence and token inputs under the same fence before creating accounts or keys.
