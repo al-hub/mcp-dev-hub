@@ -1,0 +1,29 @@
+[Unit]
+Description=MCP Dev Hub pinned GitHub App read-only evidence token refresh
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/mcp-dev-hub/protected-update/existing-reviewer-app-private.pem
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/
+Environment=PATH=/usr/bin:/bin
+Environment=NODE_OPTIONS=
+ExecStart=/usr/bin/node /usr/local/lib/mcp-dev-hub/protected-updater/code/scripts/protected-update-app-token-refresh.mjs
+TimeoutStartSec=8min
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/etc/mcp-dev-hub/protected-update /var/lib/mcp-dev-hub-signers
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+AmbientCapabilities=

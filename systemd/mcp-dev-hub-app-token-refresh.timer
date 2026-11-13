@@ -1,0 +1,11 @@
+[Unit]
+Description=MCP Dev Hub pinned read-only GitHub App credential renewal timer
+
+[Timer]
+OnCalendar=*:0/20
+Persistent=true
+AccuracySec=1min
+Unit=mcp-dev-hub-app-token-refresh.service
+
+[Install]
+WantedBy=timers.target
