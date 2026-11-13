@@ -79,8 +79,6 @@ const SOURCE=Object.freeze([
  'src/ops/protected-update-root-preflight.mjs',
  'src/ops/protected-update-sudo-policy.mjs',
  'src/ops/protected-update-transaction.mjs',
- 'systemd/mcp-dev-hub-app-token-refresh.service',
-   'systemd/mcp-dev-hub-app-token-refresh.timer',
    '.github/workflows/ci.yml',
  'package.json',
  'scripts/check-privacy.mjs',
